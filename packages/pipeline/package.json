@@ -1,0 +1,30 @@
+{
+  "name": "@feedbackbot/pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@feedbackbot/core": "workspace:*",
+    "@feedbackbot/github-app": "workspace:*",
+    "@feedbackbot/llm": "workspace:*",
+    "bullmq": "^5.47.0",
+    "ioredis": "^5.6.1",
+    "simple-git": "^3.27.0",
+    "typescript": "^5.8.3",
+    "yaml": "^2.7.1",
+    "zod": "^3.24.3"
+  }
+}

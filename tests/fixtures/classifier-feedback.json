@@ -1,0 +1,22 @@
+[
+  { "rawContent": "Fix the typo in the navbar login link.", "category": "copy_change", "complexity": "trivial" },
+  { "rawContent": "The reset password email points to a broken URL.", "category": "bug_report", "complexity": "simple" },
+  { "rawContent": "Add a pricing FAQ accordion.", "category": "feature_request", "complexity": "moderate" },
+  { "rawContent": "Can you clarify what the analytics opt-in does?", "category": "question", "complexity": "simple" },
+  { "rawContent": "The CTA text on the landing page should say Start free trial.", "category": "copy_change", "complexity": "trivial" },
+  { "rawContent": "The sidebar overlaps content on mobile Safari.", "category": "ui_tweak", "complexity": "simple" },
+  { "rawContent": "Support exporting reports as CSV and PDF.", "category": "feature_request", "complexity": "complex" },
+  { "rawContent": "The avatar upload silently fails on large files.", "category": "bug_report", "complexity": "moderate" },
+  { "rawContent": "Update the docs to mention API pagination.", "category": "copy_change", "complexity": "simple" },
+  { "rawContent": "Why does the app ask for notifications immediately?", "category": "question", "complexity": "simple" },
+  { "rawContent": "The homepage hero has too much spacing above the title.", "category": "ui_tweak", "complexity": "trivial" },
+  { "rawContent": "Add SSO support for Azure AD.", "category": "feature_request", "complexity": "complex" },
+  { "rawContent": "The footer year is still 2024.", "category": "copy_change", "complexity": "trivial" },
+  { "rawContent": "Please make the dashboard cards easier to scan.", "category": "ui_tweak", "complexity": "moderate" },
+  { "rawContent": "The signup form crashes when the company field is empty.", "category": "bug_report", "complexity": "simple" },
+  { "rawContent": "Could you add keyboard shortcuts to the editor?", "category": "feature_request", "complexity": "moderate" },
+  { "rawContent": "The Discord invite link is expired.", "category": "bug_report", "complexity": "simple" },
+  { "rawContent": "What plan includes audit logs?", "category": "question", "complexity": "simple" },
+  { "rawContent": "Make the primary button blue instead of green.", "category": "ui_tweak", "complexity": "trivial" },
+  { "rawContent": "Replace all mentions of workspace with project in onboarding.", "category": "copy_change", "complexity": "simple" }
+]

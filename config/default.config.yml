@@ -1,0 +1,22 @@
+version: 1
+intake:
+  - web_form
+  - email
+  - github_issue
+rules:
+  max_complexity: simple
+  allowed_categories:
+    - bug_report
+    - copy_change
+    - ui_tweak
+  branch_prefix: "feedbackbot/"
+  reviewers:
+    - "repo-owner-username"
+llm:
+  mode: byok
+security:
+  max_files_changed: 5
+  max_lines_added: 200
+  block_patterns:
+    - "eval("
+    - "child_process"
