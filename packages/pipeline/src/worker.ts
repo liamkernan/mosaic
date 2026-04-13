@@ -12,6 +12,7 @@ import { PRCreator } from "./pr-creator.js";
 import { QuarantineStore } from "./quarantine.js";
 import { loadRepoRuntimeConfig } from "./repo-config.js";
 import { RepoIndexer } from "./repo-indexer.js";
+import { buildLlmRetryFeedbackItem, canRetryLlmOverload, getLlmRetryDelayMs, isRetryableLlmOverload } from "./transient-llm.js";
 import { validate } from "./validator.js";
 
 const FEEDBACK_QUEUE_NAME = "feedback-intake";
@@ -190,6 +191,21 @@ export class FeedbackPipelineWorker {
               }
             });
             logger.warn({ repo: job.data.repoFullName }, "Rate limit hit, re-queued feedback job");
+            return;
+          }
+
+          if (isRetryableLlmOverload(error) && canRetryLlmOverload(job.data)) {
+            const retriedJob = buildLlmRetryFeedbackItem(job.data);
+            const delay = getLlmRetryDelayMs(job.data);
+
+            await this.retryQueue.add("feedback-item", retriedJob, {
+              delay,
+              attempts: 1
+            });
+            logger.warn(
+              { repo: job.data.repoFullName, feedbackId: job.data.id, retryCount: retriedJob.metadata.__llmRetryCount, delay },
+              "Transient LLM overload, re-queued feedback job"
+            );
             return;
           }
 
