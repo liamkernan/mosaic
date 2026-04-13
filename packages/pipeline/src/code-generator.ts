@@ -1,13 +1,9 @@
 import { LLMError, type ClassifiedFeedback, type GeneratedChange, type RelevantFile } from "@feedbackbot/core";
 import { LLMClient } from "@feedbackbot/llm";
 
+import { parseGeneratedChanges } from "./generated-change-parser.js";
 import { buildGenerationPrompt } from "./prompts/generate.prompt.js";
-
-interface GeneratedChangeResponse {
-  filePath: string;
-  modifiedContent: string;
-  explanation: string;
-}
+import { buildGenerationRepairPrompt } from "./prompts/repair-generate.prompt.js";
 
 export class CodeGenerator {
   constructor(private readonly llmClient: LLMClient) {}
@@ -31,11 +27,24 @@ export class CodeGenerator {
       }
     );
 
-    let parsed: GeneratedChangeResponse[];
+    let parsed;
     try {
-      parsed = JSON.parse(response) as GeneratedChangeResponse[];
+      parsed = parseGeneratedChanges(response);
     } catch (error) {
-      throw new LLMError("Code generation returned invalid JSON", { cause: error as Error });
+      if (!(error instanceof LLMError)) {
+        throw error;
+      }
+
+      const repairedResponse = await this.llmClient.complete(
+        buildGenerationRepairPrompt(response),
+        "Return only the repaired JSON array.",
+        {
+          temperature: 0,
+          maxTokens: feedback.complexity === "moderate" ? 16_384 : 12_288
+        }
+      );
+
+      parsed = parseGeneratedChanges(repairedResponse);
     }
 
     const originals = new Map(relevantFiles.map((file) => [file.path, file.content]));
