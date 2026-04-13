@@ -19,8 +19,14 @@ const baseFeedback = {
 
 describe("model routing", () => {
   it("keeps trivial and simple work on haiku", () => {
-    expect(selectGenerationModelTier("trivial")).toBe("haiku");
-    expect(selectGenerationModelTier("simple")).toBe("haiku");
+    expect(
+      selectGenerationModelTier({
+        ...baseFeedback,
+        complexity: "trivial",
+        category: "copy_change"
+      })
+    ).toBe("haiku");
+    expect(selectGenerationModelTier(baseFeedback)).toBe("haiku");
     expect(
       shouldEscalateClassification({
         ...baseFeedback,
@@ -31,7 +37,12 @@ describe("model routing", () => {
   });
 
   it("routes moderate work to sonnet", () => {
-    expect(selectGenerationModelTier("moderate")).toBe("sonnet");
+    expect(
+      selectGenerationModelTier({
+        ...baseFeedback,
+        complexity: "moderate"
+      })
+    ).toBe("sonnet");
     expect(
       shouldEscalateClassification({
         ...baseFeedback,
@@ -78,5 +89,20 @@ describe("model routing", () => {
         summary: "Living room tile is misaligned"
       })
     ).toBe(false);
+  });
+
+  it("routes simple ui tweaks and bug reports to sonnet for generation", () => {
+    expect(
+      selectGenerationModelTier({
+        ...baseFeedback,
+        category: "ui_tweak"
+      })
+    ).toBe("sonnet");
+    expect(
+      selectGenerationModelTier({
+        ...baseFeedback,
+        category: "bug_report"
+      })
+    ).toBe("sonnet");
   });
 });

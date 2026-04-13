@@ -84,7 +84,7 @@ export class FeedbackPipelineWorker {
 
     const relevantFiles = await this.repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
     const fileTree = this.repoIndexer.fileTreeToPaths(repoContext);
-    const generationClient = selectGenerationModelTier(classifiedFeedback.complexity) === "sonnet" ? sonnetClient : haikuClient;
+    const generationClient = selectGenerationModelTier(classifiedFeedback) === "sonnet" ? sonnetClient : haikuClient;
     const codeGenerator = new CodeGenerator(generationClient);
     let changes;
     try {

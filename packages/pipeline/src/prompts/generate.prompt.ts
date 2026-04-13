@@ -17,6 +17,8 @@ INSTRUCTIONS:
 - Only modify files that need to change. Do not refactor unrelated code.
 - If the request is ambiguous, choose the most conservative interpretation.
 - Do NOT add comments like '// Added by FeedbackBot' or '// Changed'.
+- Your response must be valid JSON that parses with JSON.parse.
+- Escape all quotes, backslashes, and newlines inside "modifiedContent" so it is a valid JSON string.
 - If you genuinely cannot implement this change safely, return an empty array [].
 
 Respond ONLY with a JSON array. No markdown, no explanation:

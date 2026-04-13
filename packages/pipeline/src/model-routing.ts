@@ -1,4 +1,4 @@
-import type { ClassifiedFeedback, ComplexityLevel } from "@feedbackbot/core";
+import type { ClassifiedFeedback } from "@feedbackbot/core";
 
 export type ModelTier = "haiku" | "sonnet";
 
@@ -35,6 +35,14 @@ export function shouldEscalateClassification(classifiedFeedback: ClassifiedFeedb
   return isNonObviousBugReport(classifiedFeedback);
 }
 
-export function selectGenerationModelTier(complexity: ComplexityLevel): ModelTier {
-  return complexity === "moderate" ? "sonnet" : "haiku";
+export function selectGenerationModelTier(classifiedFeedback: ClassifiedFeedback): ModelTier {
+  if (classifiedFeedback.complexity === "moderate") {
+    return "sonnet";
+  }
+
+  if (classifiedFeedback.category === "ui_tweak" || classifiedFeedback.category === "bug_report") {
+    return "sonnet";
+  }
+
+  return "haiku";
 }
