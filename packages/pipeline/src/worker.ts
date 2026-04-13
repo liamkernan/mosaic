@@ -1,5 +1,5 @@
 import { getEnv, LLMError, logger, RateLimitError, type FeedbackItem } from "@feedbackbot/core";
-import { LLMClient } from "@feedbackbot/llm";
+import { ANTHROPIC_MODEL_IDS, LLMClient } from "@feedbackbot/llm";
 import { Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
 
@@ -12,6 +12,7 @@ import { PRCreator } from "./pr-creator.js";
 import { QuarantineStore } from "./quarantine.js";
 import { loadRepoRuntimeConfig } from "./repo-config.js";
 import { RepoIndexer } from "./repo-indexer.js";
+import { selectGenerationModelTier, shouldEscalateClassification } from "./model-routing.js";
 import { buildLlmRetryFeedbackItem, canRetryLlmOverload, getLlmRetryDelayMs, isRetryableLlmOverload } from "./transient-llm.js";
 import { validate } from "./validator.js";
 
@@ -26,11 +27,12 @@ export class FeedbackPipelineWorker {
   private readonly prCreator = new PRCreator();
   private readonly quarantineStore = new QuarantineStore();
 
-  private createLlmClient(mode: "byok" | "platform", apiKey?: string): LLMClient {
+  private createLlmClient(mode: "byok" | "platform", apiKey: string | undefined, model: string): LLMClient {
     return new LLMClient({
       mode,
       apiKey,
-      platformApiKey: process.env.ANTHROPIC_API_KEY
+      platformApiKey: process.env.ANTHROPIC_API_KEY,
+      model
     });
   }
 
@@ -46,11 +48,14 @@ export class FeedbackPipelineWorker {
 
     const repoContext = await this.repoIndexer.getContext(feedbackItem.repoFullName);
     const repoConfig = await loadRepoRuntimeConfig(repoContext.localPath, feedbackItem.repoFullName);
-    const llmClient = this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey);
-    const classifier = new FeedbackClassifier(llmClient);
-    const codeGenerator = new CodeGenerator(llmClient);
+    const haikuClient = this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.haiku);
+    const sonnetClient = this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.sonnet);
+    const classifier = new FeedbackClassifier(haikuClient);
     const topLevelFileTree = repoContext.fileTree.map((node) => node.path);
-    const classifiedFeedback = await classifier.classify(feedbackItem, topLevelFileTree);
+    let classifiedFeedback = await classifier.classify(feedbackItem, topLevelFileTree);
+    if (shouldEscalateClassification(classifiedFeedback)) {
+      classifiedFeedback = await new FeedbackClassifier(sonnetClient).classify(feedbackItem, topLevelFileTree);
+    }
     const decision = decideFeedbackDisposition(classifiedFeedback, repoConfig);
 
     if (decision.disposition === "quarantine") {
@@ -79,6 +84,8 @@ export class FeedbackPipelineWorker {
 
     const relevantFiles = await this.repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
     const fileTree = this.repoIndexer.fileTreeToPaths(repoContext);
+    const generationClient = selectGenerationModelTier(classifiedFeedback.complexity) === "sonnet" ? sonnetClient : haikuClient;
+    const codeGenerator = new CodeGenerator(generationClient);
     let changes;
     try {
       changes = await codeGenerator.generate(classifiedFeedback, relevantFiles, fileTree);

@@ -9,6 +9,7 @@ export * from "./code-generator.js";
 export * from "./artifact-store.js";
 export * from "./disposition.js";
 export * from "./issue-creator.js";
+export * from "./model-routing.js";
 export * from "./pr-creator.js";
 export * from "./quarantine.js";
 export * from "./repo-config.js";
