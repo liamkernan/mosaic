@@ -4,6 +4,7 @@ import { Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
 
 import { FeedbackClassifier } from "./classifier.js";
+import { ArtifactStore } from "./artifact-store.js";
 import { CodeGenerator } from "./code-generator.js";
 import { decideFeedbackDisposition } from "./disposition.js";
 import { IssueCreator } from "./issue-creator.js";
@@ -18,6 +19,7 @@ const FEEDBACK_QUEUE_NAME = "feedback-intake";
 export class FeedbackPipelineWorker {
   private readonly connection = new Redis(getEnv().REDIS_URL, { maxRetriesPerRequest: null });
   private readonly retryQueue = new Queue<FeedbackItem>(FEEDBACK_QUEUE_NAME, { connection: this.connection });
+  private readonly artifactStore = new ArtifactStore(this.connection);
   private readonly repoIndexer = new RepoIndexer();
   private readonly issueCreator = new IssueCreator();
   private readonly prCreator = new PRCreator();
@@ -32,6 +34,15 @@ export class FeedbackPipelineWorker {
   }
 
   async process(feedbackItem: FeedbackItem): Promise<void> {
+    const existingArtifact = await this.artifactStore.get(feedbackItem.id);
+    if (existingArtifact) {
+      logger.warn(
+        { feedbackId: feedbackItem.id, artifactType: existingArtifact.artifactType, artifactValue: existingArtifact.artifactValue },
+        "Feedback already produced an artifact, skipping duplicate processing"
+      );
+      return;
+    }
+
     const repoContext = await this.repoIndexer.getContext(feedbackItem.repoFullName);
     const repoConfig = await loadRepoRuntimeConfig(repoContext.localPath, feedbackItem.repoFullName);
     const llmClient = this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey);
@@ -43,11 +54,25 @@ export class FeedbackPipelineWorker {
 
     if (decision.disposition === "quarantine") {
       await this.quarantineStore.quarantine(classifiedFeedback, decision.reason);
+      await this.artifactStore.record({
+        feedbackId: classifiedFeedback.id,
+        repoFullName: classifiedFeedback.repoFullName,
+        artifactType: "quarantine",
+        artifactValue: decision.reason,
+        createdAt: new Date().toISOString()
+      });
       return;
     }
 
     if (decision.disposition === "issue") {
-      await this.issueCreator.createIssue(classifiedFeedback, repoContext, decision.reason);
+      const issueNumber = await this.issueCreator.createIssue(classifiedFeedback, repoContext, decision.reason);
+      await this.artifactStore.record({
+        feedbackId: classifiedFeedback.id,
+        repoFullName: classifiedFeedback.repoFullName,
+        artifactType: "issue",
+        artifactValue: String(issueNumber),
+        createdAt: new Date().toISOString()
+      });
       return;
     }
 
@@ -58,11 +83,18 @@ export class FeedbackPipelineWorker {
       changes = await codeGenerator.generate(classifiedFeedback, relevantFiles, fileTree);
     } catch (error) {
       if (error instanceof LLMError) {
-        await this.issueCreator.createIssue(
+        const issueNumber = await this.issueCreator.createIssue(
           classifiedFeedback,
           repoContext,
           `Code generation failed: ${error.message}`
         );
+        await this.artifactStore.record({
+          feedbackId: classifiedFeedback.id,
+          repoFullName: classifiedFeedback.repoFullName,
+          artifactType: "issue",
+          artifactValue: String(issueNumber),
+          createdAt: new Date().toISOString()
+        });
         return;
       }
 
@@ -70,20 +102,34 @@ export class FeedbackPipelineWorker {
     }
 
     if (changes.length === 0) {
-      await this.issueCreator.createIssue(
+      const issueNumber = await this.issueCreator.createIssue(
         classifiedFeedback,
         repoContext,
         "The code generator could not safely produce a meaningful change."
       );
+      await this.artifactStore.record({
+        feedbackId: classifiedFeedback.id,
+        repoFullName: classifiedFeedback.repoFullName,
+        artifactType: "issue",
+        artifactValue: String(issueNumber),
+        createdAt: new Date().toISOString()
+      });
       return;
     }
 
     if (changes.length > repoConfig.security.max_files_changed) {
-      await this.issueCreator.createIssue(
+      const issueNumber = await this.issueCreator.createIssue(
         classifiedFeedback,
         repoContext,
         `Validation failed: generated change touched ${changes.length} files which exceeds the configured limit of ${repoConfig.security.max_files_changed}.`
       );
+      await this.artifactStore.record({
+        feedbackId: classifiedFeedback.id,
+        repoFullName: classifiedFeedback.repoFullName,
+        artifactType: "issue",
+        artifactValue: String(issueNumber),
+        createdAt: new Date().toISOString()
+      });
       return;
     }
 
@@ -91,15 +137,22 @@ export class FeedbackPipelineWorker {
       maxLinesAdded: repoConfig.security.max_lines_added
     });
     if (!validation.valid) {
-      await this.issueCreator.createIssue(
+      const issueNumber = await this.issueCreator.createIssue(
         classifiedFeedback,
         repoContext,
         `Validation failed: ${validation.errors.join("; ")}`
       );
+      await this.artifactStore.record({
+        feedbackId: classifiedFeedback.id,
+        repoFullName: classifiedFeedback.repoFullName,
+        artifactType: "issue",
+        artifactValue: String(issueNumber),
+        createdAt: new Date().toISOString()
+      });
       return;
     }
 
-    await this.prCreator.createPR(
+    const prUrl = await this.prCreator.createPR(
       {
         repoFullName: classifiedFeedback.repoFullName,
         branchName: "",
@@ -111,6 +164,13 @@ export class FeedbackPipelineWorker {
       repoContext,
       repoConfig
     );
+    await this.artifactStore.record({
+      feedbackId: classifiedFeedback.id,
+      repoFullName: classifiedFeedback.repoFullName,
+      artifactType: "pr",
+      artifactValue: prUrl,
+      createdAt: new Date().toISOString()
+    });
   }
 
   createWorker(): Worker<FeedbackItem> {

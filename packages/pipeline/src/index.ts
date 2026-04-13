@@ -6,6 +6,7 @@ import { FeedbackPipelineWorker } from "./worker.js";
 
 export * from "./classifier.js";
 export * from "./code-generator.js";
+export * from "./artifact-store.js";
 export * from "./disposition.js";
 export * from "./issue-creator.js";
 export * from "./pr-creator.js";
