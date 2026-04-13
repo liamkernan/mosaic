@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import dotenv from "dotenv";
 import { z } from "zod";
@@ -7,21 +8,38 @@ import { z } from "zod";
 import { ConfigError } from "./errors.js";
 import type { ComplexityLevel, FeedbackCategory, FeedbackSource } from "./types.js";
 
-dotenv.config();
+const packageDir = dirname(fileURLToPath(import.meta.url));
+const workspaceRoot = resolve(packageDir, "../../..");
+
+dotenv.config({ path: resolve(workspaceRoot, ".env") });
+
+function optionalNonEmptyString() {
+  return z.preprocess(
+    (value) => {
+      if (typeof value !== "string") {
+        return value;
+      }
+
+      const trimmed = value.trim();
+      return trimmed.length === 0 ? undefined : trimmed;
+    },
+    z.string().min(1).optional()
+  );
+}
 
 const envSchema = z.object({
-  GITHUB_APP_ID: z.string().min(1).optional(),
+  GITHUB_APP_ID: optionalNonEmptyString(),
   GITHUB_PRIVATE_KEY_PATH: z.string().min(1).default("./private-key.pem"),
-  GITHUB_WEBHOOK_SECRET: z.string().min(1).optional(),
+  GITHUB_WEBHOOK_SECRET: optionalNonEmptyString(),
   REDIS_URL: z.string().url().default("redis://localhost:6379"),
-  ANTHROPIC_API_KEY: z.string().min(1).optional(),
-  EMAIL_IMAP_HOST: z.string().min(1).optional(),
+  ANTHROPIC_API_KEY: optionalNonEmptyString(),
+  EMAIL_IMAP_HOST: optionalNonEmptyString(),
   EMAIL_IMAP_PORT: z.coerce.number().int().positive().default(993),
-  EMAIL_IMAP_USER: z.string().min(1).optional(),
-  EMAIL_IMAP_PASS: z.string().min(1).optional(),
+  EMAIL_IMAP_USER: optionalNonEmptyString(),
+  EMAIL_IMAP_PASS: optionalNonEmptyString(),
   EMAIL_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
-  DISCORD_BOT_TOKEN: z.string().min(1).optional(),
-  DISCORD_PUBLIC_KEY: z.string().min(1).optional(),
+  DISCORD_BOT_TOKEN: optionalNonEmptyString(),
+  DISCORD_PUBLIC_KEY: optionalNonEmptyString(),
   PORT: z.coerce.number().int().positive().default(3000),
   GITHUB_APP_PORT: z.coerce.number().int().positive().default(3001),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
@@ -69,6 +87,7 @@ export function getEnv(): AppEnv {
 
   cachedEnv = {
     ...parsed.data,
+    GITHUB_PRIVATE_KEY_PATH: resolveConfigPath(parsed.data.GITHUB_PRIVATE_KEY_PATH),
     REPO_CACHE_DIR: expandHome(parsed.data.REPO_CACHE_DIR)
   };
 
@@ -81,6 +100,18 @@ export function expandHome(inputPath: string): string {
   }
 
   return resolve(inputPath);
+}
+
+function resolveConfigPath(inputPath: string): string {
+  if (inputPath.startsWith("~/")) {
+    return resolve(homedir(), inputPath.slice(2));
+  }
+
+  if (inputPath.startsWith("/")) {
+    return inputPath;
+  }
+
+  return resolve(workspaceRoot, inputPath);
 }
 
 export function resetEnvForTests(): void {

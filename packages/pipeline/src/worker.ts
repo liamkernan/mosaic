@@ -1,4 +1,4 @@
-import { getEnv, logger, RateLimitError, type FeedbackItem } from "@feedbackbot/core";
+import { getEnv, LLMError, logger, RateLimitError, type FeedbackItem } from "@feedbackbot/core";
 import { LLMClient } from "@feedbackbot/llm";
 import { Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
@@ -53,7 +53,21 @@ export class FeedbackPipelineWorker {
 
     const relevantFiles = await this.repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
     const fileTree = this.repoIndexer.fileTreeToPaths(repoContext);
-    const changes = await codeGenerator.generate(classifiedFeedback, relevantFiles, fileTree);
+    let changes;
+    try {
+      changes = await codeGenerator.generate(classifiedFeedback, relevantFiles, fileTree);
+    } catch (error) {
+      if (error instanceof LLMError) {
+        await this.issueCreator.createIssue(
+          classifiedFeedback,
+          repoContext,
+          `Code generation failed: ${error.message}`
+        );
+        return;
+      }
+
+      throw error;
+    }
 
     if (changes.length === 0) {
       await this.issueCreator.createIssue(

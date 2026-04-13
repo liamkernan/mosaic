@@ -1,6 +1,6 @@
 import { Redis } from "ioredis";
 
-import { getEnv, RateLimitError, type GeneratedChange, type PRPayload, type RepoContext, type RepoConfig } from "@feedbackbot/core";
+import { getEnv, logger, RateLimitError, type GeneratedChange, type PRPayload, type RepoContext, type RepoConfig } from "@feedbackbot/core";
 import { getOctokit } from "@feedbackbot/github-app";
 
 function sanitizeSlug(value: string): string {
@@ -132,20 +132,28 @@ export class PRCreator {
     });
 
     if (repoConfig.reviewers && repoConfig.reviewers.length > 0) {
-      await octokit.rest.pulls.requestReviewers({
-        owner,
-        repo,
-        pull_number: pr.data.number,
-        reviewers: repoConfig.reviewers
-      });
+      try {
+        await octokit.rest.pulls.requestReviewers({
+          owner,
+          repo,
+          pull_number: pr.data.number,
+          reviewers: repoConfig.reviewers
+        });
+      } catch (error) {
+        logger.warn({ err: error, repo: payload.repoFullName, pullNumber: pr.data.number }, "Failed to request reviewers");
+      }
     }
 
-    await octokit.rest.issues.addLabels({
-      owner,
-      repo,
-      issue_number: pr.data.number,
-      labels: ["feedbackbot", "automated", payload.feedbackItem.category]
-    });
+    try {
+      await octokit.rest.issues.addLabels({
+        owner,
+        repo,
+        issue_number: pr.data.number,
+        labels: ["feedbackbot", "automated", payload.feedbackItem.category]
+      });
+    } catch (error) {
+      logger.warn({ err: error, repo: payload.repoFullName, pullNumber: pr.data.number }, "Failed to add PR labels");
+    }
 
     return pr.data.html_url;
   }

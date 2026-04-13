@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@10.0.0",
   "scripts": {
-    "dev": "concurrently \"docker compose up redis\" \"pnpm --filter @feedbackbot/github-app dev\" \"pnpm --filter @feedbackbot/intake dev\" \"pnpm --filter @feedbackbot/pipeline dev\"",
+    "dev": "pnpm build && concurrently \"docker compose up redis\" \"pnpm --filter @feedbackbot/github-app dev\" \"pnpm --filter @feedbackbot/intake dev\" \"pnpm --filter @feedbackbot/pipeline dev\"",
     "start": "concurrently \"pnpm --filter @feedbackbot/github-app start\" \"pnpm --filter @feedbackbot/intake start\" \"pnpm --filter @feedbackbot/pipeline start\"",
     "build": "pnpm -r build",
     "lint": "eslint .",

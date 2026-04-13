@@ -27,7 +27,7 @@ export class CodeGenerator {
       "Return only the JSON array of file updates.",
       {
         temperature: 0.3,
-        maxTokens: feedback.complexity === "moderate" ? 8_192 : 4_096
+        maxTokens: feedback.complexity === "moderate" ? 16_384 : 12_288
       }
     );
 

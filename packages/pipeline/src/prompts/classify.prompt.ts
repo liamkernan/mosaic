@@ -1,4 +1,7 @@
-export function buildClassificationPrompt(rawContent: string, fileTree: string[]): string {
+export function buildClassificationPrompt(
+  rawContent: string,
+  fileTree: string[],
+): string {
   return `You are a feedback classifier for a software repository. You will receive user feedback and a list of files in the repository.
 
 Your job:
@@ -10,7 +13,7 @@ Your job:
    - complex: architectural change, new feature requiring multiple components, database changes, or anything you're unsure about
 3. Write a one-sentence SUMMARY of what the user is asking for.
 4. List which FILES in the repository are most likely to need changes (max 5).
-5. Rate your CONFIDENCE from 0 to 1.
+5. Rate your CONFIDENCE from 0 to 1 (decimal value).
 
 Respond ONLY with a JSON object. No markdown, no explanation, no preamble.
 
