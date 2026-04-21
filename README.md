@@ -1,6 +1,6 @@
 # Mosaic
 
-Mosaic is a TypeScript monorepo for turning user feedback into either an automated pull request, a triaged GitHub issue, or a quarantined manual-review record. It ingests feedback from web forms, email, GitHub, and Discord, classifies intent and complexity, validates generated code, and uses a GitHub App to open issues or PRs safely.
+Mosaic is a TypeScript repo for turning user feedback into either an automated pull request, a triaged GitHub issue, or a quarantined manual-review record. It ingests feedback from web forms, email, GitHub, and Discord, classifies intent and complexity, validates generated code, and uses a GitHub App to open issues or PRs safely.
 
 ## Packages
 
@@ -29,5 +29,4 @@ Mosaic is a TypeScript monorepo for turning user feedback into either an automat
 - `pnpm dev`: runs Redis, intake server, pipeline worker, and GitHub App.
 - `pnpm build`: compiles all packages.
 - `pnpm typecheck`: TypeScript project references build.
-- `pnpm test`: runs Vitest.
 - `pnpm setup`: interactive setup helper.
