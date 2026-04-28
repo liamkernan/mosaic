@@ -15,7 +15,29 @@ Mosaic is a TypeScript repo for turning user feedback into either an automated p
 1. Copy `.env.example` to `.env` and fill in the required GitHub App, Redis, and optional LLM settings.
 2. Run `pnpm install`.
 3. Run `pnpm dev`.
-4. Post feedback to `POST /webhook/form` with `{ "message": "Fix the pricing typo", "repoFullName": "owner/repo" }`.
+4. Post feedback to `POST /webhook/form`.
+
+Example local test request:
+
+```bash
+curl -X POST http://localhost:3000/webhook/form \
+  -H 'content-type: application/json' \
+  -d '{
+    "repoFullName": "owner/repo",
+    "senderEmail": "you@example.com",
+    "message": "Fix the pricing typo in the homepage hero section."
+  }'
+```
+
+Example JSON body:
+
+```json
+{
+  "repoFullName": "owner/repo",
+  "senderEmail": "you@example.com",
+  "message": "Fix the pricing typo in the homepage hero section."
+}
+```
 
 ## Safety
 
