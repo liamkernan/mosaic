@@ -32,7 +32,8 @@ describe("feedback disposition", () => {
     const result = decideFeedbackDisposition(
       {
         ...baseFeedback,
-        complexity: "moderate"
+        complexity: "moderate",
+        confidence: 0.95
       },
       {
         repoFullName: "owner/repo",
@@ -41,6 +42,25 @@ describe("feedback disposition", () => {
     );
 
     expect(result.disposition).toBe("issue");
+    expect(result.issueMode).toBe("moderate-safe");
+  });
+
+  it("leans moderate feedback toward review-needed issues", () => {
+    const result = decideFeedbackDisposition(
+      {
+        ...baseFeedback,
+        category: "feature_request",
+        complexity: "moderate",
+        confidence: 0.95
+      },
+      {
+        repoFullName: "owner/repo",
+        ...defaultRuntimeConfig
+      }
+    );
+
+    expect(result.disposition).toBe("issue");
+    expect(result.issueMode).toBe("moderate-review-needed");
   });
 
   it("quarantines complex feedback", () => {

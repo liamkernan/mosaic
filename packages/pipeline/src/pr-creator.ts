@@ -1,7 +1,12 @@
 import { Redis } from "ioredis";
 
-import { getEnv, logger, RateLimitError, type GeneratedChange, type PRPayload, type RepoContext, type RepoConfig } from "@feedbackbot/core";
+import { getEnv, logger, RateLimitError, type PRPayload, type RepoContext, type RepoConfig } from "@feedbackbot/core";
 import { getOctokit } from "@feedbackbot/github-app";
+
+interface PRCreationOptions {
+  draft?: boolean;
+  linkedIssueNumber?: number;
+}
 
 function sanitizeSlug(value: string): string {
   return value
@@ -22,7 +27,14 @@ function truncateTitle(summary: string): string {
   return `[FeedbackBot] ${summary}`.slice(0, 72);
 }
 
-function createPrBody(payload: PRPayload): string {
+function createPrBody(payload: PRPayload, options: PRCreationOptions): string {
+  const issueReference = options.linkedIssueNumber
+    ? `### Linked Issue
+${options.draft ? "Refs" : "Closes"} #${options.linkedIssueNumber}
+
+`
+    : "";
+
   return `## Automated PR from User Feedback
 
 **Source:** ${payload.feedbackItem.source}
@@ -33,7 +45,7 @@ function createPrBody(payload: PRPayload): string {
 ### Original Feedback
 > ${payload.feedbackItem.rawContent.slice(0, 500).replace(/\n/g, "\n> ")}
 
-### Changes Made
+${issueReference}### Changes Made
 ${payload.changes.map((change) => `- \`${change.filePath}\`: ${change.explanation}`).join("\n")}
 
 ---
@@ -57,7 +69,7 @@ async function enforcePrRateLimit(repoFullName: string): Promise<void> {
 }
 
 export class PRCreator {
-  async createPR(payload: PRPayload, repoContext: RepoContext, repoConfig: RepoConfig): Promise<string> {
+  async createPR(payload: PRPayload, repoContext: RepoContext, repoConfig: RepoConfig, options: PRCreationOptions = {}): Promise<string> {
     await enforcePrRateLimit(payload.repoFullName);
 
     const octokit = await getOctokit(repoContext.installationId);
@@ -122,13 +134,17 @@ export class PRCreator {
       owner,
       repo,
       title: truncateTitle(payload.feedbackItem.summary),
-      body: createPrBody({
-        ...payload,
-        branchName,
-        title: truncateTitle(payload.feedbackItem.summary)
-      }),
+      body: createPrBody(
+        {
+          ...payload,
+          branchName,
+          title: truncateTitle(payload.feedbackItem.summary)
+        },
+        options
+      ),
       head: branchName,
-      base: repoContext.defaultBranch
+      base: repoContext.defaultBranch,
+      draft: options.draft ?? false
     });
 
     if (repoConfig.reviewers && repoConfig.reviewers.length > 0) {

@@ -15,6 +15,7 @@ export * from "./pr-creator.js";
 export * from "./quarantine.js";
 export * from "./repo-config.js";
 export * from "./repo-indexer.js";
+export * from "./staged-issues.js";
 export * from "./transient-llm.js";
 export * from "./validator.js";
 export * from "./worker.js";

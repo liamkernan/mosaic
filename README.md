@@ -21,7 +21,8 @@ Mosaic is a TypeScript repo for turning user feedback into either an automated p
 
 - Generated code is always validated before any PR is created.
 - Unsafe additions like `eval(`, `child_process`, new external URLs, or new `process.env` usage are rejected.
-- `trivial` and `simple` feedback can become PRs, `moderate` feedback becomes GitHub issues, and `complex` feedback is quarantined for manual triage.
+- `trivial` and `simple` feedback can become PRs, `moderate` feedback becomes staged GitHub issues, and `complex` feedback is quarantined for manual triage.
+- Staged moderate issues can be promoted with a `fix this` issue comment. Narrow `moderate-safe` issues open a PR, while the default `moderate-review-needed` path opens a draft PR.
 - Abuse protection rejects duplicate submissions, sender floods, prompt-injection patterns, and obvious spam before queueing.
 
 ## Scripts

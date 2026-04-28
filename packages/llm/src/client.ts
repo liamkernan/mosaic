@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
 import { LLMError, type LLMKeyMode, logger } from "@feedbackbot/core";
 
 import { createAnthropicClient } from "./anthropic.js";

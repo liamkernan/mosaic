@@ -5,7 +5,7 @@ import eslintConfigPrettier from "eslint-config-prettier";
 
 export default [
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**"]
+    ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "**/*.d.ts"]
   },
   js.configs.recommended,
   {
@@ -16,14 +16,25 @@ export default [
         sourceType: "module",
         ecmaVersion: "latest",
         project: false
+      },
+      globals: {
+        Buffer: "readonly",
+        NodeJS: "readonly",
+        clearInterval: "readonly",
+        fetch: "readonly",
+        process: "readonly",
+        setInterval: "readonly",
+        setTimeout: "readonly"
       }
     },
     plugins: {
       "@typescript-eslint": tseslint
     },
     rules: {
+      "@typescript-eslint/consistent-type-imports": "error",
       "@typescript-eslint/no-explicit-any": "off",
-      "@typescript-eslint/consistent-type-imports": "error"
+      "no-undef": "off",
+      "no-unused-vars": "off"
     }
   },
   eslintConfigPrettier

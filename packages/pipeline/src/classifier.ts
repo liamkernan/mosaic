@@ -4,7 +4,7 @@ import {
   type FeedbackItem,
   type ComplexityLevel
 } from "@feedbackbot/core";
-import { LLMClient } from "@feedbackbot/llm";
+import type { LLMClient } from "@feedbackbot/llm";
 
 import { buildClassificationPrompt } from "./prompts/classify.prompt.js";
 

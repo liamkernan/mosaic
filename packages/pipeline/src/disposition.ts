@@ -1,6 +1,7 @@
 import type { ClassifiedFeedback } from "@feedbackbot/core";
 
 import type { RepoRuntimeConfig } from "./repo-config.js";
+import { getModerateIssueMode, type ModerateIssueMode } from "./staged-issues.js";
 
 const complexityRanking = ["trivial", "simple", "moderate", "complex"] as const;
 
@@ -9,6 +10,7 @@ export type FeedbackDisposition = "pr" | "issue" | "quarantine";
 export interface DispositionDecision {
   disposition: FeedbackDisposition;
   reason: string;
+  issueMode?: ModerateIssueMode;
 }
 
 function exceedsComplexity(limit: string, current: string): boolean {
@@ -28,9 +30,14 @@ export function decideFeedbackDisposition(
   }
 
   if (classifiedFeedback.complexity === "moderate") {
+    const issueMode = getModerateIssueMode(classifiedFeedback);
     return {
       disposition: "issue",
-      reason: "Moderate feedback is routed to a GitHub issue for human review."
+      reason:
+        issueMode === "moderate-safe"
+          ? "Moderate feedback was saved as a staged GitHub issue and can be promoted to a PR on request."
+          : "Moderate feedback was saved as a staged GitHub issue and requires review before PR promotion.",
+      issueMode
     };
   }
 
