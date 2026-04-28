@@ -52,12 +52,25 @@ export const defaultRuntimeConfig: Omit<RepoRuntimeConfig, "repoFullName"> = {
   }
 };
 
-export async function loadRepoRuntimeConfig(repoRoot: string, repoFullName: string): Promise<RepoRuntimeConfig> {
-  const configPath = join(repoRoot, "mosaic.config.yml");
+async function resolveRepoConfigPath(repoRoot: string): Promise<string | null> {
+  const configCandidates = ["mosaic.config.yml", "feedbackbot.config.yml"];
 
-  try {
-    await access(configPath);
-  } catch {
+  for (const configFileName of configCandidates) {
+    const configPath = join(repoRoot, configFileName);
+    try {
+      await access(configPath);
+      return configPath;
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+export async function loadRepoRuntimeConfig(repoRoot: string, repoFullName: string): Promise<RepoRuntimeConfig> {
+  const configPath = await resolveRepoConfigPath(repoRoot);
+  if (!configPath) {
     return {
       repoFullName,
       ...defaultRuntimeConfig
@@ -73,7 +86,7 @@ export async function loadRepoRuntimeConfig(repoRoot: string, repoFullName: stri
     allowedCategories: parsed.rules.allowed_categories as FeedbackCategory[],
     maxComplexity: parsed.rules.max_complexity,
     llmKeyMode: parsed.llm.mode,
-    llmApiKey: parsed.llm.mode === "byok" ? process.env.MOSAIC_LLM_KEY : undefined,
+    llmApiKey: parsed.llm.mode === "byok" ? (process.env.MOSAIC_LLM_KEY ?? process.env.FEEDBACKBOT_LLM_KEY) : undefined,
     reviewers: parsed.rules.reviewers ?? [],
     branchPrefix: parsed.rules.branch_prefix,
     security: parsed.security

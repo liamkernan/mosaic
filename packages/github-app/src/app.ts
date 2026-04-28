@@ -5,23 +5,30 @@ const GITHUB_FORWARD_URL = `http://127.0.0.1:${getEnv().PORT}/webhook/github`;
 
 async function repoAllowsGithubIntake(context: Context<"issues.opened" | "issue_comment.created">): Promise<boolean> {
   const { owner, repo } = context.repo();
+  const configCandidates = ["mosaic.config.yml", "feedbackbot.config.yml"];
 
-  try {
-    const file = await context.octokit.rest.repos.getContent({
-      owner,
-      repo,
-      path: "mosaic.config.yml"
-    });
+  for (const configPath of configCandidates) {
+    try {
+      const file = await context.octokit.rest.repos.getContent({
+        owner,
+        repo,
+        path: configPath
+      });
 
-    if (!("content" in file.data)) {
-      return false;
+      if (!("content" in file.data)) {
+        continue;
+      }
+
+      const decoded = Buffer.from(file.data.content, "base64").toString("utf8");
+      if (/\bgithub_issue\b|\bgithub_comment\b/.test(decoded)) {
+        return true;
+      }
+    } catch {
+      continue;
     }
-
-    const decoded = Buffer.from(file.data.content, "base64").toString("utf8");
-    return /\bgithub_issue\b|\bgithub_comment\b/.test(decoded);
-  } catch {
-    return false;
   }
+
+  return false;
 }
 
 async function forwardWebhookPayload(payload: unknown): Promise<void> {
@@ -39,7 +46,7 @@ async function forwardWebhookPayload(payload: unknown): Promise<void> {
 }
 
 function bodyContainsTrigger(context: Context<"issues.opened" | "issue_comment.created">): boolean {
-  const triggerPhrase = getEnv().MOSAIC_TRIGGER_PHRASE;
+  const triggerPhrase = getEnv().MOSAIC_TRIGGER_PHRASE ?? "@mosaic";
   const payload = context.payload;
   const body = "comment" in payload ? payload.comment.body : payload.issue.body;
   return typeof body === "string" && body.includes(triggerPhrase);

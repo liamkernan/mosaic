@@ -48,7 +48,10 @@ const envSchema = z.object({
   LLM_CALLS_PER_HOUR: z.coerce.number().int().positive().default(50),
   PRS_PER_HOUR: z.coerce.number().int().positive().default(10),
   FEEDBACK_ITEMS_PER_HOUR: z.coerce.number().int().positive().default(100),
-  MOSAIC_TRIGGER_PHRASE: z.string().min(1).default("@mosaic")
+  MOSAIC_TRIGGER_PHRASE: optionalNonEmptyString(),
+  FEEDBACKBOT_TRIGGER_PHRASE: optionalNonEmptyString(),
+  MOSAIC_LLM_KEY: optionalNonEmptyString(),
+  FEEDBACKBOT_LLM_KEY: optionalNonEmptyString()
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
@@ -87,6 +90,8 @@ export function getEnv(): AppEnv {
 
   cachedEnv = {
     ...parsed.data,
+    MOSAIC_TRIGGER_PHRASE: parsed.data.MOSAIC_TRIGGER_PHRASE ?? parsed.data.FEEDBACKBOT_TRIGGER_PHRASE ?? "@mosaic",
+    MOSAIC_LLM_KEY: parsed.data.MOSAIC_LLM_KEY ?? parsed.data.FEEDBACKBOT_LLM_KEY,
     GITHUB_PRIVATE_KEY_PATH: resolveConfigPath(parsed.data.GITHUB_PRIVATE_KEY_PATH),
     REPO_CACHE_DIR: expandHome(parsed.data.REPO_CACHE_DIR)
   };
