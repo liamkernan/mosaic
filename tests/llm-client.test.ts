@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
-  createMock,
+  streamMock,
+  finalMessageMock,
   enforceRepoRateLimitMock,
   trackUsageMock
 } = vi.hoisted(() => ({
-  createMock: vi.fn(),
+  streamMock: vi.fn(),
+  finalMessageMock: vi.fn(),
   enforceRepoRateLimitMock: vi.fn(async () => {}),
   trackUsageMock: vi.fn(async () => {})
 }));
@@ -13,7 +15,7 @@ const {
 vi.mock("../packages/llm/src/anthropic.js", () => ({
   createAnthropicClient: vi.fn(() => ({
     messages: {
-      create: createMock
+      stream: streamMock
     }
   }))
 }));
@@ -30,15 +32,19 @@ import { LLMClient } from "../packages/llm/src/client.js";
 
 describe("LLMClient", () => {
   beforeEach(() => {
-    createMock.mockReset();
+    streamMock.mockReset();
+    finalMessageMock.mockReset();
     enforceRepoRateLimitMock.mockClear();
     trackUsageMock.mockClear();
-    createMock.mockResolvedValue({
+    finalMessageMock.mockResolvedValue({
       content: [{ type: "text", text: "ok" }],
       usage: {
         input_tokens: 1,
         output_tokens: 1
       }
+    });
+    streamMock.mockReturnValue({
+      finalMessage: finalMessageMock
     });
   });
 
@@ -50,7 +56,7 @@ describe("LLMClient", () => {
 
     await client.complete("system", "user");
 
-    expect(createMock).toHaveBeenCalledWith(
+    expect(streamMock).toHaveBeenCalledWith(
       expect.objectContaining({
         system: "system"
       }),
@@ -66,7 +72,7 @@ describe("LLMClient", () => {
 
     await client.complete("system", "user", { timeoutMs: 1234 });
 
-    expect(createMock).toHaveBeenCalledWith(
+    expect(streamMock).toHaveBeenCalledWith(
       expect.objectContaining({
         system: "system"
       }),

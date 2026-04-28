@@ -5,6 +5,14 @@ import { parseGeneratedChanges } from "./generated-change-parser.js";
 import { buildGenerationPrompt } from "./prompts/generate.prompt.js";
 import { buildGenerationRepairPrompt } from "./prompts/repair-generate.prompt.js";
 
+const GENERATION_TIMEOUT_MS = 180_000;
+
+function estimateGenerationMaxTokens(relevantFiles: RelevantFile[]): number {
+  const totalBytes = relevantFiles.reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
+  const estimatedTokens = Math.ceil(totalBytes / 3) + 2_048;
+  return Math.max(4_096, Math.min(16_384, estimatedTokens));
+}
+
 export class CodeGenerator {
   constructor(private readonly llmClient: LLMClient) {}
 
@@ -18,12 +26,15 @@ export class CodeGenerator {
       feedbackId: feedback.id
     });
 
+    const maxTokens = estimateGenerationMaxTokens(relevantFiles);
+
     const response = await this.llmClient.complete(
       buildGenerationPrompt(feedback.summary, relevantFiles, fileTree),
       "Return only the JSON array of file updates.",
       {
         temperature: 0.3,
-        maxTokens: feedback.complexity === "moderate" ? 16_384 : 12_288
+        maxTokens,
+        timeoutMs: GENERATION_TIMEOUT_MS
       }
     );
 
@@ -40,7 +51,8 @@ export class CodeGenerator {
         "Return only the repaired JSON array.",
         {
           temperature: 0,
-          maxTokens: feedback.complexity === "moderate" ? 16_384 : 12_288
+          maxTokens,
+          timeoutMs: GENERATION_TIMEOUT_MS
         }
       );
 

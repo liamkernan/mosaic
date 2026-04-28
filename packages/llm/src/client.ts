@@ -58,7 +58,7 @@ export class LLMClient {
           await enforceRepoRateLimit(this.usageContext.repoFullName);
         }
 
-        const response = await this.client.messages.create(
+        const stream = this.client.messages.stream(
           {
             model,
             system: systemPrompt,
@@ -68,6 +68,7 @@ export class LLMClient {
           },
           options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : undefined
         );
+        const response = await stream.finalMessage();
 
         const text = response.content
           .filter((item): item is Anthropic.TextBlock => item.type === "text")
