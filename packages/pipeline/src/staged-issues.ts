@@ -8,8 +8,6 @@ export const MODERATE_SAFE_LABEL = "mosaic:moderate-safe";
 export const MODERATE_REVIEW_NEEDED_LABEL = "mosaic:moderate-review-needed";
 
 const STAGED_ISSUE_METADATA_PREFIX = "mosaic:staged-issue";
-const fixThisCommandPattern =
-  /^\s*(?:@mosaic[\s,:-]*)?(?:please\s+)?(?:fix this|implement this|open (?:a )?(?:pr|pull request)|create (?:a )?(?:pr|pull request)|make (?:a )?(?:pr|pull request)|raise (?:a )?(?:pr|pull request))(?:\s+(?:please|now|for me))?\s*[.!?]*\s*$/i;
 const safeModeratePattern =
   /\b(typo|copy|text|label|headline|button text|cta|link|spacing|padding|margin|alignment|css|color|placeholder|helper text|empty state)\b/i;
 
@@ -91,8 +89,17 @@ export function parseStagedIssueMetadata(body: string): StagedIssueMetadata | nu
   }
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function isFixThisCommand(input: string): boolean {
-  return fixThisCommandPattern.test(input);
+  const trigger = escapeRegExp(getEnv().MOSAIC_TRIGGER_PHRASE);
+  const pattern = new RegExp(
+    `^\\s*${trigger}[\\s,:-]*(?:please\\s+)?(?:fix this|implement this|open (?:a )?(?:pr|pull request)|create (?:a )?(?:pr|pull request)|make (?:a )?(?:pr|pull request)|raise (?:a )?(?:pr|pull request))(?:\\s+(?:please|now|for me))?\\s*[.!?]*\\s*$`,
+    "i"
+  );
+  return pattern.test(input);
 }
 
 export function getIssueModeLabel(issueMode: ModerateIssueMode): string {

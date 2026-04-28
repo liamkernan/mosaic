@@ -40,6 +40,17 @@ function isLocalWebhookRetry(feedbackItem: FeedbackItem): boolean {
   return feedbackItem.source === "web_form" && isLoopbackAddress(feedbackItem.metadata.ip);
 }
 
+function dedupeIdentity(feedbackItem: FeedbackItem): string {
+  if (feedbackItem.source === "github_comment") {
+    const commentId = feedbackItem.metadata.commentId;
+    if (typeof commentId === "number" || typeof commentId === "string") {
+      return `github-comment:${commentId}`;
+    }
+  }
+
+  return contentFingerprint(feedbackItem.rawContent);
+}
+
 function contentFingerprint(rawContent: string): string {
   return createHash("sha256")
     .update(rawContent.toLowerCase().replace(/\s+/g, " ").trim())
@@ -93,7 +104,7 @@ export async function enforceSubmissionProtection(feedbackItem: FeedbackItem, re
     return;
   }
 
-  const fingerprintKey = `feedback-dedupe:${feedbackItem.repoFullName}:${contentFingerprint(feedbackItem.rawContent)}`;
+  const fingerprintKey = `feedback-dedupe:${feedbackItem.repoFullName}:${dedupeIdentity(feedbackItem)}`;
   const dedupeSet = await redis.set(fingerprintKey, feedbackItem.id, "EX", DUPLICATE_WINDOW_SECONDS, "NX");
   if (dedupeSet !== "OK") {
     throw new AbuseDetectedError("Submission rejected: duplicate feedback already received recently");

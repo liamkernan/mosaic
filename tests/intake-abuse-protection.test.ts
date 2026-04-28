@@ -80,4 +80,26 @@ describe("abuse protection", () => {
       enforceSubmissionProtection({ ...feedback, id: "01TEST2" }, redis as never)
     ).resolves.toBeUndefined();
   });
+
+  it("allows repeated github comment commands when the comment ids differ", async () => {
+    const redis = new FakeRedis();
+    const feedback = buildFeedbackItem({
+      source: "github_comment",
+      rawContent: "@feedbackbot fix this",
+      metadata: { commentId: 1001 }
+    });
+
+    await enforceSubmissionProtection(feedback, redis as never);
+
+    await expect(
+      enforceSubmissionProtection(
+        {
+          ...feedback,
+          id: "01TEST2",
+          metadata: { commentId: 1002 }
+        },
+        redis as never
+      )
+    ).resolves.toBeUndefined();
+  });
 });
