@@ -94,7 +94,7 @@ function escapeRegExp(value: string): string {
 }
 
 export function isFixThisCommand(input: string): boolean {
-  const trigger = escapeRegExp(getEnv().MOSAIC_TRIGGER_PHRASE);
+  const trigger = escapeRegExp(getEnv().MOSAIC_TRIGGER_PHRASE ?? "@mosaic");
   const pattern = new RegExp(
     `^\\s*${trigger}[\\s,:-]*(?:please\\s+)?(?:fix this|implement this|open (?:a )?(?:pr|pull request)|create (?:a )?(?:pr|pull request)|make (?:a )?(?:pr|pull request)|raise (?:a )?(?:pr|pull request))(?:\\s+(?:please|now|for me))?\\s*[.!?]*\\s*$`,
     "i"
@@ -107,7 +107,7 @@ export function getIssueModeLabel(issueMode: ModerateIssueMode): string {
 }
 
 export function getPromotionDescription(issueMode: ModerateIssueMode): string {
-  const trigger = getEnv().MOSAIC_TRIGGER_PHRASE;
+  const trigger = getEnv().MOSAIC_TRIGGER_PHRASE ?? "@mosaic";
 
   return issueMode === "moderate-safe"
     ? `Comment \`${trigger} fix this\`, \`${trigger} implement this\`, or \`${trigger} open PR\` to ask Mosaic to open a pull request from this issue.`
