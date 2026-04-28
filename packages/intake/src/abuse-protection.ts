@@ -27,6 +27,19 @@ export interface AbuseAssessment {
   reasons: string[];
 }
 
+function isLoopbackAddress(value: unknown): boolean {
+  return typeof value === "string" && (
+    value === "127.0.0.1" ||
+    value === "::1" ||
+    value === "::ffff:127.0.0.1" ||
+    value === "localhost"
+  );
+}
+
+function isLocalWebhookRetry(feedbackItem: FeedbackItem): boolean {
+  return feedbackItem.source === "web_form" && isLoopbackAddress(feedbackItem.metadata.ip);
+}
+
 function contentFingerprint(rawContent: string): string {
   return createHash("sha256")
     .update(rawContent.toLowerCase().replace(/\s+/g, " ").trim())
@@ -74,6 +87,10 @@ export async function enforceSubmissionProtection(feedbackItem: FeedbackItem, re
   }
   if (senderCount > MAX_SUBMISSIONS_PER_SENDER_PER_HOUR) {
     throw new AbuseDetectedError("Submission rejected: sender exceeded hourly submission limit");
+  }
+
+  if (isLocalWebhookRetry(feedbackItem)) {
+    return;
   }
 
   const fingerprintKey = `feedback-dedupe:${feedbackItem.repoFullName}:${contentFingerprint(feedbackItem.rawContent)}`;
