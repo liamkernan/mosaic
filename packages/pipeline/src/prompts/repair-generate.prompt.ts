@@ -1,13 +1,13 @@
 export function buildGenerationRepairPrompt(rawResponse: string): string {
-  return `You repair malformed JSON produced by another model.
+  return `You repair malformed structured file-change output produced by another model.
 
 Your job:
-- Return ONLY a valid JSON array.
+- Return ONLY a valid <changes>...</changes> payload.
 - Preserve the intended content exactly.
 - Do not summarize.
 - Do not drop fields.
-- Escape quotes, backslashes, and newlines inside JSON strings correctly.
-- If the content is too incomplete to repair safely, return [].
+- Put complete file contents inside <![CDATA[ ... ]]> blocks.
+- If the content is too incomplete to repair safely, return exactly <changes></changes>.
 
 Malformed response:
 <RAW_RESPONSE>

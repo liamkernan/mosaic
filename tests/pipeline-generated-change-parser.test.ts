@@ -3,6 +3,25 @@ import { describe, expect, it } from "vitest";
 import { parseGeneratedChanges } from "../packages/pipeline/src/generated-change-parser.js";
 
 describe("generated change parser", () => {
+  it("parses tagged change payloads with raw file content", () => {
+    const parsed = parseGeneratedChanges(`
+<changes>
+  <change>
+    <filePath>styles.css</filePath>
+    <modifiedContent><![CDATA[
+body {
+  color: red;
+}
+]]></modifiedContent>
+    <explanation>Fix alignment.</explanation>
+  </change>
+</changes>`);
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.filePath).toBe("styles.css");
+    expect(parsed[0]?.modifiedContent).toContain("color: red;");
+  });
+
   it("parses direct json arrays", () => {
     const parsed = parseGeneratedChanges(
       '[{"filePath":"styles.css","modifiedContent":"body {}","explanation":"Fix alignment."}]'

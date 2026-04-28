@@ -17,16 +17,18 @@ INSTRUCTIONS:
 - Only modify files that need to change. Do not refactor unrelated code.
 - If the request is ambiguous, choose the most conservative interpretation.
 - Do NOT add comments like '// Added by Mosaic' or '// Changed'.
-- Your response must be valid JSON that parses with JSON.parse.
-- Escape all quotes, backslashes, and newlines inside "modifiedContent" so it is a valid JSON string.
-- If you genuinely cannot implement this change safely, return an empty array [].
+- Return ONLY the response format below. No markdown fences. No prose before or after.
+- Put the complete updated file contents inside CDATA so you do not need to escape quotes or newlines.
+- If you genuinely cannot implement this change safely, return exactly <changes></changes>.
 
-Respond ONLY with a JSON array. No markdown, no explanation:
-[
-  {
-    "filePath": "relative/path/to/file.ext",
-    "modifiedContent": "...full file content with changes applied...",
-    "explanation": "One sentence explaining what you changed and why."
-  }
-]`;
+Respond ONLY in this format:
+<changes>
+  <change>
+    <filePath>relative/path/to/file.ext</filePath>
+    <modifiedContent><![CDATA[
+...full file content with changes applied...
+]]></modifiedContent>
+    <explanation>One sentence explaining what you changed and why.</explanation>
+  </change>
+</changes>`;
 }
