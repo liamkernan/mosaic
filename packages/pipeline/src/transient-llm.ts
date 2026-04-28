@@ -9,8 +9,12 @@ export function isRetryableLlmOverload(error: unknown): boolean {
     return false;
   }
 
-  const errorLike = error as { code?: unknown; name?: unknown; message?: unknown; cause?: unknown };
-  const code = errorLike.code !== undefined ? String(errorLike.code) : undefined;
+  const errorLike = error as { code?: unknown; status?: unknown; name?: unknown; message?: unknown; cause?: unknown };
+  const code = errorLike.status !== undefined
+    ? String(errorLike.status)
+    : errorLike.code !== undefined
+      ? String(errorLike.code)
+      : undefined;
   const name = errorLike.name !== undefined ? String(errorLike.name) : undefined;
   if (code !== "LLM_ERROR" && name !== "LLMError") {
     return false;

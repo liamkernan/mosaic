@@ -30,7 +30,7 @@ export class CodeGenerator {
 
     const response = await this.llmClient.complete(
       buildGenerationPrompt(feedback.summary, relevantFiles, fileTree),
-      "Return only the JSON array of file updates.",
+      "Return only the <changes> payload with complete file contents in CDATA blocks.",
       {
         temperature: 0.3,
         maxTokens,
@@ -48,7 +48,7 @@ export class CodeGenerator {
 
       const repairedResponse = await this.llmClient.complete(
         buildGenerationRepairPrompt(response),
-        "Return only the repaired JSON array.",
+        "Return only the repaired <changes> payload with complete file contents in CDATA blocks.",
         {
           temperature: 0,
           maxTokens,

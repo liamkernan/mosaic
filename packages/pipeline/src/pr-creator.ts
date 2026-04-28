@@ -69,6 +69,19 @@ async function enforcePrRateLimit(repoFullName: string): Promise<void> {
 }
 
 export class PRCreator {
+  private async findExistingPrForBranch(owner: string, repo: string, branchName: string, installationId: number): Promise<string | null> {
+    const octokit = await getOctokit(installationId);
+    const existingPrs = await octokit.rest.pulls.list({
+      owner,
+      repo,
+      state: "all",
+      head: `${owner}:${branchName}`,
+      per_page: 10
+    });
+
+    return existingPrs.data[0]?.html_url ?? null;
+  }
+
   async createPR(payload: PRPayload, repoContext: RepoContext, repoConfig: RepoConfig, options: PRCreationOptions = {}): Promise<string> {
     await enforcePrRateLimit(payload.repoFullName);
 
@@ -123,12 +136,33 @@ export class PRCreator {
       parents: [refResponse.data.object.sha]
     });
 
-    await octokit.rest.git.createRef({
-      owner,
-      repo,
-      ref: `refs/heads/${branchName}`,
-      sha: commit.data.sha
-    });
+    try {
+      await octokit.rest.git.createRef({
+        owner,
+        repo,
+        ref: `refs/heads/${branchName}`,
+        sha: commit.data.sha
+      });
+    } catch (error) {
+      const status =
+        typeof error === "object" && error && "status" in error
+          ? Number((error as { status?: unknown }).status)
+          : undefined;
+      const message =
+        typeof error === "object" && error && "message" in error
+          ? String((error as { message?: unknown }).message)
+          : "";
+
+      if (status === 422 && /Reference already exists/i.test(message)) {
+        const existingPrUrl = await this.findExistingPrForBranch(owner, repo, branchName, repoContext.installationId);
+        if (existingPrUrl) {
+          logger.info({ repo: payload.repoFullName, branchName, prUrl: existingPrUrl }, "Reused existing PR for duplicate branch");
+          return existingPrUrl;
+        }
+      }
+
+      throw error;
+    }
 
     const pr = await octokit.rest.pulls.create({
       owner,

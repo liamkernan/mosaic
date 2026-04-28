@@ -1,7 +1,7 @@
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { type GeneratedChange, type RepoContext } from "@mosaic/core";
+import { type FileNode, type GeneratedChange, type RepoContext } from "@mosaic/core";
 import ts from "typescript";
 
 export interface ValidationResult {
@@ -16,6 +16,7 @@ export interface ValidationLimits {
 const unsafePatterns = ["eval(", "Function(", "child_process", "exec(", "execSync"];
 const urlPattern = /\bhttps?:\/\/[^\s"'`]+/g;
 const ipPattern = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
+const modalTokenPattern = /\b(?:modal|overlay|dialog)(?:-[a-z0-9]+)+\b/gi;
 
 function countChangedLines(original: string, modified: string): number {
   const originalLines = original.split("\n");
@@ -60,6 +61,75 @@ function syntaxErrorsForFile(filePath: string, contents: string): string[] {
   });
 
   return (transpiled.diagnostics ?? []).map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
+}
+
+function findNewModalTokens(original: string, modified: string): string[] {
+  const originalMatches = new Set((original.match(modalTokenPattern) ?? []).map((match) => match.toLowerCase()));
+  return [...new Set((modified.match(modalTokenPattern) ?? []).map((match) => match.toLowerCase()))]
+    .filter((match) => !originalMatches.has(match));
+}
+
+function collectChangedPaths(changes: GeneratedChange[]): Set<string> {
+  return new Set(changes.map((change) => change.filePath));
+}
+
+function findFileInTree(nodes: FileNode[], fileName: string): string | undefined {
+  for (const node of nodes) {
+    if (node.type === "file" && node.path.endsWith(fileName)) {
+      return node.path;
+    }
+
+    if (node.children) {
+      const nested = findFileInTree(node.children, fileName);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function findRepoFile(repoContext: RepoContext, fileName: string): string | undefined {
+  return findFileInTree(repoContext.fileTree, fileName);
+}
+
+async function validateModalStyling(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
+  const changedPaths = collectChangedPaths(changes);
+  const stylePath = findRepoFile(repoContext, "styles.css");
+  if (!stylePath) {
+    return;
+  }
+
+  const styleChange = changes.find((change) => change.filePath === stylePath);
+  const effectiveStyles = styleChange
+    ? styleChange.modifiedContent
+    : await readFile(join(repoContext.localPath, stylePath), "utf8").catch(() => "");
+
+  for (const change of changes) {
+    if (!/\.(?:html?|[cm]?[jt]sx?)$/i.test(change.filePath)) {
+      continue;
+    }
+
+    const newModalTokens = findNewModalTokens(change.originalContent, change.modifiedContent);
+    if (newModalTokens.length === 0) {
+      continue;
+    }
+
+    const missingTokens = newModalTokens.filter((token) => !effectiveStyles.toLowerCase().includes(token));
+    if (missingTokens.length === 0) {
+      continue;
+    }
+
+    if (!changedPaths.has(stylePath)) {
+      errors.push(
+        `Change for ${change.filePath} adds modal UI hooks (${missingTokens.join(", ")}) but does not update ${stylePath} with matching styles`
+      );
+      continue;
+    }
+
+    errors.push(`Change for ${change.filePath} adds modal UI hooks without matching selectors in ${stylePath}: ${missingTokens.join(", ")}`);
+  }
 }
 
 export async function validate(
@@ -122,6 +192,8 @@ export async function validate(
   if (totalLinesAdded >= maxLinesAdded) {
     errors.push(`Total new code added exceeds limit: ${totalLinesAdded} lines`);
   }
+
+  await validateModalStyling(changes, repoContext, errors);
 
   return {
     valid: errors.length === 0,
