@@ -20,6 +20,7 @@ export interface LLMClientOptions {
 export interface CompletionOptions {
   temperature?: number;
   maxTokens?: number;
+  timeoutMs?: number;
 }
 
 export interface UsageContext {
@@ -63,6 +64,8 @@ export class LLMClient {
           max_tokens: options.maxTokens ?? 4096,
           temperature: options.temperature ?? 0.2,
           messages: [{ role: "user", content: userMessage }]
+        }, {
+          timeout: options.timeoutMs
         });
 
         const text = response.content
@@ -84,6 +87,8 @@ export class LLMClient {
       } catch (error) {
         attempt += 1;
         const status = typeof error === "object" && error && "status" in error ? Number(error.status) : undefined;
+        const errorName = typeof error === "object" && error && "name" in error ? String(error.name) : undefined;
+        const errorMessage = error instanceof Error ? error.message : String(error);
         if (status === 429 && attempt < maxRetries) {
           const delayMs = 2 ** attempt * 1_000;
           logger.warn({ attempt, delayMs }, "Anthropic rate limit hit, retrying");
@@ -91,7 +96,15 @@ export class LLMClient {
           continue;
         }
 
-        throw new LLMError("Anthropic completion failed", { cause: error as Error });
+        const details = [
+          status ? `status ${status}` : undefined,
+          errorName,
+          errorMessage
+        ].filter(Boolean).join(": ");
+
+        throw new LLMError(details ? `Anthropic completion failed (${details})` : "Anthropic completion failed", {
+          cause: error as Error
+        });
       }
     }
 

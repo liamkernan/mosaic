@@ -20,9 +20,19 @@ export function isRetryableLlmOverload(error: unknown): boolean {
     typeof errorLike.cause === "object" && errorLike.cause && "status" in errorLike.cause
       ? Number((errorLike.cause as { status?: unknown }).status)
       : undefined;
+  const causeName =
+    typeof errorLike.cause === "object" && errorLike.cause && "name" in errorLike.cause
+      ? String((errorLike.cause as { name?: unknown }).name)
+      : undefined;
   const message = errorLike.message !== undefined ? String(errorLike.message).toLowerCase() : "";
 
-  return causeStatus === 529 || (message.includes("529") && message.includes("overloaded"));
+  return (
+    causeStatus === 529 ||
+    causeName === "APIConnectionTimeoutError" ||
+    causeName === "APIConnectionError" ||
+    (message.includes("529") && message.includes("overloaded")) ||
+    message.includes("timeout")
+  );
 }
 
 export function getLlmRetryCount(feedbackItem: FeedbackItem): number {

@@ -40,6 +40,18 @@ async function forwardWebhookPayload(payload: unknown): Promise<void> {
     body: JSON.stringify(payload)
   });
 
+  if (response.status === 403) {
+    const body = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+    if (
+      body?.error === "ABUSE_DETECTED" &&
+      typeof body.message === "string" &&
+      body.message.includes("duplicate feedback already received recently")
+    ) {
+      logger.info("Skipped duplicate GitHub webhook delivery");
+      return;
+    }
+  }
+
   if (!response.ok) {
     throw new Error(`Failed to forward GitHub webhook: ${response.status}`);
   }

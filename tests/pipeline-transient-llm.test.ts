@@ -29,6 +29,16 @@ describe("transient llm helpers", () => {
     expect(isRetryableLlmOverload(error)).toBe(true);
   });
 
+  it("detects retryable Anthropic timeout errors", () => {
+    const error = new LLMError("Anthropic completion failed", {
+      cause: {
+        name: "APIConnectionTimeoutError"
+      } as Error
+    });
+
+    expect(isRetryableLlmOverload(error)).toBe(true);
+  });
+
   it("increments retry metadata and calculates delay", () => {
     const feedbackItem = buildLlmRetryFeedbackItem(makeFeedbackItem());
 
