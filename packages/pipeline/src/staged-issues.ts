@@ -46,13 +46,17 @@ export function getModerateIssueMode(classifiedFeedback: ClassifiedFeedback): Mo
 }
 
 export function buildStagedIssueMetadata(classifiedFeedback: ClassifiedFeedback, issueMode: ModerateIssueMode): StagedIssueMetadata {
+  const receivedAt = classifiedFeedback.receivedAt instanceof Date
+    ? classifiedFeedback.receivedAt.toISOString()
+    : new Date(classifiedFeedback.receivedAt).toISOString();
+
   return {
     version: 1,
     feedbackId: classifiedFeedback.id,
     repoFullName: classifiedFeedback.repoFullName,
     source: classifiedFeedback.source,
     senderIdentifier: classifiedFeedback.senderIdentifier,
-    receivedAt: classifiedFeedback.receivedAt.toISOString(),
+    receivedAt,
     category: classifiedFeedback.category,
     complexity: "moderate",
     summary: classifiedFeedback.summary,

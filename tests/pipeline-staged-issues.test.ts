@@ -31,6 +31,18 @@ describe("staged issues", () => {
     expect(parseStagedIssueMetadata(comment)).toEqual(metadata);
   });
 
+  it("accepts serialized receivedAt values", () => {
+    const metadata = buildStagedIssueMetadata(
+      {
+        ...baseFeedback,
+        receivedAt: "2026-04-27T12:00:00.000Z" as unknown as Date
+      },
+      "moderate-safe"
+    );
+
+    expect(metadata.receivedAt).toBe("2026-04-27T12:00:00.000Z");
+  });
+
   it("detects explicit fix-this promotion commands", () => {
     expect(isFixThisCommand("fix this")).toBe(true);
     expect(isFixThisCommand("@mosaic fix this")).toBe(true);

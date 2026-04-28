@@ -38,6 +38,15 @@ export class FeedbackPipelineWorker {
   private readonly prCreator = new PRCreator();
   private readonly quarantineStore = new QuarantineStore();
 
+  private normalizeFeedbackItem(feedbackItem: FeedbackItem): FeedbackItem {
+    return {
+      ...feedbackItem,
+      receivedAt: feedbackItem.receivedAt instanceof Date
+        ? feedbackItem.receivedAt
+        : new Date(feedbackItem.receivedAt)
+    };
+  }
+
   private createLlmClient(mode: "byok" | "platform", apiKey: string | undefined, model: string): LLMClient {
     return new LLMClient({
       mode,
@@ -318,6 +327,8 @@ export class FeedbackPipelineWorker {
   }
 
   async process(feedbackItem: FeedbackItem): Promise<void> {
+    feedbackItem = this.normalizeFeedbackItem(feedbackItem);
+
     const existingArtifact = await this.artifactStore.get(feedbackItem.id);
     if (existingArtifact) {
       logger.warn(
