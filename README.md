@@ -13,6 +13,7 @@ Mosaic is a TypeScript repo for turning user feedback into either an automated p
 ## Quick Start
 
 1. Copy `.env.example` to `.env` and fill in the required GitHub App, Redis, and optional LLM settings.
+   Set `SMEE_URL` to the `https://smee.io/...` webhook URL configured on your GitHub App if you want local GitHub issue/comment events to reach your machine.
 2. Run `pnpm install`.
 3. Run `pnpm dev`.
 4. Post feedback to `POST /webhook/form`.
@@ -49,7 +50,8 @@ Example JSON body:
 
 ## Scripts
 
-- `pnpm dev`: runs Redis, intake server, pipeline worker, and GitHub App.
+- `pnpm dev`: runs Redis, webhook forwarding via Smee, intake server, pipeline worker, and GitHub App.
+- `pnpm webhooks:dev`: forwards your GitHub App's `smee.io` channel to `http://127.0.0.1:3001/api/github/webhooks`.
 - `pnpm build`: compiles all packages.
 - `pnpm typecheck`: TypeScript project references build.
 - `pnpm setup`: interactive setup helper.
