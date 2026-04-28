@@ -45,7 +45,7 @@ async function forwardWebhookPayload(payload: unknown): Promise<void> {
   }
 }
 
-function bodyContainsTrigger(context: Context<"issues.opened" | "issue_comment.created">): boolean {
+export function bodyContainsTrigger(context: Context<"issues.opened" | "issue_comment.created">): boolean {
   const triggerPhrase = getEnv().MOSAIC_TRIGGER_PHRASE ?? "@mosaic";
   const payload = context.payload;
   const body = "comment" in payload ? payload.comment.body : payload.issue.body;

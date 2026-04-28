@@ -101,6 +101,6 @@ export function getIssueModeLabel(issueMode: ModerateIssueMode): string {
 
 export function getPromotionDescription(issueMode: ModerateIssueMode): string {
   return issueMode === "moderate-safe"
-    ? "Comment `fix this`, `implement this`, or `open PR` to ask Mosaic to open a pull request from this issue."
-    : "Comment `fix this`, `implement this`, or `open PR` to ask Mosaic to open a draft pull request from this issue.";
+    ? "Comment `@mosaic fix this`, `@mosaic implement this`, or `@mosaic open PR` to ask Mosaic to open a pull request from this issue."
+    : "Comment `@mosaic fix this`, `@mosaic implement this`, or `@mosaic open PR` to ask Mosaic to open a draft pull request from this issue.";
 }
