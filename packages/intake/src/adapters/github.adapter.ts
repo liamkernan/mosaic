@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { ValidationError, type FeedbackSource } from "@feedbackbot/core";
+import { ValidationError, type FeedbackSource } from "@mosaic/core";
 
 import { normalize } from "../normalizer.js";
 import { enqueueFeedback } from "../queue.js";

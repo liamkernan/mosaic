@@ -1,4 +1,4 @@
-import type { ClassifiedFeedback } from "@feedbackbot/core";
+import type { ClassifiedFeedback } from "@mosaic/core";
 
 import type { RepoRuntimeConfig } from "./repo-config.js";
 import { getModerateIssueMode, type ModerateIssueMode } from "./staged-issues.js";

@@ -1,15 +1,15 @@
 import { Buffer } from "node:buffer";
 
-import { type ClassifiedFeedback } from "@feedbackbot/core";
+import { type ClassifiedFeedback } from "@mosaic/core";
 
-export const STAGED_ISSUE_LABEL = "feedbackbot:staged";
-export const STAGED_ISSUE_PROMOTED_LABEL = "feedbackbot:pr-opened";
-export const MODERATE_SAFE_LABEL = "feedbackbot:moderate-safe";
-export const MODERATE_REVIEW_NEEDED_LABEL = "feedbackbot:moderate-review-needed";
+export const STAGED_ISSUE_LABEL = "mosaic:staged";
+export const STAGED_ISSUE_PROMOTED_LABEL = "mosaic:pr-opened";
+export const MODERATE_SAFE_LABEL = "mosaic:moderate-safe";
+export const MODERATE_REVIEW_NEEDED_LABEL = "mosaic:moderate-review-needed";
 
-const STAGED_ISSUE_METADATA_PREFIX = "feedbackbot:staged-issue";
+const STAGED_ISSUE_METADATA_PREFIX = "mosaic:staged-issue";
 const fixThisCommandPattern =
-  /^\s*(?:@feedbackbot[\s,:-]*)?(?:please\s+)?(?:fix this|implement this|open (?:a )?(?:pr|pull request)|create (?:a )?(?:pr|pull request)|make (?:a )?(?:pr|pull request)|raise (?:a )?(?:pr|pull request))(?:\s+(?:please|now|for me))?\s*[.!?]*\s*$/i;
+  /^\s*(?:@mosaic[\s,:-]*)?(?:please\s+)?(?:fix this|implement this|open (?:a )?(?:pr|pull request)|create (?:a )?(?:pr|pull request)|make (?:a )?(?:pr|pull request)|raise (?:a )?(?:pr|pull request))(?:\s+(?:please|now|for me))?\s*[.!?]*\s*$/i;
 const safeModeratePattern =
   /\b(typo|copy|text|label|headline|button text|cta|link|spacing|padding|margin|alignment|css|color|placeholder|helper text|empty state)\b/i;
 
@@ -97,6 +97,6 @@ export function getIssueModeLabel(issueMode: ModerateIssueMode): string {
 
 export function getPromotionDescription(issueMode: ModerateIssueMode): string {
   return issueMode === "moderate-safe"
-    ? "Comment `fix this`, `implement this`, or `open PR` to ask FeedbackBot to open a pull request from this issue."
-    : "Comment `fix this`, `implement this`, or `open PR` to ask FeedbackBot to open a draft pull request from this issue.";
+    ? "Comment `fix this`, `implement this`, or `open PR` to ask Mosaic to open a pull request from this issue."
+    : "Comment `fix this`, `implement this`, or `open PR` to ask Mosaic to open a draft pull request from this issue.";
 }

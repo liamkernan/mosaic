@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 
-import { logger } from "@feedbackbot/core";
+import { logger } from "@mosaic/core";
 
 export * from "./adapters/discord.adapter.js";
 export * from "./adapters/email.adapter.js";

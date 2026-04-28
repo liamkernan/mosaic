@@ -5,13 +5,13 @@ import { complexitySchema, feedbackCategorySchema, feedbackSourceSchema } from "
 import { z } from "zod";
 import YAML from "yaml";
 
-export const feedbackbotConfigSchema = z.object({
+export const mosaicConfigSchema = z.object({
   version: z.literal(1).default(1),
   intake: z.array(feedbackSourceSchema).default(["web_form", "email", "github_issue"]),
   rules: z.object({
     max_complexity: complexitySchema.default("simple"),
     allowed_categories: z.array(feedbackCategorySchema).default(["bug_report", "copy_change", "ui_tweak"]),
-    branch_prefix: z.string().min(1).default("feedbackbot/"),
+    branch_prefix: z.string().min(1).default("mosaic/"),
     reviewers: z.array(z.string().min(1)).default([])
   }).default({}),
   llm: z.object({
@@ -24,10 +24,10 @@ export const feedbackbotConfigSchema = z.object({
   }).default({})
 });
 
-export type FeedbackbotConfig = z.infer<typeof feedbackbotConfigSchema>;
+export type MosaicConfig = z.infer<typeof mosaicConfigSchema>;
 
-export async function loadFeedbackbotConfig(repoRoot: string): Promise<FeedbackbotConfig> {
-  const configPath = join(repoRoot, "feedbackbot.config.yml");
+export async function loadMosaicConfig(repoRoot: string): Promise<MosaicConfig> {
+  const configPath = join(repoRoot, "mosaic.config.yml");
   const contents = await readFile(configPath, "utf8");
-  return feedbackbotConfigSchema.parse(YAML.parse(contents));
+  return mosaicConfigSchema.parse(YAML.parse(contents));
 }

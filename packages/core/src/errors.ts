@@ -1,44 +1,44 @@
-export class FeedbackBotError extends Error {
+export class MosaicError extends Error {
   readonly code: string;
 
-  constructor(message: string, code = "FEEDBACKBOT_ERROR", options?: ErrorOptions) {
+  constructor(message: string, code = "MOSAIC_ERROR", options?: ErrorOptions) {
     super(message, options);
     this.name = this.constructor.name;
     this.code = code;
   }
 }
 
-export class ConfigError extends FeedbackBotError {
+export class ConfigError extends MosaicError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, "CONFIG_ERROR", options);
   }
 }
 
-export class ValidationError extends FeedbackBotError {
+export class ValidationError extends MosaicError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, "VALIDATION_ERROR", options);
   }
 }
 
-export class AbuseDetectedError extends FeedbackBotError {
+export class AbuseDetectedError extends MosaicError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, "ABUSE_DETECTED", options);
   }
 }
 
-export class LLMError extends FeedbackBotError {
+export class LLMError extends MosaicError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, "LLM_ERROR", options);
   }
 }
 
-export class RateLimitError extends FeedbackBotError {
+export class RateLimitError extends MosaicError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, "RATE_LIMIT_ERROR", options);
   }
 }
 
-export class ExternalServiceError extends FeedbackBotError {
+export class ExternalServiceError extends MosaicError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, "EXTERNAL_SERVICE_ERROR", options);
   }

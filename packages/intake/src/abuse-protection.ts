@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { AbuseDetectedError, type FeedbackItem } from "@feedbackbot/core";
+import { AbuseDetectedError, type FeedbackItem } from "@mosaic/core";
 import type { Redis } from "ioredis";
 
 const MAX_SUBMISSIONS_PER_SENDER_PER_HOUR = 10;

@@ -1,4 +1,4 @@
-import { getEnv, RateLimitError, type FeedbackItem, logger } from "@feedbackbot/core";
+import { getEnv, RateLimitError, type FeedbackItem, logger } from "@mosaic/core";
 import { Queue } from "bullmq";
 import { Redis } from "ioredis";
 

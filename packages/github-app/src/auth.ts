@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import { assertRequiredEnv, getEnv } from "@feedbackbot/core";
+import { assertRequiredEnv, getEnv } from "@mosaic/core";
 import { Probot } from "probot";
 
 type InstallationOctokit = Awaited<ReturnType<Probot["auth"]>>;

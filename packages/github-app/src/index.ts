@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 
-import { getEnv, logger } from "@feedbackbot/core";
+import { getEnv, logger } from "@mosaic/core";
 import { run } from "probot";
 
 import app from "./app.js";

@@ -1,5 +1,5 @@
 import sanitizeHtml from "sanitize-html";
-import { ValidationError, repoFullNamePattern, type FeedbackItem, type FeedbackSource } from "@feedbackbot/core";
+import { ValidationError, repoFullNamePattern, type FeedbackItem, type FeedbackSource } from "@mosaic/core";
 import { ulid } from "ulid";
 
 interface BaseAdapterOutput {

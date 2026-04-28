@@ -1,4 +1,4 @@
-import type { ClassifiedFeedback } from "@feedbackbot/core";
+import type { ClassifiedFeedback } from "@mosaic/core";
 
 export type ModelTier = "haiku" | "sonnet";
 

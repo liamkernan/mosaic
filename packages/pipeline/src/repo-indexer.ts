@@ -1,8 +1,8 @@
 import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { getEnv, logger, type ClassifiedFeedback, type FileNode, type RelevantFile, type RepoContext } from "@feedbackbot/core";
-import { getInstallationToken, getOctokit, resolveInstallationId } from "@feedbackbot/github-app";
+import { getEnv, logger, type ClassifiedFeedback, type FileNode, type RelevantFile, type RepoContext } from "@mosaic/core";
+import { getInstallationToken, getOctokit, resolveInstallationId } from "@mosaic/github-app";
 import { simpleGit } from "simple-git";
 
 const ignoredNames = new Set(["node_modules", ".git", "dist", "build", "__pycache__", ".next", "vendor"]);

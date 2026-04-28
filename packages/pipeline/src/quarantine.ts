@@ -1,4 +1,4 @@
-import { getEnv, logger, type ClassifiedFeedback } from "@feedbackbot/core";
+import { getEnv, logger, type ClassifiedFeedback } from "@mosaic/core";
 import { Redis } from "ioredis";
 
 export interface QuarantinedFeedbackRecord {

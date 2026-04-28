@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 
-import { logger } from "@feedbackbot/core";
+import { logger } from "@mosaic/core";
 
 import { FeedbackPipelineWorker } from "./worker.js";
 

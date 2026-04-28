@@ -1,4 +1,4 @@
-import { LLMError } from "@feedbackbot/core";
+import { LLMError } from "@mosaic/core";
 
 interface GeneratedChangeResponse {
   filePath: string;

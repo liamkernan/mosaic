@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { getEnv, logger } from "@feedbackbot/core";
+import { getEnv, logger } from "@mosaic/core";
 import { ImapFlow } from "imapflow";
 
 import { normalize } from "../normalizer.js";

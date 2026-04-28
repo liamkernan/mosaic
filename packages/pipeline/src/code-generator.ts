@@ -1,5 +1,5 @@
-import { LLMError, type ClassifiedFeedback, type GeneratedChange, type RelevantFile } from "@feedbackbot/core";
-import type { LLMClient } from "@feedbackbot/llm";
+import { LLMError, type ClassifiedFeedback, type GeneratedChange, type RelevantFile } from "@mosaic/core";
+import type { LLMClient } from "@mosaic/llm";
 
 import { parseGeneratedChanges } from "./generated-change-parser.js";
 import { buildGenerationPrompt } from "./prompts/generate.prompt.js";

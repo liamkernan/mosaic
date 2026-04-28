@@ -1,4 +1,4 @@
-import { getEnv, logger } from "@feedbackbot/core";
+import { getEnv, logger } from "@mosaic/core";
 import type { Context, Probot } from "probot";
 
 const GITHUB_FORWARD_URL = `http://127.0.0.1:${getEnv().PORT}/webhook/github`;
@@ -10,7 +10,7 @@ async function repoAllowsGithubIntake(context: Context<"issues.opened" | "issue_
     const file = await context.octokit.rest.repos.getContent({
       owner,
       repo,
-      path: "feedbackbot.config.yml"
+      path: "mosaic.config.yml"
     });
 
     if (!("content" in file.data)) {
@@ -39,7 +39,7 @@ async function forwardWebhookPayload(payload: unknown): Promise<void> {
 }
 
 function bodyContainsTrigger(context: Context<"issues.opened" | "issue_comment.created">): boolean {
-  const triggerPhrase = getEnv().FEEDBACKBOT_TRIGGER_PHRASE;
+  const triggerPhrase = getEnv().MOSAIC_TRIGGER_PHRASE;
   const payload = context.payload;
   const body = "comment" in payload ? payload.comment.body : payload.issue.body;
   return typeof body === "string" && body.includes(triggerPhrase);

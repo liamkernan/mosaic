@@ -1,4 +1,4 @@
-import { getEnv, RateLimitError } from "@feedbackbot/core";
+import { getEnv, RateLimitError } from "@mosaic/core";
 import { Redis } from "ioredis";
 
 let redisClient: Redis | undefined;

@@ -9,7 +9,7 @@ rules:
     - bug_report
     - copy_change
     - ui_tweak
-  branch_prefix: "feedbackbot/"
+  branch_prefix: "mosaic/"
   reviewers:
     - "repo-owner-username"
 llm:

@@ -1,4 +1,4 @@
-import { getEnv, logger } from "@feedbackbot/core";
+import { getEnv, logger } from "@mosaic/core";
 import { Redis } from "ioredis";
 
 export interface TokenUsageEvent {

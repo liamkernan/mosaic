@@ -1,4 +1,4 @@
-import type { FeedbackItem } from "@feedbackbot/core";
+import type { FeedbackItem } from "@mosaic/core";
 
 export const MAX_LLM_REQUEUE_ATTEMPTS = 3;
 

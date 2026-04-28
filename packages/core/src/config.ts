@@ -43,12 +43,12 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   GITHUB_APP_PORT: z.coerce.number().int().positive().default(3001),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
-  REPO_CACHE_DIR: z.string().min(1).default("~/.feedbackbot/repos"),
+  REPO_CACHE_DIR: z.string().min(1).default("~/.mosaic/repos"),
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(3),
   LLM_CALLS_PER_HOUR: z.coerce.number().int().positive().default(50),
   PRS_PER_HOUR: z.coerce.number().int().positive().default(10),
   FEEDBACK_ITEMS_PER_HOUR: z.coerce.number().int().positive().default(100),
-  FEEDBACKBOT_TRIGGER_PHRASE: z.string().min(1).default("@feedbackbot")
+  MOSAIC_TRIGGER_PHRASE: z.string().min(1).default("@mosaic")
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

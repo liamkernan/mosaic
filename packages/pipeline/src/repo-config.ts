@@ -7,7 +7,7 @@ import {
   feedbackSourceSchema,
   type FeedbackCategory,
   type RepoConfig
-} from "@feedbackbot/core";
+} from "@mosaic/core";
 import { z } from "zod";
 import YAML from "yaml";
 
@@ -23,7 +23,7 @@ const repoConfigFileSchema = z.object({
   rules: z.object({
     max_complexity: complexitySchema.default("simple"),
     allowed_categories: z.array(feedbackCategorySchema).default(["bug_report", "copy_change", "ui_tweak"]),
-    branch_prefix: z.string().min(1).default("feedbackbot/"),
+    branch_prefix: z.string().min(1).default("mosaic/"),
     reviewers: z.array(z.string().min(1)).optional()
   }).default({}),
   llm: z.object({
@@ -43,7 +43,7 @@ export const defaultRuntimeConfig: Omit<RepoRuntimeConfig, "repoFullName"> = {
   allowedCategories: ["bug_report", "copy_change", "ui_tweak"],
   maxComplexity: "simple",
   llmKeyMode: "platform",
-  branchPrefix: "feedbackbot/",
+  branchPrefix: "mosaic/",
   reviewers: [],
   security: {
     max_files_changed: 5,
@@ -53,7 +53,7 @@ export const defaultRuntimeConfig: Omit<RepoRuntimeConfig, "repoFullName"> = {
 };
 
 export async function loadRepoRuntimeConfig(repoRoot: string, repoFullName: string): Promise<RepoRuntimeConfig> {
-  const configPath = join(repoRoot, "feedbackbot.config.yml");
+  const configPath = join(repoRoot, "mosaic.config.yml");
 
   try {
     await access(configPath);
@@ -73,7 +73,7 @@ export async function loadRepoRuntimeConfig(repoRoot: string, repoFullName: stri
     allowedCategories: parsed.rules.allowed_categories as FeedbackCategory[],
     maxComplexity: parsed.rules.max_complexity,
     llmKeyMode: parsed.llm.mode,
-    llmApiKey: parsed.llm.mode === "byok" ? process.env.FEEDBACKBOT_LLM_KEY : undefined,
+    llmApiKey: parsed.llm.mode === "byok" ? process.env.MOSAIC_LLM_KEY : undefined,
     reviewers: parsed.rules.reviewers ?? [],
     branchPrefix: parsed.rules.branch_prefix,
     security: parsed.security

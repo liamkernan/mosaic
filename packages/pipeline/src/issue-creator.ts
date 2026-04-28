@@ -1,5 +1,5 @@
-import { type ClassifiedFeedback, type RepoContext } from "@feedbackbot/core";
-import { getOctokit } from "@feedbackbot/github-app";
+import { type ClassifiedFeedback, type RepoContext } from "@mosaic/core";
+import { getOctokit } from "@mosaic/github-app";
 
 import {
   buildStagedIssueMetadata,
@@ -23,7 +23,7 @@ export class IssueCreator {
   ): Promise<number> {
     const octokit = await getOctokit(repoContext.installationId);
     const [owner, repo] = classifiedFeedback.repoFullName.split("/");
-    const labels = ["feedbackbot", "needs-human", classifiedFeedback.category];
+    const labels = ["mosaic", "needs-human", classifiedFeedback.category];
     const promotionSection = options.issueMode
       ? `### Promotion Path
 This issue is classified as **${options.issueMode}**.
@@ -56,7 +56,7 @@ ${options.reason}
 
 ${promotionSection}
 ---
-*Triaged by [FeedbackBot](https://github.com/YOUR_USERNAME/feedbackbot).*
+*Triaged by [Mosaic](https://github.com/YOUR_USERNAME/mosaic).*
 ${stagedMetadata}`.trim(),
       labels
     });

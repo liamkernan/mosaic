@@ -1,4 +1,4 @@
-import type { ClassifiedFeedback, GeneratedChange } from "@feedbackbot/core";
+import type { ClassifiedFeedback, GeneratedChange } from "@mosaic/core";
 
 export function buildSummaryPrompt(feedback: ClassifiedFeedback, changes: GeneratedChange[]): string {
   return `Summarize the following automated code changes for a pull request description.

@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { AbuseDetectedError, getEnv, logger, RateLimitError, ValidationError } from "@feedbackbot/core";
+import { AbuseDetectedError, getEnv, logger, RateLimitError, ValidationError } from "@mosaic/core";
 
 import { handleDiscordWebhook } from "./adapters/discord.adapter.js";
 import { EmailListener } from "./adapters/email.adapter.js";

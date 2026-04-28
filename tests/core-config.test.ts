@@ -8,11 +8,11 @@ describe("core config helpers", () => {
   });
 
   it("expands home-prefixed paths", () => {
-    expect(expandHome("~/feedbackbot")).toContain("feedbackbot");
+    expect(expandHome("~/mosaic")).toContain("mosaic");
   });
 
   it("validates owner/repo names", () => {
-    expect(repoFullNamePattern.test("openai/feedbackbot")).toBe(true);
+    expect(repoFullNamePattern.test("openai/mosaic")).toBe(true);
     expect(repoFullNamePattern.test("not a repo")).toBe(false);
   });
 });

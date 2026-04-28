@@ -1,7 +1,7 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 
-import { type GeneratedChange, type RepoContext } from "@feedbackbot/core";
+import { type GeneratedChange, type RepoContext } from "@mosaic/core";
 import ts from "typescript";
 
 export interface ValidationResult {

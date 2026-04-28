@@ -1,6 +1,6 @@
-import { getEnv, LLMError, logger, RateLimitError, type ClassifiedFeedback, type FeedbackItem } from "@feedbackbot/core";
-import { getOctokit } from "@feedbackbot/github-app";
-import { ANTHROPIC_MODEL_IDS, LLMClient } from "@feedbackbot/llm";
+import { getEnv, LLMError, logger, RateLimitError, type ClassifiedFeedback, type FeedbackItem } from "@mosaic/core";
+import { getOctokit } from "@mosaic/github-app";
+import { ANTHROPIC_MODEL_IDS, LLMClient } from "@mosaic/llm";
 import { Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
 
@@ -105,7 +105,7 @@ export class FeedbackPipelineWorker {
         classifiedFeedback.repoFullName,
         repoContext.installationId,
         stagedIssueNumber,
-        `FeedbackBot could not promote this issue to a PR.\n\n${reason}`
+        `Mosaic could not promote this issue to a PR.\n\n${reason}`
       );
       return {
         artifactType: "issue",
@@ -208,8 +208,8 @@ export class FeedbackPipelineWorker {
         repoContext.installationId,
         options.stagedIssueNumber,
         options.issueMode === "moderate-review-needed"
-          ? `FeedbackBot opened a draft PR for this issue: ${prUrl}`
-          : `FeedbackBot opened a PR for this issue: ${prUrl}`
+          ? `Mosaic opened a draft PR for this issue: ${prUrl}`
+          : `Mosaic opened a PR for this issue: ${prUrl}`
       );
     }
 
@@ -266,7 +266,7 @@ export class FeedbackPipelineWorker {
         feedbackItem.repoFullName,
         repoContext.installationId,
         issueNumber,
-        "FeedbackBot already opened a PR for this issue."
+        "Mosaic already opened a PR for this issue."
       );
       return { handled: true, artifactType: "issue", artifactValue: String(issueNumber) };
     }
@@ -281,7 +281,7 @@ export class FeedbackPipelineWorker {
         feedbackItem.repoFullName,
         repoContext.installationId,
         issueNumber,
-        "FeedbackBot ignored this promotion request because it must come from the issue author or a repo collaborator with triage access or higher."
+        "Mosaic ignored this promotion request because it must come from the issue author or a repo collaborator with triage access or higher."
       );
       return { handled: true, artifactType: "issue", artifactValue: String(issueNumber) };
     }

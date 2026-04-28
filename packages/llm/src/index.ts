@@ -1,4 +1,4 @@
-import { logger } from "@feedbackbot/core";
+import { logger } from "@mosaic/core";
 
 export * from "./anthropic.js";
 export * from "./client.js";

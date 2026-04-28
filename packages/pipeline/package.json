@@ -1,5 +1,5 @@
 {
-  "name": "@feedbackbot/pipeline",
+  "name": "@mosaic/pipeline",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,9 +17,9 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@feedbackbot/core": "workspace:*",
-    "@feedbackbot/github-app": "workspace:*",
-    "@feedbackbot/llm": "workspace:*",
+    "@mosaic/core": "workspace:*",
+    "@mosaic/github-app": "workspace:*",
+    "@mosaic/llm": "workspace:*",
     "bullmq": "^5.47.0",
     "ioredis": "^5.6.1",
     "simple-git": "^3.27.0",

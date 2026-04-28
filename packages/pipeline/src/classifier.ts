@@ -3,8 +3,8 @@ import {
   type FeedbackCategory,
   type FeedbackItem,
   type ComplexityLevel
-} from "@feedbackbot/core";
-import type { LLMClient } from "@feedbackbot/llm";
+} from "@mosaic/core";
+import type { LLMClient } from "@mosaic/llm";
 
 import { buildClassificationPrompt } from "./prompts/classify.prompt.js";
 

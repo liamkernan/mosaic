@@ -68,7 +68,7 @@ importers:
 
   packages/github-app:
     dependencies:
-      '@feedbackbot/core':
+      '@mosaic/core':
         specifier: workspace:*
         version: link:../core
       probot:
@@ -80,7 +80,7 @@ importers:
       '@fastify/cors':
         specifier: ^11.0.1
         version: 11.2.0
-      '@feedbackbot/core':
+      '@mosaic/core':
         specifier: workspace:*
         version: link:../core
       bullmq:
@@ -104,7 +104,7 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.39.0
         version: 0.39.0
-      '@feedbackbot/core':
+      '@mosaic/core':
         specifier: workspace:*
         version: link:../core
       ioredis:
@@ -113,13 +113,13 @@ importers:
 
   packages/pipeline:
     dependencies:
-      '@feedbackbot/core':
+      '@mosaic/core':
         specifier: workspace:*
         version: link:../core
-      '@feedbackbot/github-app':
+      '@mosaic/github-app':
         specifier: workspace:*
         version: link:../github-app
-      '@feedbackbot/llm':
+      '@mosaic/llm':
         specifier: workspace:*
         version: link:../llm
       bullmq:

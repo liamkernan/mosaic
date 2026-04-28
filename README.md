@@ -4,11 +4,11 @@ Mosaic is a TypeScript repo for turning user feedback into either an automated p
 
 ## Packages
 
-- `@feedbackbot/core`: shared types, configuration, logging, and typed errors.
-- `@feedbackbot/llm`: Anthropic-backed completion client, token tracking, and rate limiting.
-- `@feedbackbot/intake`: Fastify intake server, adapters, normalization, and BullMQ enqueueing.
-- `@feedbackbot/pipeline`: classifier, repo indexing, code generation, validation, issue creation, and PR creation.
-- `@feedbackbot/github-app`: Probot wrapper and GitHub App authentication helpers.
+- `@mosaic/core`: shared types, configuration, logging, and typed errors.
+- `@mosaic/llm`: Anthropic-backed completion client, token tracking, and rate limiting.
+- `@mosaic/intake`: Fastify intake server, adapters, normalization, and BullMQ enqueueing.
+- `@mosaic/pipeline`: classifier, repo indexing, code generation, validation, issue creation, and PR creation.
+- `@mosaic/github-app`: Probot wrapper and GitHub App authentication helpers.
 
 ## Quick Start
 
