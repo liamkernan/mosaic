@@ -1,12 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   buildStagedIssueMetadata,
   buildStagedIssueMetadataComment,
+  getPromotionDescription,
   getModerateIssueMode,
   isFixThisCommand,
   parseStagedIssueMetadata
 } from "../packages/pipeline/src/staged-issues.js";
+import { resetEnvForTests } from "../packages/core/src/config.js";
 
 const baseFeedback = {
   id: "01TEST",
@@ -24,6 +26,12 @@ const baseFeedback = {
 };
 
 describe("staged issues", () => {
+  beforeEach(() => {
+    process.env.MOSAIC_TRIGGER_PHRASE = "";
+    process.env.FEEDBACKBOT_TRIGGER_PHRASE = "@feedbackbot";
+    resetEnvForTests();
+  });
+
   it("encodes and decodes staged issue metadata", () => {
     const metadata = buildStagedIssueMetadata(baseFeedback, "moderate-safe");
     const comment = buildStagedIssueMetadataComment(metadata);
@@ -62,5 +70,10 @@ describe("staged issues", () => {
         relevantFiles: ["src/a.ts", "src/b.ts", "src/c.ts"]
       })
     ).toBe("moderate-review-needed");
+  });
+
+  it("uses the configured trigger phrase in promotion instructions", () => {
+    expect(getPromotionDescription("moderate-safe")).toContain("`@feedbackbot fix this`");
+    expect(getPromotionDescription("moderate-review-needed")).toContain("`@feedbackbot open PR`");
   });
 });

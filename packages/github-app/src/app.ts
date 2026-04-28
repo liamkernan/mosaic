@@ -49,7 +49,7 @@ export function bodyContainsTrigger(context: Context<"issues.opened" | "issue_co
   const triggerPhrase = getEnv().MOSAIC_TRIGGER_PHRASE ?? "@mosaic";
   const payload = context.payload;
   const body = "comment" in payload ? payload.comment.body : payload.issue.body;
-  return typeof body === "string" && body.includes(triggerPhrase);
+  return typeof body === "string" && body.toLowerCase().includes(triggerPhrase.toLowerCase());
 }
 
 export default function app(appInstance: Probot): void {

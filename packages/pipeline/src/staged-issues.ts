@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { type ClassifiedFeedback } from "@mosaic/core";
+import { getEnv, type ClassifiedFeedback } from "@mosaic/core";
 
 export const STAGED_ISSUE_LABEL = "mosaic:staged";
 export const STAGED_ISSUE_PROMOTED_LABEL = "mosaic:pr-opened";
@@ -100,7 +100,9 @@ export function getIssueModeLabel(issueMode: ModerateIssueMode): string {
 }
 
 export function getPromotionDescription(issueMode: ModerateIssueMode): string {
+  const trigger = getEnv().MOSAIC_TRIGGER_PHRASE;
+
   return issueMode === "moderate-safe"
-    ? "Comment `@mosaic fix this`, `@mosaic implement this`, or `@mosaic open PR` to ask Mosaic to open a pull request from this issue."
-    : "Comment `@mosaic fix this`, `@mosaic implement this`, or `@mosaic open PR` to ask Mosaic to open a draft pull request from this issue.";
+    ? `Comment \`${trigger} fix this\`, \`${trigger} implement this\`, or \`${trigger} open PR\` to ask Mosaic to open a pull request from this issue.`
+    : `Comment \`${trigger} fix this\`, \`${trigger} implement this\`, or \`${trigger} open PR\` to ask Mosaic to open a draft pull request from this issue.`;
 }
