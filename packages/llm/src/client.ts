@@ -58,15 +58,16 @@ export class LLMClient {
           await enforceRepoRateLimit(this.usageContext.repoFullName);
         }
 
-        const response = await this.client.messages.create({
-          model,
-          system: systemPrompt,
-          max_tokens: options.maxTokens ?? 4096,
-          temperature: options.temperature ?? 0.2,
-          messages: [{ role: "user", content: userMessage }]
-        }, {
-          timeout: options.timeoutMs
-        });
+        const response = await this.client.messages.create(
+          {
+            model,
+            system: systemPrompt,
+            max_tokens: options.maxTokens ?? 4096,
+            temperature: options.temperature ?? 0.2,
+            messages: [{ role: "user", content: userMessage }]
+          },
+          options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : undefined
+        );
 
         const text = response.content
           .filter((item): item is Anthropic.TextBlock => item.type === "text")
