@@ -34,7 +34,11 @@ describe("staged issues", () => {
   it("detects explicit fix-this promotion commands", () => {
     expect(isFixThisCommand("fix this")).toBe(true);
     expect(isFixThisCommand("@feedbackbot fix this")).toBe(true);
+    expect(isFixThisCommand("please implement this")).toBe(true);
+    expect(isFixThisCommand("open a pull request")).toBe(true);
+    expect(isFixThisCommand("@feedbackbot make a PR")).toBe(true);
     expect(isFixThisCommand("can you fix this later?")).toBe(false);
+    expect(isFixThisCommand("we should open a PR later")).toBe(false);
   });
 
   it("classifies only narrow moderate issues as safe", () => {
