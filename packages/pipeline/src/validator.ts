@@ -11,9 +11,11 @@ export interface ValidationResult {
 
 export interface ValidationLimits {
   maxLinesAdded?: number;
+  maxChangedLines?: number;
+  blockPatterns?: string[];
 }
 
-const unsafePatterns = ["eval(", "Function(", "child_process", "exec(", "execSync"];
+const defaultUnsafePatterns = ["eval(", "Function(", "child_process", "exec(", "execSync"];
 const urlPattern = /\bhttps?:\/\/[^\s"'`]+/g;
 const ipPattern = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
 const modalTokenPattern = /\b(?:modal|overlay|dialog)(?:-[a-z0-9]+)+\b/gi;
@@ -21,16 +23,30 @@ const modalTokenPattern = /\b(?:modal|overlay|dialog)(?:-[a-z0-9]+)+\b/gi;
 function countChangedLines(original: string, modified: string): number {
   const originalLines = original.split("\n");
   const modifiedLines = modified.split("\n");
-  const maxLength = Math.max(originalLines.length, modifiedLines.length);
-  let changed = 0;
-
-  for (let index = 0; index < maxLength; index += 1) {
-    if (originalLines[index] !== modifiedLines[index]) {
-      changed += 1;
-    }
+  if (originalLines.length === 0) {
+    return modifiedLines.length;
   }
 
-  return changed;
+  if (modifiedLines.length === 0) {
+    return originalLines.length;
+  }
+
+  let previous = new Array<number>(modifiedLines.length + 1).fill(0);
+
+  for (const originalLine of originalLines) {
+    const current = new Array<number>(modifiedLines.length + 1).fill(0);
+
+    for (let index = 0; index < modifiedLines.length; index += 1) {
+      current[index + 1] = originalLine === modifiedLines[index]
+        ? previous[index] + 1
+        : Math.max(current[index], previous[index + 1]);
+    }
+
+    previous = current;
+  }
+
+  const commonLines = previous[modifiedLines.length];
+  return (originalLines.length - commonLines) + (modifiedLines.length - commonLines);
 }
 
 function countAddedLines(original: string, modified: string): number {
@@ -139,6 +155,8 @@ export async function validate(
 ): Promise<ValidationResult> {
   const errors: string[] = [];
   let totalLinesAdded = 0;
+  const maxChangedLines = limits.maxChangedLines ?? 500;
+  const blockedPatterns = limits.blockPatterns ?? defaultUnsafePatterns;
 
   for (const change of changes) {
     const absolutePath = join(repoContext.localPath, change.filePath);
@@ -155,7 +173,7 @@ export async function validate(
     if (changedLines === 0) {
       continue;
     }
-    if (changedLines > 500) {
+    if (changedLines > maxChangedLines) {
       errors.push(`Change for ${change.filePath} is too large (${changedLines} changed lines)`);
     }
 
@@ -166,7 +184,7 @@ export async function validate(
 
     totalLinesAdded += countAddedLines(change.originalContent, change.modifiedContent);
 
-    const addedUnsafePatterns = unsafePatterns.filter(
+    const addedUnsafePatterns = blockedPatterns.filter(
       (pattern) => change.modifiedContent.includes(pattern) && !change.originalContent.includes(pattern)
     );
     if (addedUnsafePatterns.length > 0) {

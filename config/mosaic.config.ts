@@ -20,6 +20,7 @@ export const mosaicConfigSchema = z.object({
   security: z.object({
     max_files_changed: z.number().int().positive().default(5),
     max_lines_added: z.number().int().positive().default(200),
+    max_changed_lines: z.number().int().positive().default(500),
     block_patterns: z.array(z.string()).default(["eval(", "child_process"])
   }).default({})
 });

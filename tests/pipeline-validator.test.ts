@@ -58,6 +58,87 @@ describe("validate", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("accepts stylesheet insertions that shift existing lines", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    const originalContent = Array.from({ length: 830 }, (_, index) => `.item-${index} { color: black; }`).join("\n");
+    const insertedStyles = Array.from({ length: 24 }, (_, index) => `.modal-content-${index} { display: block; }`).join("\n");
+    const modifiedContent = `${insertedStyles}\n${originalContent}`;
+    await writeFile(join(localPath, "styles.css"), originalContent, "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "styles.css",
+          originalContent,
+          modifiedContent,
+          explanation: "add modal styles"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [{ path: "styles.css", type: "file" }],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it("still rejects broad rewrites", async () => {
+    const originalContent = Array.from({ length: 300 }, (_, index) => `.item-${index} { color: black; }`).join("\n");
+    const modifiedContent = Array.from({ length: 300 }, (_, index) => `.replacement-${index} { color: white; }`).join("\n");
+
+    const result = await validate(
+      [
+        {
+          filePath: "styles.css",
+          originalContent,
+          modifiedContent,
+          explanation: "rewrite styles"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath: process.cwd(),
+        fileTree: [],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("is too large");
+  });
+
+  it("uses configured block patterns", async () => {
+    const result = await validate(
+      [
+        {
+          filePath: "src/index.ts",
+          originalContent: "export const safeValue = 1;\n",
+          modifiedContent: "export const safeValue = 1;\ndangerousCall();\n",
+          explanation: "custom unsafe"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath: process.cwd(),
+        fileTree: [],
+        installationId: 1
+      },
+      {
+        blockPatterns: ["dangerousCall("]
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("dangerousCall(");
+  });
+
   it("rejects modal UI changes that do not add matching styles", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
     tempDirs.push(localPath);

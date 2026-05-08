@@ -180,7 +180,9 @@ export class FeedbackPipelineWorker {
     }
 
     let validation = await validate(changes, repoContext, {
-      maxLinesAdded: repoConfig.security.max_lines_added
+      maxLinesAdded: repoConfig.security.max_lines_added,
+      maxChangedLines: repoConfig.security.max_changed_lines,
+      blockPatterns: repoConfig.security.block_patterns
     });
 
     if (!validation.valid) {
@@ -195,7 +197,9 @@ export class FeedbackPipelineWorker {
 
         if (repairedChanges.length > 0 && repairedChanges.length <= repoConfig.security.max_files_changed) {
           const repairedValidation = await validate(repairedChanges, repoContext, {
-            maxLinesAdded: repoConfig.security.max_lines_added
+            maxLinesAdded: repoConfig.security.max_lines_added,
+            maxChangedLines: repoConfig.security.max_changed_lines,
+            blockPatterns: repoConfig.security.block_patterns
           });
 
           if (repairedValidation.valid) {
