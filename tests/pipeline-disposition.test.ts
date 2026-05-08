@@ -63,7 +63,7 @@ describe("feedback disposition", () => {
     expect(result.issueMode).toBe("moderate-review-needed");
   });
 
-  it("quarantines complex feedback", () => {
+  it("routes complex feedback to issues", () => {
     const result = decideFeedbackDisposition(
       {
         ...baseFeedback,
@@ -75,7 +75,8 @@ describe("feedback disposition", () => {
       }
     );
 
-    expect(result.disposition).toBe("quarantine");
+    expect(result.disposition).toBe("issue");
+    expect(result.reason).toBe("This feedback exceeds the repo's configured auto-PR complexity threshold.");
   });
 
   it("routes low-confidence simple feedback to issues", () => {

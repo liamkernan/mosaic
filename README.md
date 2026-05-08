@@ -44,8 +44,9 @@ Example JSON body:
 
 - Generated code is always validated before any PR is created.
 - Unsafe additions like `eval(`, `child_process`, new external URLs, or new `process.env` usage are rejected.
-- `trivial` and `simple` feedback can become PRs, `moderate` feedback becomes staged GitHub issues, and `complex` feedback is quarantined for manual triage.
+- `trivial` and `simple` feedback can become PRs, while `moderate` and `complex` feedback become GitHub issues instead of PRs.
 - Staged moderate issues can be promoted with a `fix this` issue comment. Narrow `moderate-safe` issues open a PR, while the default `moderate-review-needed` path opens a draft PR.
+- Quarantine is reserved for suspicious input, policy-unsafe generated changes, or cases the automation cannot safely process.
 - Abuse protection rejects duplicate submissions, sender floods, prompt-injection patterns, and obvious spam before queueing.
 
 ## Scripts

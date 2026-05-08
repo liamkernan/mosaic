@@ -22,13 +22,6 @@ export function decideFeedbackDisposition(
   classifiedFeedback: ClassifiedFeedback,
   repoConfig: RepoRuntimeConfig
 ): DispositionDecision {
-  if (classifiedFeedback.complexity === "complex") {
-    return {
-      disposition: "quarantine",
-      reason: "Complex feedback is quarantined for manual triage instead of creating a GitHub artifact automatically."
-    };
-  }
-
   if (classifiedFeedback.complexity === "moderate") {
     const issueMode = getModerateIssueMode(classifiedFeedback);
     return {
