@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildClassificationPrompt } from "../packages/pipeline/src/prompts/classify.prompt.js";
 import { buildGenerationPrompt } from "../packages/pipeline/src/prompts/generate.prompt.js";
+import { buildValidationRepairPrompt } from "../packages/pipeline/src/prompts/repair-generate.prompt.js";
 
 describe("pipeline prompts", () => {
   it("includes feedback and file tree in the classification prompt", () => {
@@ -26,5 +27,19 @@ describe("pipeline prompts", () => {
 
     expect(prompt).toContain("also update the matching stylesheet or script");
     expect(prompt).toContain("matching CSS selectors");
+  });
+
+  it("includes validation errors in the validation repair prompt", () => {
+    const prompt = buildValidationRepairPrompt(
+      "Add article modals",
+      [{ path: "index.html", content: "<main></main>" }],
+      [{ filePath: "index.html", modifiedContent: "<div class=\"modal-content\"></div>", explanation: "Add modal" }],
+      ["Change for index.html adds modal UI hooks but does not update styles.css"],
+      ["index.html", "styles.css"]
+    );
+
+    expect(prompt).toContain("VALIDATION ERRORS");
+    expect(prompt).toContain("modal-content");
+    expect(prompt).toContain("include matching CSS selectors");
   });
 });

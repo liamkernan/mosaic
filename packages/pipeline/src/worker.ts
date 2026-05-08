@@ -179,9 +179,39 @@ export class FeedbackPipelineWorker {
       );
     }
 
-    const validation = await validate(changes, repoContext, {
+    let validation = await validate(changes, repoContext, {
       maxLinesAdded: repoConfig.security.max_lines_added
     });
+
+    if (!validation.valid) {
+      try {
+        const repairedChanges = await codeGenerator.repairValidationFailure(
+          classifiedFeedback,
+          relevantFiles,
+          fileTree,
+          changes,
+          validation.errors
+        );
+
+        if (repairedChanges.length > 0 && repairedChanges.length <= repoConfig.security.max_files_changed) {
+          const repairedValidation = await validate(repairedChanges, repoContext, {
+            maxLinesAdded: repoConfig.security.max_lines_added
+          });
+
+          if (repairedValidation.valid) {
+            changes = repairedChanges;
+            validation = repairedValidation;
+          } else {
+            validation = repairedValidation;
+          }
+        }
+      } catch (error) {
+        if (!(error instanceof LLMError)) {
+          throw error;
+        }
+      }
+    }
+
     if (!validation.valid) {
       return this.handleImplementationFailure(
         classifiedFeedback,

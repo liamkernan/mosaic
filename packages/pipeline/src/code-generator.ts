@@ -3,7 +3,7 @@ import type { LLMClient } from "@mosaic/llm";
 
 import { parseGeneratedChanges } from "./generated-change-parser.js";
 import { buildGenerationPrompt } from "./prompts/generate.prompt.js";
-import { buildGenerationRepairPrompt } from "./prompts/repair-generate.prompt.js";
+import { buildGenerationRepairPrompt, buildValidationRepairPrompt } from "./prompts/repair-generate.prompt.js";
 
 const GENERATION_TIMEOUT_MS = 180_000;
 
@@ -15,6 +15,22 @@ function estimateGenerationMaxTokens(relevantFiles: RelevantFile[]): number {
 
 export class CodeGenerator {
   constructor(private readonly llmClient: LLMClient) {}
+
+  private toGeneratedChanges(
+    parsed: Array<{ filePath: string; modifiedContent: string; explanation: string }>,
+    relevantFiles: RelevantFile[]
+  ): GeneratedChange[] {
+    const originals = new Map(relevantFiles.map((file) => [file.path, file.content]));
+
+    return parsed
+      .map((change) => ({
+        filePath: change.filePath,
+        originalContent: originals.get(change.filePath) ?? "",
+        modifiedContent: change.modifiedContent,
+        explanation: change.explanation
+      }))
+      .filter((change) => change.originalContent !== change.modifiedContent);
+  }
 
   async generate(
     feedback: ClassifiedFeedback,
@@ -59,15 +75,32 @@ export class CodeGenerator {
       parsed = parseGeneratedChanges(repairedResponse);
     }
 
-    const originals = new Map(relevantFiles.map((file) => [file.path, file.content]));
+    return this.toGeneratedChanges(parsed, relevantFiles);
+  }
 
-    return parsed
-      .map((change) => ({
-        filePath: change.filePath,
-        originalContent: originals.get(change.filePath) ?? "",
-        modifiedContent: change.modifiedContent,
-        explanation: change.explanation
-      }))
-      .filter((change) => change.originalContent !== change.modifiedContent);
+  async repairValidationFailure(
+    feedback: ClassifiedFeedback,
+    relevantFiles: RelevantFile[],
+    fileTree: string[],
+    currentChanges: GeneratedChange[],
+    validationErrors: string[]
+  ): Promise<GeneratedChange[]> {
+    this.llmClient.setUsageContext({
+      repoFullName: feedback.repoFullName,
+      feedbackId: feedback.id
+    });
+
+    const maxTokens = estimateGenerationMaxTokens(relevantFiles);
+    const response = await this.llmClient.complete(
+      buildValidationRepairPrompt(feedback.summary, relevantFiles, currentChanges, validationErrors, fileTree),
+      "Return only the repaired <changes> payload with complete file contents in CDATA blocks.",
+      {
+        temperature: 0,
+        maxTokens,
+        timeoutMs: GENERATION_TIMEOUT_MS
+      }
+    );
+
+    return this.toGeneratedChanges(parseGeneratedChanges(response), relevantFiles);
   }
 }
