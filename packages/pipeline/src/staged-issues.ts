@@ -6,12 +6,13 @@ export const STAGED_ISSUE_LABEL = "mosaic:staged";
 export const STAGED_ISSUE_PROMOTED_LABEL = "mosaic:pr-opened";
 export const MODERATE_SAFE_LABEL = "mosaic:moderate-safe";
 export const MODERATE_REVIEW_NEEDED_LABEL = "mosaic:moderate-review-needed";
+export const COMPLEX_REVIEW_NEEDED_LABEL = "mosaic:complex-review-needed";
 
 const STAGED_ISSUE_METADATA_PREFIX = "mosaic:staged-issue";
 const safeModeratePattern =
   /\b(typo|copy|text|label|headline|button text|cta|link|spacing|padding|margin|alignment|css|color|placeholder|helper text|empty state)\b/i;
 
-export type ModerateIssueMode = "moderate-safe" | "moderate-review-needed";
+export type StagedIssueMode = "moderate-safe" | "moderate-review-needed" | "complex-review-needed";
 
 export interface StagedIssueMetadata {
   version: 1;
@@ -21,15 +22,15 @@ export interface StagedIssueMetadata {
   senderIdentifier: string;
   receivedAt: string;
   category: ClassifiedFeedback["category"];
-  complexity: "moderate";
+  complexity: ClassifiedFeedback["complexity"];
   summary: string;
   relevantFiles: string[];
   confidence: number;
   rawContent: string;
-  issueMode: ModerateIssueMode;
+  issueMode: StagedIssueMode;
 }
 
-export function getModerateIssueMode(classifiedFeedback: ClassifiedFeedback): ModerateIssueMode {
+export function getModerateIssueMode(classifiedFeedback: ClassifiedFeedback): StagedIssueMode {
   const combinedText = `${classifiedFeedback.summary}\n${classifiedFeedback.rawContent}`;
   const looksSafe =
     classifiedFeedback.category !== "feature_request" &&
@@ -43,7 +44,7 @@ export function getModerateIssueMode(classifiedFeedback: ClassifiedFeedback): Mo
   return looksSafe ? "moderate-safe" : "moderate-review-needed";
 }
 
-export function buildStagedIssueMetadata(classifiedFeedback: ClassifiedFeedback, issueMode: ModerateIssueMode): StagedIssueMetadata {
+export function buildStagedIssueMetadata(classifiedFeedback: ClassifiedFeedback, issueMode: StagedIssueMode): StagedIssueMetadata {
   const receivedAt = classifiedFeedback.receivedAt instanceof Date
     ? classifiedFeedback.receivedAt.toISOString()
     : new Date(classifiedFeedback.receivedAt).toISOString();
@@ -56,7 +57,7 @@ export function buildStagedIssueMetadata(classifiedFeedback: ClassifiedFeedback,
     senderIdentifier: classifiedFeedback.senderIdentifier,
     receivedAt,
     category: classifiedFeedback.category,
-    complexity: "moderate",
+    complexity: classifiedFeedback.complexity,
     summary: classifiedFeedback.summary,
     relevantFiles: classifiedFeedback.relevantFiles,
     confidence: classifiedFeedback.confidence,
@@ -79,7 +80,7 @@ export function parseStagedIssueMetadata(body: string): StagedIssueMetadata | nu
   try {
     const decoded = Buffer.from(match[1], "base64").toString("utf8");
     const parsed = JSON.parse(decoded) as StagedIssueMetadata;
-    if (parsed.version !== 1 || parsed.complexity !== "moderate") {
+    if (parsed.version !== 1 || !["moderate", "complex"].includes(parsed.complexity)) {
       return null;
     }
 
@@ -102,11 +103,15 @@ export function isFixThisCommand(input: string): boolean {
   return pattern.test(input);
 }
 
-export function getIssueModeLabel(issueMode: ModerateIssueMode): string {
-  return issueMode === "moderate-safe" ? MODERATE_SAFE_LABEL : MODERATE_REVIEW_NEEDED_LABEL;
+export function getIssueModeLabel(issueMode: StagedIssueMode): string {
+  if (issueMode === "moderate-safe") {
+    return MODERATE_SAFE_LABEL;
+  }
+
+  return issueMode === "complex-review-needed" ? COMPLEX_REVIEW_NEEDED_LABEL : MODERATE_REVIEW_NEEDED_LABEL;
 }
 
-export function getPromotionDescription(issueMode: ModerateIssueMode): string {
+export function getPromotionDescription(issueMode: StagedIssueMode): string {
   const trigger = getEnv().MOSAIC_TRIGGER_PHRASE ?? "@mosaic";
 
   return issueMode === "moderate-safe"

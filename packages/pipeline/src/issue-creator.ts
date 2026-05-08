@@ -7,12 +7,12 @@ import {
   getIssueModeLabel,
   getPromotionDescription,
   STAGED_ISSUE_LABEL,
-  type ModerateIssueMode
+  type StagedIssueMode
 } from "./staged-issues.js";
 
 interface IssueCreationOptions {
   reason: string;
-  issueMode?: ModerateIssueMode;
+  issueMode?: StagedIssueMode;
 }
 
 export class IssueCreator {

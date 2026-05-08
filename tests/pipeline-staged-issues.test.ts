@@ -39,6 +39,21 @@ describe("staged issues", () => {
     expect(parseStagedIssueMetadata(comment)).toEqual(metadata);
   });
 
+  it("encodes and decodes complex staged issue metadata", () => {
+    const metadata = buildStagedIssueMetadata(
+      {
+        ...baseFeedback,
+        category: "feature_request",
+        complexity: "complex",
+        summary: "Add full journal article pages"
+      },
+      "complex-review-needed"
+    );
+    const comment = buildStagedIssueMetadataComment(metadata);
+
+    expect(parseStagedIssueMetadata(comment)).toEqual(metadata);
+  });
+
   it("accepts serialized receivedAt values", () => {
     const metadata = buildStagedIssueMetadata(
       {
@@ -76,5 +91,6 @@ describe("staged issues", () => {
   it("uses the configured trigger phrase in promotion instructions", () => {
     expect(getPromotionDescription("moderate-safe")).toContain("`@feedbackbot fix this`");
     expect(getPromotionDescription("moderate-review-needed")).toContain("`@feedbackbot open PR`");
+    expect(getPromotionDescription("complex-review-needed")).toContain("draft pull request");
   });
 });

@@ -18,7 +18,7 @@ import {
   parseStagedIssueMetadata,
   STAGED_ISSUE_LABEL,
   STAGED_ISSUE_PROMOTED_LABEL,
-  type ModerateIssueMode
+  type StagedIssueMode
 } from "./staged-issues.js";
 import { selectGenerationModelTier, shouldEscalateClassification } from "./model-routing.js";
 import { buildLlmRetryFeedbackItem, canRetryLlmOverload, getLlmRetryDelayMs, isRetryableLlmOverload } from "./transient-llm.js";
@@ -135,7 +135,7 @@ export class FeedbackPipelineWorker {
     repoConfig: RepoRuntimeConfig,
     options: {
       stagedIssueNumber?: number;
-      issueMode?: ModerateIssueMode;
+      issueMode?: StagedIssueMode;
     } = {}
   ): Promise<{ artifactType: "issue" | "pr"; artifactValue: string }> {
     const relevantFiles = await this.repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
@@ -203,7 +203,7 @@ export class FeedbackPipelineWorker {
       repoContext,
       repoConfig,
       {
-        draft: options.issueMode === "moderate-review-needed",
+        draft: options.issueMode === "moderate-review-needed" || options.issueMode === "complex-review-needed",
         linkedIssueNumber: options.stagedIssueNumber
       }
     );
@@ -216,7 +216,7 @@ export class FeedbackPipelineWorker {
         classifiedFeedback.repoFullName,
         repoContext.installationId,
         options.stagedIssueNumber,
-        options.issueMode === "moderate-review-needed"
+        options.issueMode === "moderate-review-needed" || options.issueMode === "complex-review-needed"
           ? `Mosaic opened a draft PR for this issue: ${prUrl}`
           : `Mosaic opened a PR for this issue: ${prUrl}`
       );

@@ -1,7 +1,7 @@
 import type { ClassifiedFeedback } from "@mosaic/core";
 
 import type { RepoRuntimeConfig } from "./repo-config.js";
-import { getModerateIssueMode, type ModerateIssueMode } from "./staged-issues.js";
+import { getModerateIssueMode, type StagedIssueMode } from "./staged-issues.js";
 
 const complexityRanking = ["trivial", "simple", "moderate", "complex"] as const;
 
@@ -10,7 +10,7 @@ export type FeedbackDisposition = "pr" | "issue" | "quarantine";
 export interface DispositionDecision {
   disposition: FeedbackDisposition;
   reason: string;
-  issueMode?: ModerateIssueMode;
+  issueMode?: StagedIssueMode;
 }
 
 function exceedsComplexity(limit: string, current: string): boolean {
@@ -37,7 +37,8 @@ export function decideFeedbackDisposition(
   if (classifiedFeedback.confidence < 0.6) {
     return {
       disposition: "issue",
-      reason: "Classifier confidence was below the automation threshold."
+      reason: "Classifier confidence was below the automation threshold.",
+      issueMode: classifiedFeedback.complexity === "complex" ? "complex-review-needed" : undefined
     };
   }
 
@@ -51,7 +52,8 @@ export function decideFeedbackDisposition(
   if (exceedsComplexity(repoConfig.maxComplexity, classifiedFeedback.complexity)) {
     return {
       disposition: "issue",
-      reason: "This feedback exceeds the repo's configured auto-PR complexity threshold."
+      reason: "This feedback exceeds the repo's configured auto-PR complexity threshold.",
+      issueMode: classifiedFeedback.complexity === "complex" ? "complex-review-needed" : undefined
     };
   }
 

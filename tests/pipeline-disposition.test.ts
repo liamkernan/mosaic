@@ -77,6 +77,7 @@ describe("feedback disposition", () => {
 
     expect(result.disposition).toBe("issue");
     expect(result.reason).toBe("This feedback exceeds the repo's configured auto-PR complexity threshold.");
+    expect(result.issueMode).toBe("complex-review-needed");
   });
 
   it("routes low-confidence simple feedback to issues", () => {
