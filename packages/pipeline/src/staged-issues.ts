@@ -90,14 +90,18 @@ export function parseStagedIssueMetadata(body: string): StagedIssueMetadata | nu
   }
 }
 
+function getTriggerPhrases(): string[] {
+  return [...new Set([getEnv().MOSAIC_TRIGGER_PHRASE ?? "@mosaic", "@mosaic"])];
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function isFixThisCommand(input: string): boolean {
-  const trigger = escapeRegExp(getEnv().MOSAIC_TRIGGER_PHRASE ?? "@mosaic");
+  const trigger = getTriggerPhrases().map(escapeRegExp).join("|");
   const pattern = new RegExp(
-    `^\\s*${trigger}[\\s,:-]*(?:please\\s+)?(?:fix this|implement this|open (?:a )?(?:pr|pull request)|create (?:a )?(?:pr|pull request)|make (?:a )?(?:pr|pull request)|raise (?:a )?(?:pr|pull request))(?:\\s+(?:please|now|for me))?\\s*[.!?]*\\s*$`,
+    `^\\s*(?:${trigger})[\\s,:-]*(?:please\\s+)?(?:fix this|implement this|open (?:a )?(?:pr|pull request)|create (?:a )?(?:pr|pull request)|make (?:a )?(?:pr|pull request)|raise (?:a )?(?:pr|pull request))(?:\\s+(?:please|now|for me))?\\s*[.!?]*\\s*$`,
     "i"
   );
   return pattern.test(input);

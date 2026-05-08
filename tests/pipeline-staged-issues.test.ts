@@ -68,6 +68,7 @@ describe("staged issues", () => {
 
   it("detects explicit fix-this promotion commands", () => {
     expect(isFixThisCommand("fix this")).toBe(false);
+    expect(isFixThisCommand("@mosaic fix this")).toBe(true);
     expect(isFixThisCommand("@feedbackbot fix this")).toBe(true);
     expect(isFixThisCommand("@FeedbackBot fix this")).toBe(true);
     expect(isFixThisCommand("@feedbackbot please implement this")).toBe(true);

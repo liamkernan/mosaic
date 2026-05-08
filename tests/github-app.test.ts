@@ -22,6 +22,18 @@ describe("github app forwarding triggers", () => {
     expect(bodyContainsTrigger(context)).toBe(true);
   });
 
+  it("always matches the mosaic trigger alias", () => {
+    const context = {
+      payload: {
+        comment: {
+          body: "@mosaic fix this"
+        }
+      }
+    } as never;
+
+    expect(bodyContainsTrigger(context)).toBe(true);
+  });
+
   it("ignores promotion commands without the app mention", () => {
     const context = {
       payload: {

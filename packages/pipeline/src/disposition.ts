@@ -18,6 +18,10 @@ function exceedsComplexity(limit: string, current: string): boolean {
     complexityRanking.indexOf(limit as (typeof complexityRanking)[number]);
 }
 
+function getComplexIssueMode(classifiedFeedback: ClassifiedFeedback): StagedIssueMode | undefined {
+  return classifiedFeedback.complexity === "complex" ? "complex-review-needed" : undefined;
+}
+
 export function decideFeedbackDisposition(
   classifiedFeedback: ClassifiedFeedback,
   repoConfig: RepoRuntimeConfig
@@ -38,14 +42,15 @@ export function decideFeedbackDisposition(
     return {
       disposition: "issue",
       reason: "Classifier confidence was below the automation threshold.",
-      issueMode: classifiedFeedback.complexity === "complex" ? "complex-review-needed" : undefined
+      issueMode: getComplexIssueMode(classifiedFeedback)
     };
   }
 
   if (!repoConfig.allowedCategories.includes(classifiedFeedback.category)) {
     return {
       disposition: "issue",
-      reason: "This category is not allowed for direct auto-PRs in the repo configuration."
+      reason: "This category is not allowed for direct auto-PRs in the repo configuration.",
+      issueMode: getComplexIssueMode(classifiedFeedback)
     };
   }
 
@@ -53,7 +58,7 @@ export function decideFeedbackDisposition(
     return {
       disposition: "issue",
       reason: "This feedback exceeds the repo's configured auto-PR complexity threshold.",
-      issueMode: classifiedFeedback.complexity === "complex" ? "complex-review-needed" : undefined
+      issueMode: getComplexIssueMode(classifiedFeedback)
     };
   }
 

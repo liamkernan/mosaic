@@ -58,10 +58,11 @@ async function forwardWebhookPayload(payload: unknown): Promise<void> {
 }
 
 export function bodyContainsTrigger(context: Context<"issues.opened" | "issue_comment.created">): boolean {
-  const triggerPhrase = getEnv().MOSAIC_TRIGGER_PHRASE ?? "@mosaic";
+  const triggerPhrases = [...new Set([getEnv().MOSAIC_TRIGGER_PHRASE ?? "@mosaic", "@mosaic"])];
   const payload = context.payload;
   const body = "comment" in payload ? payload.comment.body : payload.issue.body;
-  return typeof body === "string" && body.toLowerCase().includes(triggerPhrase.toLowerCase());
+  return typeof body === "string" &&
+    triggerPhrases.some((triggerPhrase) => body.toLowerCase().includes(triggerPhrase.toLowerCase()));
 }
 
 export default function app(appInstance: Probot): void {

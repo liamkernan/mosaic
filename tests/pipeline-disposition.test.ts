@@ -80,6 +80,24 @@ describe("feedback disposition", () => {
     expect(result.issueMode).toBe("complex-review-needed");
   });
 
+  it("stages complex disallowed-category feedback for draft PR promotion", () => {
+    const result = decideFeedbackDisposition(
+      {
+        ...baseFeedback,
+        category: "feature_request",
+        complexity: "complex"
+      },
+      {
+        repoFullName: "owner/repo",
+        ...defaultRuntimeConfig
+      }
+    );
+
+    expect(result.disposition).toBe("issue");
+    expect(result.reason).toBe("This category is not allowed for direct auto-PRs in the repo configuration.");
+    expect(result.issueMode).toBe("complex-review-needed");
+  });
+
   it("routes low-confidence simple feedback to issues", () => {
     const result = decideFeedbackDisposition(
       {
