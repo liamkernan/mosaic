@@ -20,4 +20,11 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("Update header");
     expect(prompt).toContain("export const title = 'Old';");
   });
+
+  it("instructs generation to include styles for modal UI hooks", () => {
+    const prompt = buildGenerationPrompt("Add article modals", [], ["index.html", "styles.css"]);
+
+    expect(prompt).toContain("also update the matching stylesheet or script");
+    expect(prompt).toContain("matching CSS selectors");
+  });
 });

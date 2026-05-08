@@ -15,6 +15,8 @@ INSTRUCTIONS:
 - Implement the requested change with minimal modifications.
 - Preserve the existing code style, indentation, and conventions EXACTLY.
 - Only modify files that need to change. Do not refactor unrelated code.
+- If you add or change UI classes, ids, modal/dialog/overlay markup, or interactive HTML hooks, also update the matching stylesheet or script in the same response so the UI is complete.
+- Do not introduce modal, dialog, or overlay classes such as modal-content unless the response also includes matching CSS selectors for every new modal/dialog/overlay class.
 - If the request is ambiguous, choose the most conservative interpretation.
 - Do NOT add comments like '// Added by Mosaic' or '// Changed'.
 - Return ONLY the response format below. No markdown fences. No prose before or after.
