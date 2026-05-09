@@ -11,6 +11,7 @@ import { FeedbackClassifier } from "./classifier.js";
 import { ArtifactStore } from "./artifact-store.js";
 import { CodeGenerator } from "./code-generator.js";
 import { decideFeedbackDisposition } from "./disposition.js";
+import { ImplementationPlanner, type ImplementationPlan } from "./implementation-planner.js";
 import { IssueCreator } from "./issue-creator.js";
 import { PRCreator } from "./pr-creator.js";
 import { QuarantineStore } from "./quarantine.js";
@@ -91,6 +92,20 @@ function buildModalStyleFallback(tokens: string[]): string {
       return `.${token} {\n  display: block;\n}`;
     })
     .join("\n\n");
+}
+
+function shouldUseImplementationPlanning(issueMode: StagedIssueMode | undefined): boolean {
+  return issueMode === "moderate-review-needed" || issueMode === "complex-review-needed";
+}
+
+function mergeRelevantFiles(existingFiles: Array<{ path: string; content: string; reason: string }>, plannedFiles: Array<{ path: string; content: string; reason: string }>) {
+  const merged = new Map(existingFiles.map((file) => [file.path, file]));
+
+  for (const file of plannedFiles) {
+    merged.set(file.path, file);
+  }
+
+  return [...merged.values()];
 }
 
 export class FeedbackPipelineWorker {
@@ -260,16 +275,28 @@ export class FeedbackPipelineWorker {
       issueMode?: StagedIssueMode;
     } = {}
   ): Promise<{ artifactType: "issue" | "pr"; artifactValue: string }> {
-    const relevantFiles = await this.repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
+    let relevantFiles = await this.repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
     const fileTree = this.repoIndexer.fileTreeToPaths(repoContext);
     const generationModel = selectGenerationModelTier(classifiedFeedback) === "sonnet"
       ? ANTHROPIC_MODEL_IDS.sonnet
       : ANTHROPIC_MODEL_IDS.haiku;
     const codeGenerator = new CodeGenerator(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, generationModel));
+    let implementationPlan: ImplementationPlan | undefined;
+
+    if (shouldUseImplementationPlanning(options.issueMode)) {
+      const planner = new ImplementationPlanner(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.sonnet));
+      implementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
+      const loadedPaths = new Set(relevantFiles.map((file) => file.path));
+      const plannedFiles = await this.repoIndexer.readFiles(
+        repoContext,
+        implementationPlan.requiredFiles.filter((file) => !loadedPaths.has(file.path))
+      );
+      relevantFiles = mergeRelevantFiles(relevantFiles, plannedFiles);
+    }
 
     let changes;
     try {
-      changes = await codeGenerator.generate(classifiedFeedback, relevantFiles, fileTree);
+      changes = await codeGenerator.generate(classifiedFeedback, relevantFiles, fileTree, implementationPlan);
     } catch (error) {
       if (error instanceof LLMError) {
         return this.handleImplementationFailure(

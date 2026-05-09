@@ -9,6 +9,7 @@ export * from "./code-generator.js";
 export * from "./artifact-store.js";
 export * from "./disposition.js";
 export * from "./generated-change-parser.js";
+export * from "./implementation-planner.js";
 export * from "./issue-creator.js";
 export * from "./model-routing.js";
 export * from "./pr-creator.js";
@@ -21,6 +22,7 @@ export * from "./validator.js";
 export * from "./worker.js";
 export * from "./prompts/classify.prompt.js";
 export * from "./prompts/generate.prompt.js";
+export * from "./prompts/implementation-plan.prompt.js";
 export * from "./prompts/repair-generate.prompt.js";
 export * from "./prompts/summarize.prompt.js";
 

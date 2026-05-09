@@ -157,6 +157,32 @@ export class RepoIndexer {
     return files;
   }
 
+  async readFiles(context: RepoContext, requestedFiles: Array<{ path: string; reason: string }>): Promise<RelevantFile[]> {
+    const files: RelevantFile[] = [];
+
+    for (const requestedFile of requestedFiles) {
+      const absolutePath = join(context.localPath, requestedFile.path);
+
+      try {
+        const fileStat = await stat(absolutePath);
+        let content = await readFile(absolutePath, "utf8");
+        if (fileStat.size > 100 * 1024) {
+          content = truncateLargeFile(content);
+        }
+
+        files.push({
+          path: requestedFile.path,
+          content,
+          reason: requestedFile.reason
+        });
+      } catch {
+        logger.warn({ repo: context.fullName, filePath: requestedFile.path }, "Implementation plan requested a file that does not exist");
+      }
+    }
+
+    return files;
+  }
+
   fileTreeToPaths(context: RepoContext): string[] {
     return flattenFileTree(context.fileTree);
   }

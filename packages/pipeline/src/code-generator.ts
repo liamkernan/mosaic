@@ -4,6 +4,7 @@ import type { LLMClient } from "@mosaic/llm";
 import { parseGeneratedChanges } from "./generated-change-parser.js";
 import { buildGenerationPrompt } from "./prompts/generate.prompt.js";
 import { buildGenerationRepairPrompt, buildValidationRepairPrompt } from "./prompts/repair-generate.prompt.js";
+import type { ImplementationPlan } from "./implementation-planner.js";
 
 const GENERATION_TIMEOUT_MS = 180_000;
 
@@ -35,7 +36,8 @@ export class CodeGenerator {
   async generate(
     feedback: ClassifiedFeedback,
     relevantFiles: RelevantFile[],
-    fileTree: string[]
+    fileTree: string[],
+    implementationPlan?: ImplementationPlan
   ): Promise<GeneratedChange[]> {
     this.llmClient.setUsageContext({
       repoFullName: feedback.repoFullName,
@@ -45,7 +47,7 @@ export class CodeGenerator {
     const maxTokens = estimateGenerationMaxTokens(relevantFiles);
 
     const response = await this.llmClient.complete(
-      buildGenerationPrompt(feedback.summary, relevantFiles, fileTree),
+      buildGenerationPrompt(feedback.summary, relevantFiles, fileTree, implementationPlan),
       "Return only the <changes> payload with complete file contents in CDATA blocks.",
       {
         temperature: 0.3,

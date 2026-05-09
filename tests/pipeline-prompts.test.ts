@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildClassificationPrompt } from "../packages/pipeline/src/prompts/classify.prompt.js";
 import { buildGenerationPrompt } from "../packages/pipeline/src/prompts/generate.prompt.js";
+import { buildImplementationPlanPrompt } from "../packages/pipeline/src/prompts/implementation-plan.prompt.js";
 import { buildValidationRepairPrompt } from "../packages/pipeline/src/prompts/repair-generate.prompt.js";
 
 describe("pipeline prompts", () => {
@@ -41,5 +42,47 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("VALIDATION ERRORS");
     expect(prompt).toContain("modal-content");
     expect(prompt).toContain("include matching CSS selectors");
+  });
+
+  it("asks implementation planning to include behavior surfaces", () => {
+    const prompt = buildImplementationPlanPrompt(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Make the journal cards open full articles",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "feature_request",
+        complexity: "complex",
+        summary: "Make journal cards open full articles",
+        relevantFiles: ["index.html"],
+        confidence: 0.9
+      },
+      [{ path: "index.html", content: "<button></button>", reason: "classifier" }],
+      ["index.html", "styles.css", "script.js"]
+    );
+
+    expect(prompt).toContain("scripts/state files");
+    expect(prompt).toContain("clickable UI");
+    expect(prompt).toContain("implementationChecklist");
+  });
+
+  it("includes implementation plan checklists in generation prompt", () => {
+    const prompt = buildGenerationPrompt(
+      "Make journal cards open full articles",
+      [{ path: "index.html", content: "<button></button>", reason: "classifier" }],
+      ["index.html", "script.js"],
+      {
+        requiredFiles: [{ path: "script.js", reason: "wire click handlers" }],
+        implementationChecklist: ["Journal cards open and populate full article content."],
+        verificationChecklist: ["Click each journal card and confirm modal content changes."]
+      }
+    );
+
+    expect(prompt).toContain("IMPLEMENTATION PLAN");
+    expect(prompt).toContain("Journal cards open and populate full article content.");
+    expect(prompt).toContain("satisfy every completion checklist item");
   });
 });
