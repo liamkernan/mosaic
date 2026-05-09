@@ -23,8 +23,18 @@ function buildBranchName(category: string, summary: string, feedbackId: string, 
   return `${prefix}${suffix}-${feedbackId.slice(0, 6)}`;
 }
 
-function truncateTitle(summary: string): string {
-  return `[Mosaic] ${summary}`.slice(0, 72);
+function truncateAtWordBoundary(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  const truncated = value.slice(0, maxLength - 1);
+  const boundary = truncated.lastIndexOf(" ");
+  return `${truncated.slice(0, boundary > 40 ? boundary : truncated.length).trimEnd()}…`;
+}
+
+function buildPrTitle(summary: string): string {
+  return truncateAtWordBoundary(`[Mosaic] ${summary}`, 120);
 }
 
 function createPrBody(payload: PRPayload, options: PRCreationOptions): string {
@@ -131,7 +141,7 @@ export class PRCreator {
     const commit = await octokit.rest.git.createCommit({
       owner,
       repo,
-      message: truncateTitle(payload.feedbackItem.summary),
+      message: buildPrTitle(payload.feedbackItem.summary),
       tree: tree.data.sha,
       parents: [refResponse.data.object.sha]
     });
@@ -167,12 +177,12 @@ export class PRCreator {
     const pr = await octokit.rest.pulls.create({
       owner,
       repo,
-      title: truncateTitle(payload.feedbackItem.summary),
+      title: buildPrTitle(payload.feedbackItem.summary),
       body: createPrBody(
         {
           ...payload,
           branchName,
-          title: truncateTitle(payload.feedbackItem.summary)
+          title: buildPrTitle(payload.feedbackItem.summary)
         },
         options
       ),

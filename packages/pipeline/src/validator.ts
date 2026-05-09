@@ -18,7 +18,7 @@ export interface ValidationLimits {
 const defaultUnsafePatterns = ["eval(", "Function(", "child_process", "exec(", "execSync"];
 const urlPattern = /\bhttps?:\/\/[^\s"'`]+/g;
 const ipPattern = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
-const modalTokenPattern = /\b(?:modal|overlay|dialog)(?:-[a-z0-9]+)+\b/gi;
+const modalTokenPattern = /\b[a-z0-9-]*(?:modal|overlay|dialog)(?:-[a-z0-9]+)*\b/gi;
 
 function countChangedLines(original: string, modified: string): number {
   const originalLines = original.split("\n");
@@ -148,6 +148,44 @@ async function validateModalStyling(changes: GeneratedChange[], repoContext: Rep
   }
 }
 
+async function validateModalBehavior(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
+  const changedPaths = collectChangedPaths(changes);
+  const scriptPath = findRepoFile(repoContext, "script.js");
+  if (!scriptPath) {
+    return;
+  }
+
+  const scriptChange = changes.find((change) => change.filePath === scriptPath);
+  const effectiveScript = scriptChange
+    ? scriptChange.modifiedContent
+    : await readFile(join(repoContext.localPath, scriptPath), "utf8").catch(() => "");
+
+  for (const change of changes) {
+    if (!/\.(?:html?|[cm]?jsx?|tsx?)$/i.test(change.filePath)) {
+      continue;
+    }
+
+    const newModalTokens = findNewModalTokens(change.originalContent, change.modifiedContent);
+    if (newModalTokens.length === 0) {
+      continue;
+    }
+
+    const missingTokens = newModalTokens.filter((token) => !effectiveScript.toLowerCase().includes(token));
+    if (missingTokens.length === 0) {
+      continue;
+    }
+
+    if (!changedPaths.has(scriptPath)) {
+      errors.push(
+        `Change for ${change.filePath} adds modal UI hooks (${missingTokens.join(", ")}) but does not update ${scriptPath} with matching behavior`
+      );
+      continue;
+    }
+
+    errors.push(`Change for ${change.filePath} adds modal UI hooks without matching behavior in ${scriptPath}: ${missingTokens.join(", ")}`);
+  }
+}
+
 export async function validate(
   changes: GeneratedChange[],
   repoContext: RepoContext,
@@ -212,6 +250,7 @@ export async function validate(
   }
 
   await validateModalStyling(changes, repoContext, errors);
+  await validateModalBehavior(changes, repoContext, errors);
 
   return {
     valid: errors.length === 0,
