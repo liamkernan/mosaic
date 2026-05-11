@@ -6,6 +6,9 @@ import { enqueueFeedback } from "../queue.js";
 
 interface GithubWebhookBody {
   action?: string;
+  sender?: {
+    login?: string;
+  };
   repository?: {
     full_name?: string;
   };
@@ -25,6 +28,16 @@ interface GithubWebhookBody {
     html_url?: string;
     id?: number;
   };
+}
+
+function isMosaicBotLogin(login: string | undefined): boolean {
+  return login === "mosaicfeedback[bot]" || login === "app/mosaicfeedback";
+}
+
+export function isMosaicAuthoredPayload(payload: GithubWebhookBody): boolean {
+  return isMosaicBotLogin(payload.sender?.login) ||
+    isMosaicBotLogin(payload.issue?.user?.login) ||
+    isMosaicBotLogin(payload.comment?.user?.login);
 }
 
 export function extractGithubFeedback(payload: GithubWebhookBody): {
@@ -72,6 +85,11 @@ export async function handleGithubWebhook(
   request: FastifyRequest<{ Body: GithubWebhookBody }>,
   reply: FastifyReply
 ): Promise<void> {
+  if (isMosaicAuthoredPayload(request.body)) {
+    reply.code(202).send({ accepted: false, ignored: true, reason: "mosaic-authored-event" });
+    return;
+  }
+
   const extracted = extractGithubFeedback(request.body);
   const feedback = normalize(extracted.normalizedInput, extracted.source);
   await enqueueFeedback(feedback);

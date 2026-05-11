@@ -57,6 +57,19 @@ async function forwardWebhookPayload(payload: unknown): Promise<void> {
   }
 }
 
+function isMosaicBotLogin(login: string | undefined): boolean {
+  return login === "mosaicfeedback[bot]" || login === "app/mosaicfeedback";
+}
+
+export function isMosaicAuthoredEvent(context: Context<"issues.opened" | "issue_comment.created">): boolean {
+  const payload = context.payload;
+  const senderLogin = payload.sender?.login;
+  const issueAuthorLogin = payload.issue.user?.login;
+  const commentAuthorLogin = "comment" in payload ? payload.comment.user?.login : undefined;
+
+  return isMosaicBotLogin(senderLogin) || isMosaicBotLogin(issueAuthorLogin) || isMosaicBotLogin(commentAuthorLogin);
+}
+
 export function bodyContainsTrigger(context: Context<"issues.opened" | "issue_comment.created">): boolean {
   const triggerPhrases = [...new Set([getEnv().MOSAIC_TRIGGER_PHRASE ?? "@mosaic", "@mosaic"])];
   const payload = context.payload;
@@ -71,6 +84,11 @@ export default function app(appInstance: Probot): void {
   });
 
   appInstance.on(["issues.opened", "issue_comment.created"], async (context) => {
+    if (isMosaicAuthoredEvent(context)) {
+      logger.info({ event: context.name, repo: context.payload.repository.full_name }, "Skipped Mosaic-authored GitHub event");
+      return;
+    }
+
     const shouldForward = bodyContainsTrigger(context) || (await repoAllowsGithubIntake(context));
     if (!shouldForward) {
       return;

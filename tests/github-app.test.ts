@@ -7,7 +7,7 @@ vi.mock("../packages/core/src/index.js", () => ({
   }
 }));
 
-import { bodyContainsTrigger } from "../packages/github-app/src/app.js";
+import { bodyContainsTrigger, isMosaicAuthoredEvent } from "../packages/github-app/src/app.js";
 
 describe("github app forwarding triggers", () => {
   it("matches the trigger phrase case-insensitively", () => {
@@ -44,5 +44,21 @@ describe("github app forwarding triggers", () => {
     } as never;
 
     expect(bodyContainsTrigger(context)).toBe(false);
+  });
+
+  it("detects Mosaic-authored issue events", () => {
+    const context = {
+      payload: {
+        sender: { login: "mosaicfeedback[bot]" },
+        issue: {
+          user: { login: "mosaicfeedback[bot]" }
+        },
+        repository: {
+          full_name: "owner/repo"
+        }
+      }
+    } as never;
+
+    expect(isMosaicAuthoredEvent(context)).toBe(true);
   });
 });
