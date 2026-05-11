@@ -35,9 +35,13 @@ function isMosaicBotLogin(login: string | undefined): boolean {
 }
 
 export function isMosaicAuthoredPayload(payload: GithubWebhookBody): boolean {
+  if (payload.comment) {
+    return isMosaicBotLogin(payload.sender?.login) ||
+      isMosaicBotLogin(payload.comment.user?.login);
+  }
+
   return isMosaicBotLogin(payload.sender?.login) ||
-    isMosaicBotLogin(payload.issue?.user?.login) ||
-    isMosaicBotLogin(payload.comment?.user?.login);
+    isMosaicBotLogin(payload.issue?.user?.login);
 }
 
 export function extractGithubFeedback(payload: GithubWebhookBody): {

@@ -65,7 +65,7 @@ function extractMissingModalTokens(validationErrors: string[]): string[] {
 
     for (const token of tokenList.split(",")) {
       const normalized = token.trim().toLowerCase();
-      if (/^(?:modal|overlay|dialog)(?:-[a-z0-9]+)+$/.test(normalized)) {
+      if (/(?:modal|overlay|dialog)/.test(normalized)) {
         tokens.add(normalized);
       }
     }

@@ -243,4 +243,51 @@ describe("validate", () => {
 
     expect(result.valid).toBe(true);
   });
+
+  it("accepts modal UI changes when related styles and behavior are added without every content token", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "index.html"), "<div>before</div>\n", "utf8");
+    await writeFile(join(localPath, "styles.css"), ".journal-card { display: block; }\n", "utf8");
+    await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<div>before</div>\n",
+          modifiedContent:
+            '<button data-article="shelf-styling">Open</button><div class="article-modal-overlay"><article class="article-modal"><button class="article-modal-close">Close</button><div class="article-modal-body"></div></article></div>\n',
+          explanation: "add article modal markup"
+        },
+        {
+          filePath: "styles.css",
+          originalContent: ".journal-card { display: block; }\n",
+          modifiedContent:
+            ".journal-card { display: block; }\n.article-modal-overlay { position: fixed; inset: 0; display: grid; }\n.article-modal { max-width: 720px; background: #fff; }\n.article-modal-close { display: inline-flex; }\n",
+          explanation: "style article modal"
+        },
+        {
+          filePath: "script.js",
+          originalContent: "console.log('ready');\n",
+          modifiedContent:
+            "const articleModalOverlay = document.querySelector('.article-modal-overlay');\ndocument.querySelectorAll('[data-article]').forEach((button) => button.addEventListener('click', () => articleModalOverlay.classList.add('is-open')));\n",
+          explanation: "wire article modal behavior"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [
+          { path: "index.html", type: "file" },
+          { path: "styles.css", type: "file" },
+          { path: "script.js", type: "file" }
+        ],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(true);
+  });
 });

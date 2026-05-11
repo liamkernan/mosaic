@@ -64,10 +64,13 @@ function isMosaicBotLogin(login: string | undefined): boolean {
 export function isMosaicAuthoredEvent(context: Context<"issues.opened" | "issue_comment.created">): boolean {
   const payload = context.payload;
   const senderLogin = payload.sender?.login;
-  const issueAuthorLogin = payload.issue.user?.login;
-  const commentAuthorLogin = "comment" in payload ? payload.comment.user?.login : undefined;
+  if ("comment" in payload) {
+    const commentAuthorLogin = payload.comment.user?.login;
+    return isMosaicBotLogin(senderLogin) || isMosaicBotLogin(commentAuthorLogin);
+  }
 
-  return isMosaicBotLogin(senderLogin) || isMosaicBotLogin(issueAuthorLogin) || isMosaicBotLogin(commentAuthorLogin);
+  const issueAuthorLogin = payload.issue.user?.login;
+  return isMosaicBotLogin(senderLogin) || isMosaicBotLogin(issueAuthorLogin);
 }
 
 export function bodyContainsTrigger(context: Context<"issues.opened" | "issue_comment.created">): boolean {

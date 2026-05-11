@@ -61,4 +61,24 @@ describe("github app forwarding triggers", () => {
 
     expect(isMosaicAuthoredEvent(context)).toBe(true);
   });
+
+  it("allows user comments on Mosaic-authored staged issues", () => {
+    const context = {
+      payload: {
+        sender: { login: "liamkernan" },
+        issue: {
+          user: { login: "mosaicfeedback[bot]" }
+        },
+        comment: {
+          user: { login: "liamkernan" },
+          body: "@mosaic fix this"
+        },
+        repository: {
+          full_name: "owner/repo"
+        }
+      }
+    } as never;
+
+    expect(isMosaicAuthoredEvent(context)).toBe(false);
+  });
 });

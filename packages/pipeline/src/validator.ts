@@ -85,6 +85,22 @@ function findNewModalTokens(original: string, modified: string): string[] {
     .filter((match) => !originalMatches.has(match));
 }
 
+function compactToken(token: string): string {
+  return token.replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+function hasModalBehavior(script: string): boolean {
+  const lowerScript = script.toLowerCase();
+  return /(?:addeventlistener|queryselector|getelementbyid|classlist|dataset|onclick|showmodal|close\()/i.test(script) &&
+    /(?:modal|overlay|dialog)/i.test(lowerScript);
+}
+
+function hasModalStyleCoverage(styles: string, tokens: string[]): boolean {
+  const lowerStyles = styles.toLowerCase();
+  const compactStyles = compactToken(styles);
+  return tokens.some((token) => lowerStyles.includes(token) || compactStyles.includes(compactToken(token)));
+}
+
 function collectChangedPaths(changes: GeneratedChange[]): Set<string> {
   return new Set(changes.map((change) => change.filePath));
 }
@@ -123,7 +139,7 @@ async function validateModalStyling(changes: GeneratedChange[], repoContext: Rep
     : await readFile(join(repoContext.localPath, stylePath), "utf8").catch(() => "");
 
   for (const change of changes) {
-    if (!/\.(?:html?|[cm]?[jt]sx?)$/i.test(change.filePath)) {
+    if (!/\.(?:html?|[cm]?[jt]sx)$/i.test(change.filePath)) {
       continue;
     }
 
@@ -132,7 +148,9 @@ async function validateModalStyling(changes: GeneratedChange[], repoContext: Rep
       continue;
     }
 
-    const missingTokens = newModalTokens.filter((token) => !effectiveStyles.toLowerCase().includes(token));
+    const missingTokens = hasModalStyleCoverage(effectiveStyles, newModalTokens)
+      ? []
+      : newModalTokens.filter((token) => !effectiveStyles.toLowerCase().includes(token));
     if (missingTokens.length === 0) {
       continue;
     }
@@ -161,7 +179,7 @@ async function validateModalBehavior(changes: GeneratedChange[], repoContext: Re
     : await readFile(join(repoContext.localPath, scriptPath), "utf8").catch(() => "");
 
   for (const change of changes) {
-    if (!/\.(?:html?|[cm]?jsx?|tsx?)$/i.test(change.filePath)) {
+    if (!/\.(?:html?|[cm]?[jt]sx)$/i.test(change.filePath)) {
       continue;
     }
 
@@ -170,7 +188,12 @@ async function validateModalBehavior(changes: GeneratedChange[], repoContext: Re
       continue;
     }
 
-    const missingTokens = newModalTokens.filter((token) => !effectiveScript.toLowerCase().includes(token));
+    if (hasModalBehavior(effectiveScript)) {
+      continue;
+    }
+
+    const compactScript = compactToken(effectiveScript);
+    const missingTokens = newModalTokens.filter((token) => !effectiveScript.toLowerCase().includes(token) && !compactScript.includes(compactToken(token)));
     if (missingTokens.length === 0) {
       continue;
     }
