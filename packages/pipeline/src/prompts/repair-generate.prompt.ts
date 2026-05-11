@@ -41,6 +41,8 @@ ${currentChanges.map((change) => `--- ${change.filePath} ---\n${change.modifiedC
 INSTRUCTIONS:
 - Return a corrected complete change set that satisfies every validation error.
 - Preserve useful parts of the current invalid changes when safe.
+- Replace click-only div/article/section/card containers with native buttons or links where possible; otherwise add role, tabindex, and keyboard handling.
+- Remove or wire any visible href="#" or javascript:void(0) links so every visible control performs the requested workflow.
 - If HTML adds modal/dialog/overlay classes or hooks, include matching CSS selectors in the stylesheet in the same response.
 - If JavaScript is needed for new interactive UI, include the matching script changes in the same response.
 - Return ONLY the response format below. No markdown fences. No prose before or after.

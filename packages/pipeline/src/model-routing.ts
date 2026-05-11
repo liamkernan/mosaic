@@ -36,6 +36,10 @@ export function shouldEscalateClassification(classifiedFeedback: ClassifiedFeedb
 }
 
 export function selectGenerationModelTier(classifiedFeedback: ClassifiedFeedback): ModelTier {
+  if (classifiedFeedback.complexity === "complex") {
+    return "sonnet";
+  }
+
   if (classifiedFeedback.complexity === "moderate") {
     return "sonnet";
   }

@@ -58,6 +58,88 @@ describe("validate", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("rejects newly added inert links", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>\n",
+          modifiedContent: '<main><a href="#" class="text-link">Read all articles</a></main>\n',
+          explanation: "add dead journal link"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [{ path: "index.html", type: "file" }],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("adds inert link");
+  });
+
+  it("rejects newly added click-only containers", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>\n",
+          modifiedContent:
+            '<main><article class="journal-card journal-card-clickable" data-article="shelf-layering">Guide</article></main>\n',
+          explanation: "make journal card clickable"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [{ path: "index.html", type: "file" }],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("non-interactive container");
+  });
+
+  it("accepts native interactive card controls", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>\n",
+          modifiedContent:
+            '<main><button class="journal-card journal-card-clickable" data-article="shelf-layering" type="button">Guide</button></main>\n',
+          explanation: "make journal card a button"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [{ path: "index.html", type: "file" }],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
   it("accepts stylesheet insertions that shift existing lines", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
     tempDirs.push(localPath);

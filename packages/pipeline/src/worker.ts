@@ -281,9 +281,10 @@ export class FeedbackPipelineWorker {
       ? ANTHROPIC_MODEL_IDS.sonnet
       : ANTHROPIC_MODEL_IDS.haiku;
     const codeGenerator = new CodeGenerator(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, generationModel));
+    const completeSolution = shouldUseImplementationPlanning(options.issueMode);
     let implementationPlan: ImplementationPlan | undefined;
 
-    if (shouldUseImplementationPlanning(options.issueMode)) {
+    if (completeSolution) {
       const planner = new ImplementationPlanner(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.sonnet));
       implementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
       const loadedPaths = new Set(relevantFiles.map((file) => file.path));
@@ -296,7 +297,9 @@ export class FeedbackPipelineWorker {
 
     let changes;
     try {
-      changes = await codeGenerator.generate(classifiedFeedback, relevantFiles, fileTree, implementationPlan);
+      changes = await codeGenerator.generate(classifiedFeedback, relevantFiles, fileTree, implementationPlan, {
+        completeSolution
+      });
     } catch (error) {
       if (error instanceof LLMError) {
         return this.handleImplementationFailure(
@@ -341,7 +344,10 @@ export class FeedbackPipelineWorker {
           relevantFiles,
           fileTree,
           changes,
-          validation.errors
+          validation.errors,
+          {
+            completeSolution
+          }
         );
 
         if (repairedChanges.length > 0 && repairedChanges.length <= repoConfig.security.max_files_changed) {

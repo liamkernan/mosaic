@@ -19,6 +19,8 @@ const defaultUnsafePatterns = ["eval(", "Function(", "child_process", "exec(", "
 const urlPattern = /\bhttps?:\/\/[^\s"'`]+/g;
 const ipPattern = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
 const modalTokenPattern = /\b[a-z0-9-]*(?:modal|overlay|dialog)(?:-[a-z0-9]+)*\b/gi;
+const inertAnchorPattern = /<a\b(?=[^>]*\bhref\s*=\s*["'](?:#|javascript:void\(0\);?|)["'])[^>]*>[\s\S]*?<\/a>/gi;
+const nonInteractiveClickableTagPattern = /<(div|article|section|li|span|figure)\b[^>]*(?:\bonclick\s*=|\bclass\s*=\s*["'][^"']*(?:clickable|interactive|card-link)[^"']*["'])[^>]*>/gi;
 
 function countChangedLines(original: string, modified: string): number {
   const originalLines = original.split("\n");
@@ -59,6 +61,30 @@ function countAddedLines(original: string, modified: string): number {
 function findAddedMatches(pattern: RegExp, original: string, modified: string): string[] {
   const originalMatches = new Set(original.match(pattern) ?? []);
   return [...new Set(modified.match(pattern) ?? [])].filter((match) => !originalMatches.has(match));
+}
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function summarizeHtml(html: string): string {
+  const text = stripHtml(html);
+  if (text.length === 0) {
+    return html.replace(/\s+/g, " ").slice(0, 80);
+  }
+
+  return text.length > 80 ? `${text.slice(0, 77)}...` : text;
+}
+
+function hasAccessibleNonNativeInteraction(tag: string): boolean {
+  return /\brole\s*=\s*["'](?:button|link)["']/i.test(tag) && /\btabindex\s*=\s*["']0["']/i.test(tag);
+}
+
+function findAddedNonInteractiveClickableTags(original: string, modified: string): string[] {
+  const originalMatches = new Set(original.match(nonInteractiveClickableTagPattern) ?? []);
+  return [...new Set(modified.match(nonInteractiveClickableTagPattern) ?? [])]
+    .filter((match) => !originalMatches.has(match))
+    .filter((match) => !hasAccessibleNonNativeInteraction(match));
 }
 
 function syntaxErrorsForFile(filePath: string, contents: string): string[] {
@@ -260,6 +286,22 @@ export async function validate(
     const newIps = findAddedMatches(ipPattern, change.originalContent, change.modifiedContent);
     if (newIps.length > 0) {
       errors.push(`New IP address(es) added to ${change.filePath}: ${newIps.join(", ")}`);
+    }
+
+    if (/\.(?:html?|[cm]?[jt]sx)$/i.test(change.filePath)) {
+      const inertAnchors = findAddedMatches(inertAnchorPattern, change.originalContent, change.modifiedContent);
+      if (inertAnchors.length > 0) {
+        errors.push(
+          `Change for ${change.filePath} adds inert link(s) that look clickable but do not navigate or complete a workflow: ${inertAnchors.map(summarizeHtml).join(", ")}`
+        );
+      }
+
+      const nonInteractiveClickableTags = findAddedNonInteractiveClickableTags(change.originalContent, change.modifiedContent);
+      if (nonInteractiveClickableTags.length > 0) {
+        errors.push(
+          `Change for ${change.filePath} makes non-interactive container(s) appear clickable; use native button/link elements or accessible role, tabindex, and keyboard behavior: ${nonInteractiveClickableTags.map((tag) => tag.replace(/\s+/g, " ").slice(0, 80)).join(", ")}`
+        );
+      }
     }
 
     if (change.modifiedContent.includes("process.env") && !change.originalContent.includes("process.env")) {

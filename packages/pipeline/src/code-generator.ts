@@ -8,10 +8,16 @@ import type { ImplementationPlan } from "./implementation-planner.js";
 
 const GENERATION_TIMEOUT_MS = 180_000;
 
-function estimateGenerationMaxTokens(relevantFiles: RelevantFile[]): number {
+interface GenerationOptions {
+  completeSolution?: boolean;
+}
+
+function estimateGenerationMaxTokens(relevantFiles: RelevantFile[], options: GenerationOptions = {}): number {
   const totalBytes = relevantFiles.reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
-  const estimatedTokens = Math.ceil(totalBytes / 3) + 2_048;
-  return Math.max(4_096, Math.min(16_384, estimatedTokens));
+  const estimatedTokens = Math.ceil(totalBytes / 3) + (options.completeSolution ? 8_192 : 2_048);
+  const floor = options.completeSolution ? 8_192 : 4_096;
+  const ceiling = options.completeSolution ? 32_768 : 16_384;
+  return Math.max(floor, Math.min(ceiling, estimatedTokens));
 }
 
 export class CodeGenerator {
@@ -37,17 +43,18 @@ export class CodeGenerator {
     feedback: ClassifiedFeedback,
     relevantFiles: RelevantFile[],
     fileTree: string[],
-    implementationPlan?: ImplementationPlan
+    implementationPlan?: ImplementationPlan,
+    options: GenerationOptions = {}
   ): Promise<GeneratedChange[]> {
     this.llmClient.setUsageContext({
       repoFullName: feedback.repoFullName,
       feedbackId: feedback.id
     });
 
-    const maxTokens = estimateGenerationMaxTokens(relevantFiles);
+    const maxTokens = estimateGenerationMaxTokens(relevantFiles, options);
 
     const response = await this.llmClient.complete(
-      buildGenerationPrompt(feedback.summary, relevantFiles, fileTree, implementationPlan),
+      buildGenerationPrompt(feedback.summary, relevantFiles, fileTree, implementationPlan, options),
       "Return only the <changes> payload with complete file contents in CDATA blocks.",
       {
         temperature: 0.3,
@@ -85,14 +92,15 @@ export class CodeGenerator {
     relevantFiles: RelevantFile[],
     fileTree: string[],
     currentChanges: GeneratedChange[],
-    validationErrors: string[]
+    validationErrors: string[],
+    options: GenerationOptions = {}
   ): Promise<GeneratedChange[]> {
     this.llmClient.setUsageContext({
       repoFullName: feedback.repoFullName,
       feedbackId: feedback.id
     });
 
-    const maxTokens = estimateGenerationMaxTokens(relevantFiles);
+    const maxTokens = estimateGenerationMaxTokens(relevantFiles, options);
     const response = await this.llmClient.complete(
       buildValidationRepairPrompt(feedback.summary, relevantFiles, currentChanges, validationErrors, fileTree),
       "Return only the repaired <changes> payload with complete file contents in CDATA blocks.",

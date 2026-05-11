@@ -28,6 +28,8 @@ describe("pipeline prompts", () => {
 
     expect(prompt).toContain("also update the matching stylesheet or script");
     expect(prompt).toContain("matching CSS selectors");
+    expect(prompt).toContain("use native <button> or <a>");
+    expect(prompt).toContain("href=\"#\"");
   });
 
   it("includes validation errors in the validation repair prompt", () => {
@@ -42,6 +44,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("VALIDATION ERRORS");
     expect(prompt).toContain("modal-content");
     expect(prompt).toContain("include matching CSS selectors");
+    expect(prompt).toContain("Replace click-only div/article/section/card containers");
   });
 
   it("asks implementation planning to include behavior surfaces", () => {
@@ -84,5 +87,22 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("IMPLEMENTATION PLAN");
     expect(prompt).toContain("Journal cards open and populate full article content.");
     expect(prompt).toContain("satisfy every completion checklist item");
+  });
+
+  it("raises completeness expectations for complex generation", () => {
+    const prompt = buildGenerationPrompt(
+      "Make journal cards open full articles",
+      [{ path: "index.html", content: "<button></button>", reason: "classifier" }],
+      ["index.html", "script.js"],
+      {
+        requiredFiles: [{ path: "script.js", reason: "wire click handlers" }],
+        implementationChecklist: ["Journal cards open and populate full article content."],
+        verificationChecklist: ["Click each journal card and confirm modal content changes."]
+      },
+      { completeSolution: true }
+    );
+
+    expect(prompt).toContain("complete, user-visible solution");
+    expect(prompt).toContain("Do not use placeholder article text");
   });
 });

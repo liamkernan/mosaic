@@ -51,6 +51,16 @@ describe("model routing", () => {
     ).toBe(true);
   });
 
+  it("routes complex feature work to sonnet", () => {
+    expect(
+      selectGenerationModelTier({
+        ...baseFeedback,
+        category: "feature_request",
+        complexity: "complex"
+      })
+    ).toBe("sonnet");
+  });
+
   it("escalates low-confidence classifications", () => {
     expect(
       shouldEscalateClassification({
