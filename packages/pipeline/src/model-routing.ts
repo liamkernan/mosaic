@@ -20,6 +20,10 @@ function isNonObviousBugReport(classifiedFeedback: ClassifiedFeedback): boolean 
 }
 
 export function shouldEscalateClassification(classifiedFeedback: ClassifiedFeedback): boolean {
+  if (classifiedFeedback.complexity === "complex") {
+    return true;
+  }
+
   if (classifiedFeedback.complexity === "moderate") {
     return true;
   }

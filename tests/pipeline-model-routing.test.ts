@@ -52,13 +52,33 @@ describe("model routing", () => {
   });
 
   it("routes complex feature work to sonnet", () => {
+    const complexFeedback = {
+      ...baseFeedback,
+      category: "feature_request",
+      complexity: "complex"
+    } as const;
+
+    expect(selectGenerationModelTier(complexFeedback)).toBe("sonnet");
+    expect(
+      shouldEscalateClassification(complexFeedback)
+    ).toBe(true);
+  });
+
+  it("routes moderate feature work to sonnet", () => {
+    const moderateFeedback = {
+      ...baseFeedback,
+      category: "feature_request",
+      complexity: "moderate"
+    } as const;
+
     expect(
       selectGenerationModelTier({
         ...baseFeedback,
         category: "feature_request",
-        complexity: "complex"
+        complexity: "moderate"
       })
     ).toBe("sonnet");
+    expect(shouldEscalateClassification(moderateFeedback)).toBe(true);
   });
 
   it("escalates low-confidence classifications", () => {
