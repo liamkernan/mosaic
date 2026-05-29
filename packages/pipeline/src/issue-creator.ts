@@ -7,7 +7,7 @@ import {
   getIssueModeLabel,
   getPromotionDescription,
   STAGED_ISSUE_LABEL,
-  type StagedIssueMode
+  type StagedIssueMode,
 } from "./staged-issues.js";
 
 interface IssueCreationOptions {
@@ -19,7 +19,7 @@ export class IssueCreator {
   async createIssue(
     classifiedFeedback: ClassifiedFeedback,
     repoContext: RepoContext,
-    options: IssueCreationOptions
+    options: IssueCreationOptions,
   ): Promise<number> {
     const octokit = await getOctokit(repoContext.installationId);
     const [owner, repo] = classifiedFeedback.repoFullName.split("/");
@@ -31,7 +31,9 @@ ${getPromotionDescription(options.issueMode)}
 `
       : "";
     const stagedMetadata = options.issueMode
-      ? buildStagedIssueMetadataComment(buildStagedIssueMetadata(classifiedFeedback, options.issueMode))
+      ? buildStagedIssueMetadataComment(
+          buildStagedIssueMetadata(classifiedFeedback, options.issueMode),
+        )
       : "";
 
     if (options.issueMode) {
@@ -56,9 +58,9 @@ ${options.reason}
 
 ${promotionSection}
 ---
-*Triaged by [Mosaic](https://github.com/YOUR_USERNAME/mosaic).*
+*Triaged by [Mosaic](https://github.com/liamkernan/mosaic).*
 ${stagedMetadata}`.trim(),
-      labels
+      labels,
     });
 
     return issue.data.number;
