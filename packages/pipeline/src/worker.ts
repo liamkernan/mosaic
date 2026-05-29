@@ -649,7 +649,10 @@ export class FeedbackPipelineWorker {
       },
       {
         connection: this.connection,
-        concurrency: getEnv().WORKER_CONCURRENCY
+        concurrency: getEnv().WORKER_CONCURRENCY,
+        lockDuration: getEnv().WORKER_LOCK_DURATION_MS,
+        stalledInterval: getEnv().WORKER_STALLED_INTERVAL_MS,
+        maxStalledCount: getEnv().WORKER_MAX_STALLED_COUNT
       }
     );
   }

@@ -26,4 +26,15 @@ describe("core config helpers", () => {
     delete process.env.MOSAIC_TRIGGER_PHRASE;
     resetEnvForTests();
   });
+
+  it("defaults worker stalled-job settings for long-running pipeline jobs", () => {
+    delete process.env.WORKER_LOCK_DURATION_MS;
+    delete process.env.WORKER_STALLED_INTERVAL_MS;
+    delete process.env.WORKER_MAX_STALLED_COUNT;
+    resetEnvForTests();
+
+    expect(getEnv().WORKER_LOCK_DURATION_MS).toBe(600_000);
+    expect(getEnv().WORKER_STALLED_INTERVAL_MS).toBe(120_000);
+    expect(getEnv().WORKER_MAX_STALLED_COUNT).toBe(3);
+  });
 });
