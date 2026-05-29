@@ -55,7 +55,7 @@ export const defaultRuntimeConfig: Omit<RepoRuntimeConfig, "repoFullName"> = {
 };
 
 async function resolveRepoConfigPath(repoRoot: string): Promise<string | null> {
-  const configCandidates = ["mosaic.config.yml", "feedbackbot.config.yml"];
+  const configCandidates = ["mosaic.config.yml"];
 
   for (const configFileName of configCandidates) {
     const configPath = join(repoRoot, configFileName);
@@ -88,7 +88,7 @@ export async function loadRepoRuntimeConfig(repoRoot: string, repoFullName: stri
     allowedCategories: parsed.rules.allowed_categories as FeedbackCategory[],
     maxComplexity: parsed.rules.max_complexity,
     llmKeyMode: parsed.llm.mode,
-    llmApiKey: parsed.llm.mode === "byok" ? (process.env.MOSAIC_LLM_KEY ?? process.env.FEEDBACKBOT_LLM_KEY) : undefined,
+    llmApiKey: parsed.llm.mode === "byok" ? process.env.MOSAIC_LLM_KEY : undefined,
     reviewers: parsed.rules.reviewers ?? [],
     branchPrefix: parsed.rules.branch_prefix,
     security: parsed.security

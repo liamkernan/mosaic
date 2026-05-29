@@ -5,7 +5,7 @@ const GITHUB_FORWARD_URL = `http://127.0.0.1:${getEnv().PORT}/webhook/github`;
 
 async function repoAllowsGithubIntake(context: Context<"issues.opened" | "issue_comment.created">): Promise<boolean> {
   const { owner, repo } = context.repo();
-  const configCandidates = ["mosaic.config.yml", "feedbackbot.config.yml"];
+  const configCandidates = ["mosaic.config.yml"];
 
   for (const configPath of configCandidates) {
     try {

@@ -8,7 +8,7 @@ import {
   isFixThisCommand,
   parseStagedIssueMetadata
 } from "../packages/pipeline/src/staged-issues.js";
-import { resetEnvForTests } from "../packages/core/src/config.js";
+import { resetEnvForTests } from "../packages/core/dist/index.js";
 
 const baseFeedback = {
   id: "01TEST",
@@ -27,8 +27,7 @@ const baseFeedback = {
 
 describe("staged issues", () => {
   beforeEach(() => {
-    process.env.MOSAIC_TRIGGER_PHRASE = "";
-    process.env.FEEDBACKBOT_TRIGGER_PHRASE = "@feedbackbot";
+    process.env.MOSAIC_TRIGGER_PHRASE = "@custombot";
     resetEnvForTests();
   });
 
@@ -69,11 +68,11 @@ describe("staged issues", () => {
   it("detects explicit fix-this promotion commands", () => {
     expect(isFixThisCommand("fix this")).toBe(false);
     expect(isFixThisCommand("@mosaic fix this")).toBe(true);
-    expect(isFixThisCommand("@feedbackbot fix this")).toBe(true);
-    expect(isFixThisCommand("@FeedbackBot fix this")).toBe(true);
-    expect(isFixThisCommand("@feedbackbot please implement this")).toBe(true);
-    expect(isFixThisCommand("@feedbackbot open a pull request")).toBe(true);
-    expect(isFixThisCommand("@feedbackbot make a PR")).toBe(true);
+    expect(isFixThisCommand("@custombot fix this")).toBe(true);
+    expect(isFixThisCommand("@CustomBot fix this")).toBe(true);
+    expect(isFixThisCommand("@custombot please implement this")).toBe(true);
+    expect(isFixThisCommand("@custombot open a pull request")).toBe(true);
+    expect(isFixThisCommand("@custombot make a PR")).toBe(true);
     expect(isFixThisCommand("can you fix this later?")).toBe(false);
     expect(isFixThisCommand("we should open a PR later")).toBe(false);
   });
@@ -90,8 +89,8 @@ describe("staged issues", () => {
   });
 
   it("uses the configured trigger phrase in promotion instructions", () => {
-    expect(getPromotionDescription("moderate-safe")).toContain("`@feedbackbot fix this`");
-    expect(getPromotionDescription("moderate-review-needed")).toContain("`@feedbackbot open PR`");
+    expect(getPromotionDescription("moderate-safe")).toContain("`@custombot fix this`");
+    expect(getPromotionDescription("moderate-review-needed")).toContain("`@custombot open PR`");
     expect(getPromotionDescription("complex-review-needed")).toContain("draft pull request");
   });
 });

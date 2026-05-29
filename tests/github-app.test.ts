@@ -1,20 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
-vi.mock("../packages/core/src/index.js", () => ({
-  getEnv: () => ({ PORT: 3000, MOSAIC_TRIGGER_PHRASE: "@feedbackbot" }),
-  logger: {
-    info: vi.fn()
-  }
-}));
+import { resetEnvForTests } from "../packages/core/dist/index.js";
 
-import { bodyContainsTrigger, isMosaicAuthoredEvent } from "../packages/github-app/src/app.js";
+let bodyContainsTrigger: typeof import("../packages/github-app/src/app.js").bodyContainsTrigger;
+let isMosaicAuthoredEvent: typeof import("../packages/github-app/src/app.js").isMosaicAuthoredEvent;
+
+beforeAll(async () => {
+  process.env.MOSAIC_TRIGGER_PHRASE = "@custombot";
+  resetEnvForTests();
+  ({ bodyContainsTrigger, isMosaicAuthoredEvent } = await import("../packages/github-app/src/app.js"));
+});
 
 describe("github app forwarding triggers", () => {
   it("matches the trigger phrase case-insensitively", () => {
     const context = {
       payload: {
         comment: {
-          body: "@FeedbackBot fix this"
+          body: "@CustomBot fix this"
         }
       }
     } as never;

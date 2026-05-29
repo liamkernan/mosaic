@@ -17,15 +17,13 @@ describe("core config helpers", () => {
     expect(repoFullNamePattern.test("not a repo")).toBe(false);
   });
 
-  it("supports legacy FeedbackBot trigger env vars", () => {
+  it("defaults the Mosaic trigger phrase when unset", () => {
     process.env.MOSAIC_TRIGGER_PHRASE = "";
-    process.env.FEEDBACKBOT_TRIGGER_PHRASE = "@feedbackbot";
     resetEnvForTests();
 
-    expect(getEnv().MOSAIC_TRIGGER_PHRASE).toBe("@feedbackbot");
+    expect(getEnv().MOSAIC_TRIGGER_PHRASE).toBe("@mosaic");
 
     delete process.env.MOSAIC_TRIGGER_PHRASE;
-    delete process.env.FEEDBACKBOT_TRIGGER_PHRASE;
     resetEnvForTests();
   });
 });

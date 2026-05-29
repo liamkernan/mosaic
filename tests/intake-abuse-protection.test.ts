@@ -85,7 +85,7 @@ describe("abuse protection", () => {
     const redis = new FakeRedis();
     const feedback = buildFeedbackItem({
       source: "github_comment",
-      rawContent: "@feedbackbot fix this",
+      rawContent: "@mosaic fix this",
       metadata: { commentId: 1001 }
     });
 
