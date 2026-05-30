@@ -53,6 +53,7 @@ INSTRUCTIONS:
 - Return a corrected complete change set that satisfies every validation error.
 - Preserve useful parts of the current invalid changes when safe.
 - Treat acceptance criteria as binding. If they name exact fields, keys, ordering clauses, or tie-breakers, implement those exact terms.
+- Treat loaded tests and verification failures as executable contracts. If a failure is a missing field/key/status/return value, update the implementation surface that should provide it.
 - Add or update focused tests when validation reports missing behavioral coverage or the plan verification checklist requires tests.
 - For sort/order/filter/ranking changes, cover the primary behavior and every stated tie-breaker with adversarial tests.
 - Replace click-only div/article/section/card containers with native buttons or links where possible; otherwise add role, tabindex, and keyboard handling.

@@ -70,6 +70,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("scripts/state files");
     expect(prompt).toContain("clickable UI");
     expect(prompt).toContain("Extract every explicit acceptance criterion");
+    expect(prompt).toContain("Translate loaded tests into acceptance criteria");
     expect(prompt).toContain("adversarial cases");
     expect(prompt).toContain("implementationChecklist");
     expect(prompt).toContain("acceptanceCriteria");
@@ -92,6 +93,8 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("Acceptance criteria");
     expect(prompt).toContain("Journal cards open and populate full article content.");
     expect(prompt).toContain("satisfy every completion checklist item");
+    expect(prompt).toContain("Treat loaded tests as executable contracts");
+    expect(prompt).toContain("surface actually includes the field/key");
   });
 
   it("raises completeness expectations for complex generation", () => {

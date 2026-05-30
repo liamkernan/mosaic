@@ -351,7 +351,26 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     changes = await generateValidatedChanges(generator, classifiedFeedback, relevantFiles, fileTree, implementationPlan, repoContext);
     await writeGeneratedChanges(repoPath, changes);
     repoContext.fileTree = await buildFileTree(repoPath);
-    errors.push(...await runVerification(evalCase, repoPath, changes));
+    let verificationErrors = await runVerification(evalCase, repoPath, changes);
+    if (verificationErrors.length > 0) {
+      const repairedChanges = await repairVerificationFailure(
+        generator,
+        classifiedFeedback,
+        relevantFiles,
+        fileTree,
+        implementationPlan,
+        repoContext,
+        changes,
+        verificationErrors
+      );
+      if (repairedChanges.length > 0) {
+        changes = repairedChanges;
+        await writeGeneratedChanges(repoPath, changes);
+        repoContext.fileTree = await buildFileTree(repoPath);
+        verificationErrors = await runVerification(evalCase, repoPath, changes);
+      }
+    }
+    errors.push(...verificationErrors);
   }
 
   errors.push(...await evaluateChecks(
@@ -425,6 +444,48 @@ async function generateValidatedChanges(
   }
 
   return changes;
+}
+
+async function repairVerificationFailure(
+  generator: CodeGenerator,
+  feedback: ClassifiedFeedback,
+  relevantFiles: Array<{ path: string; content: string; reason: string }>,
+  fileTree: string[],
+  implementationPlan: ImplementationPlan,
+  repoContext: RepoContext,
+  currentChanges: GeneratedChange[],
+  verificationErrors: string[]
+): Promise<GeneratedChange[]> {
+  const repairedChanges = await generator.repairValidationFailure(
+    feedback,
+    relevantFiles,
+    fileTree,
+    currentChanges,
+    verificationErrors.map((error) => `Verification failed: ${error}`),
+    implementationPlan,
+    {
+      completeSolution: true
+    }
+  );
+
+  if (repairedChanges.length === 0) {
+    return [];
+  }
+
+  let validation = await validate(repairedChanges, repoContext);
+  const planErrors = validatePlanCompletion(repairedChanges, implementationPlan);
+  if (planErrors.length > 0) {
+    validation = {
+      valid: false,
+      errors: [...validation.errors, ...planErrors]
+    };
+  }
+
+  if (!validation.valid) {
+    throw new Error(`Verification repair failed static validation: ${validation.errors.join("; ")}`);
+  }
+
+  return repairedChanges;
 }
 
 async function main(): Promise<void> {

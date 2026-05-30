@@ -26,6 +26,7 @@ Your job is to identify every file surface needed for a complete user-visible so
 Rules:
 - Treat repository issue files, README/docs, tests, and config as authoritative when they state expected behavior.
 - Extract every explicit acceptance criterion from authoritative sources before deciding files.
+- Translate loaded tests into acceptance criteria. Include asserted response fields, dictionary keys, status codes, returned values, side effects, and edge cases.
 - If a source states a sequence, ordering, tie-breaker, fallback, validation rule, or exact field/key, preserve it exactly. Do not substitute a merely stable or plausible alternative.
 - Include markup/view files, stylesheets, scripts/state files, routing files, data/content files, tests, and config when they are needed.
 - Include tests when the repository has a relevant test pattern and the change affects behavior, especially sort/order/filter/ranking logic, persistence, validation, permissions, or API responses.
