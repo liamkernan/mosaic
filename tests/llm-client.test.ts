@@ -96,4 +96,14 @@ describe("LLMClient", () => {
     expect(enforceRepoRateLimitMock).not.toHaveBeenCalled();
     expect(trackUsageMock).not.toHaveBeenCalled();
   });
+
+  it("rejects when the final streamed message exceeds the hard timeout", async () => {
+    finalMessageMock.mockReturnValue(new Promise(() => {}));
+    const client = new LLMClient({
+      mode: "platform",
+      platformApiKey: "test-key"
+    });
+
+    await expect(client.complete("system", "user", { timeoutMs: 5 })).rejects.toThrow("timed out");
+  });
 });

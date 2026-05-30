@@ -29,6 +29,25 @@ export interface UsageContext {
   feedbackId: string;
 }
 
+function withHardTimeout<T>(promise: Promise<T>, timeoutMs: number | undefined): Promise<T> {
+  if (timeoutMs === undefined) {
+    return promise;
+  }
+
+  let timeout: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(new LLMError(`Anthropic completion timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  });
+}
+
 export class LLMClient {
   private readonly client: Anthropic;
   private readonly defaultModel: string;
@@ -71,7 +90,7 @@ export class LLMClient {
           },
           options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : undefined
         );
-        const response = await stream.finalMessage();
+        const response = await withHardTimeout(stream.finalMessage(), options.timeoutMs);
 
         const text = response.content
           .filter((item): item is Anthropic.TextBlock => item.type === "text")
