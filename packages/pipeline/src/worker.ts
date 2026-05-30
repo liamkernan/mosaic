@@ -29,7 +29,7 @@ import { applyValidationFallbacks } from "./validation-repair.js";
 import { runVerificationCommands } from "./verification-runner.js";
 
 const FEEDBACK_QUEUE_NAME = "feedback-intake";
-const VALIDATION_REPAIR_ATTEMPTS = 2;
+const VALIDATION_RECOVERY_ATTEMPTS = 3;
 
 type RepoContext = Awaited<ReturnType<RepoIndexer["getContext"]>>;
 type PromotionResult = { handled: boolean; artifactType?: "issue" | "pr"; artifactValue?: string };
@@ -243,7 +243,8 @@ export class FeedbackPipelineWorker {
 
     let validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan);
 
-    for (let attempt = 0; !validation.valid && attempt < VALIDATION_REPAIR_ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; !validation.valid && attempt < VALIDATION_RECOVERY_ATTEMPTS; attempt += 1) {
+      let madeProgress = false;
       try {
         const repairedChanges = await codeGenerator.repairValidationFailure(
           classifiedFeedback,
@@ -259,21 +260,26 @@ export class FeedbackPipelineWorker {
 
         if (repairedChanges.length > 0 && repairedChanges.length <= repoConfig.security.max_files_changed) {
           changes = repairedChanges;
+          madeProgress = true;
           validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan);
         }
       } catch (error) {
         if (!(error instanceof LLMError)) {
           throw error;
         }
-        break;
       }
-    }
 
-    if (!validation.valid) {
-      const modalCompletedChanges = await applyValidationFallbacks(changes, repoContext, validation.errors);
-      if (modalCompletedChanges !== changes && modalCompletedChanges.length <= repoConfig.security.max_files_changed) {
-        changes = modalCompletedChanges;
-        validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan);
+      if (!validation.valid) {
+        const completedChanges = await applyValidationFallbacks(changes, repoContext, validation.errors);
+        if (completedChanges !== changes && completedChanges.length <= repoConfig.security.max_files_changed) {
+          changes = completedChanges;
+          madeProgress = true;
+          validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan);
+        }
+      }
+
+      if (!madeProgress) {
+        break;
       }
     }
 

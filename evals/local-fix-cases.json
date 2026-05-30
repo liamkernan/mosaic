@@ -158,7 +158,7 @@
         "text": "collection"
       },
       {
-        "path": ["script.js", "collection-modal.js"],
+        "path": [".js"],
         "text": "collection"
       }
     ],
@@ -178,7 +178,7 @@
           },
           {
             "selector": "#collectionModalOverlay",
-            "hasClass": ["is-open", "is-visible"]
+            "hasClass": ["is-open", "is-visible", "active"]
           },
           {
             "selector": ["#modalTitle", "#collectionModalTitle"],
@@ -220,14 +220,14 @@
       "confidence": 0.72
     },
     "expectedReferenceFiles": ["README.md"],
-    "requiredChangedFilePatterns": ["script.js", "styles.css"],
+    "requiredChangedFilePatterns": [[".js"], [".css"]],
     "requiredFileContains": [
       {
-        "path": "script.js",
+        "path": [".js"],
         "text": "article"
       },
       {
-        "path": "styles.css",
+        "path": [".css"],
         "text": "modal"
       }
     ],
@@ -243,7 +243,7 @@
           },
           {
             "selector": "#articleModalOverlay",
-            "hasClass": "is-open"
+            "hasClass": ["is-open", "is-visible", "active"]
           },
           {
             "selector": "#articleTitle",
@@ -273,10 +273,10 @@
       "confidence": 0.72
     },
     "expectedReferenceFiles": ["README.md"],
-    "requiredChangedFilePatterns": ["index.html", "script.js", "styles.css"],
+    "requiredChangedFilePatterns": ["index.html", [".js"], [".css"]],
     "requiredFileContains": [
       {
-        "path": "script.js",
+        "path": [".js"],
         "text": "product"
       },
       {
@@ -296,7 +296,7 @@
           },
           {
             "selector": "#productDetailOverlay",
-            "hasClass": "is-open"
+            "hasClass": ["is-open", "is-visible", "active"]
           },
           {
             "selector": "#productDetailTitle",

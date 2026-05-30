@@ -360,4 +360,68 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
     expect(capturedUserMessage).toContain("Add the exact missing ids/classes/data attributes");
     expect(capturedUserMessage).toContain("do not leave selectors that match nothing");
   });
+
+  it("uses focused frontend verification repair instructions for selector assertion failures", async () => {
+    let capturedUserMessage = "";
+    let capturedTimeoutMs = 0;
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete: async (_systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
+        capturedUserMessage = userMessage;
+        capturedTimeoutMs = options.timeoutMs ?? 0;
+        return `<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[
+<main></main>
+]]></search>
+    <replace><![CDATA[
+<main><div id="collectionModalOverlay" aria-hidden="false"><h2 id="modalTitle">Kitchen</h2></div></main>
+]]></replace>
+    <explanation>Add modal hooks expected by frontend verification.</explanation>
+  </edit>
+</changes>`;
+      }
+    } as unknown as LLMClient;
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Add collection popups",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "feature_request",
+        complexity: "complex",
+        summary: "Add collection popups",
+        relevantFiles: ["index.html", "script.js"],
+        confidence: 0.8
+      },
+      [
+        { path: "index.html", content: "<main></main>", reason: "markup" },
+        { path: "script.js", content: "console.log('ready');", reason: "behavior" }
+      ],
+      ["index.html", "script.js"],
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>",
+          modifiedContent: "<main></main>",
+          explanation: "incomplete modal"
+        }
+      ],
+      [
+        "Verification failed: Kitchen collection opens a populated modal: expected element not found: #collectionModalOverlay",
+        "Verification failed: Kitchen collection opens a populated modal: expected at least 2 matches for #collectionModalProducts > *, found 0"
+      ],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("failing frontend verification assertions");
+    expect(capturedUserMessage).toContain("selectors, ids, classes, text, attributes, counts");
+    expect(capturedTimeoutMs).toBe(120_000);
+  });
 });

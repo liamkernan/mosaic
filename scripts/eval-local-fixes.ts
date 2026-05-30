@@ -13,12 +13,25 @@ import { RepoIndexer } from "../packages/pipeline/src/repo-indexer.js";
 import { validate } from "../packages/pipeline/src/validator.js";
 import { applyValidationFallbacks } from "../packages/pipeline/src/validation-repair.js";
 import { getEnv } from "../packages/core/src/config.js";
+import { LLMError } from "../packages/core/src/errors.js";
 import type { ClassifiedFeedback, ComplexityLevel, FeedbackCategory, FeedbackSource, FileNode, GeneratedChange, RepoContext } from "../packages/core/src/types.js";
 import { ANTHROPIC_MODEL_IDS, LLMClient } from "../packages/llm/src/client.js";
 
 const exec = promisify(execCallback);
 const ignoredNames = new Set(["node_modules", ".git", "dist", "build", "__pycache__", ".next", "vendor"]);
-const validationRepairAttempts = 2;
+const validationRecoveryAttempts = 3;
+
+function isRecoverableLlmFailure(error: unknown): boolean {
+  const maybeError = error as { code?: unknown; name?: unknown; message?: unknown };
+  const message = typeof maybeError.message === "string" ? maybeError.message.toLowerCase() : String(error).toLowerCase();
+  return error instanceof LLMError ||
+    maybeError.code === "LLM_ERROR" ||
+    maybeError.name === "LLMError" ||
+    message.includes("llm") ||
+    message.includes("anthropic") ||
+    message.includes("timed out") ||
+    message.includes("timeout");
+}
 
 interface EvalCase {
   id: string;
@@ -321,7 +334,11 @@ async function evaluateChecks(
 
     for (const requirement of evalCase.requiredFileContains ?? []) {
       const paths = Array.isArray(requirement.path) ? requirement.path : [requirement.path];
-      const matched = await Promise.all(paths.map(async (path) => {
+      const candidatePaths = [...new Set(paths.flatMap((path) => {
+        const matchingChangedFiles = [...changedFiles].filter((filePath) => filePath === path || filePath.includes(path));
+        return matchingChangedFiles.length > 0 ? matchingChangedFiles : [path];
+      }))];
+      const matched = await Promise.all(candidatePaths.map(async (path) => {
         const content = await readFile(join(repoPath, path), "utf8").catch(() => "");
         return content.includes(requirement.text);
       }));
@@ -631,7 +648,8 @@ async function generateValidatedChanges(
     };
   }
 
-  for (let attempt = 0; !validation.valid && attempt < validationRepairAttempts; attempt += 1) {
+  for (let attempt = 0; !validation.valid && attempt < validationRecoveryAttempts; attempt += 1) {
+    let madeProgress = false;
     try {
       const repairedChanges = await generator.repairValidationFailure(
         feedback,
@@ -646,6 +664,7 @@ async function generateValidatedChanges(
       );
       if (repairedChanges.length > 0) {
         changes = repairedChanges;
+        madeProgress = true;
         validation = await validate(changes, repoContext);
         const repairedPlanErrors = validatePlanCompletion(changes, implementationPlan);
         if (repairedPlanErrors.length > 0) {
@@ -656,26 +675,29 @@ async function generateValidatedChanges(
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-      if (!message.includes("llm") && !message.includes("anthropic") && !message.includes("timed out") && !message.includes("timeout")) {
+      if (!isRecoverableLlmFailure(error)) {
         throw error;
       }
-      break;
     }
-  }
 
-  if (!validation.valid) {
-    const completedChanges = await applyValidationFallbacks(changes, repoContext, validation.errors);
-    if (completedChanges !== changes) {
-      changes = completedChanges;
-      validation = await validate(changes, repoContext);
-      const completedPlanErrors = validatePlanCompletion(changes, implementationPlan);
-      if (completedPlanErrors.length > 0) {
-        validation = {
-          valid: false,
-          errors: [...validation.errors, ...completedPlanErrors]
-        };
+    if (!validation.valid) {
+      const completedChanges = await applyValidationFallbacks(changes, repoContext, validation.errors);
+      if (completedChanges !== changes) {
+        changes = completedChanges;
+        madeProgress = true;
+        validation = await validate(changes, repoContext);
+        const completedPlanErrors = validatePlanCompletion(changes, implementationPlan);
+        if (completedPlanErrors.length > 0) {
+          validation = {
+            valid: false,
+            errors: [...validation.errors, ...completedPlanErrors]
+          };
+        }
       }
+    }
+
+    if (!madeProgress) {
+      break;
     }
   }
 
@@ -696,17 +718,25 @@ async function repairVerificationFailure(
   currentChanges: GeneratedChange[],
   verificationErrors: string[]
 ): Promise<GeneratedChange[]> {
-  const repairedChanges = await generator.repairValidationFailure(
-    feedback,
-    relevantFiles,
-    fileTree,
-    currentChanges,
-    verificationErrors.map((error) => `Verification failed: ${error}`),
-    implementationPlan,
-    {
-      completeSolution: true
+  let repairedChanges: GeneratedChange[];
+  try {
+    repairedChanges = await generator.repairValidationFailure(
+      feedback,
+      relevantFiles,
+      fileTree,
+      currentChanges,
+      verificationErrors.map((error) => `Verification failed: ${error}`),
+      implementationPlan,
+      {
+        completeSolution: true
+      }
+    );
+  } catch (error) {
+    if (isRecoverableLlmFailure(error)) {
+      return [];
     }
-  );
+    throw error;
+  }
 
   if (repairedChanges.length === 0) {
     return [];

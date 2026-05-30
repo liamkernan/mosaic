@@ -111,6 +111,13 @@ function hasMissingHtmlHookValidationError(validationErrors: string[]): boolean 
   return validationErrors.some((error) => /queries missing HTML id|queries selector/i.test(error));
 }
 
+function hasFrontendVerificationFailure(validationErrors: string[]): boolean {
+  return validationErrors.some((error) =>
+    /Verification failed:/i.test(error) &&
+    /expected element|expected at least|expected .*matches|click target|frontend runtime|selector|hasClass|attribute/i.test(error)
+  );
+}
+
 export class CodeGenerator {
   constructor(private readonly llmClient: LLMClient) {}
 
@@ -244,7 +251,8 @@ export class CodeGenerator {
     const oversizedRepair = hasOversizedPatchValidationError(validationErrors);
     const missingHtmlHookRepair = hasMissingHtmlHookValidationError(validationErrors);
     const missingBehaviorRepair = hasMissingInteractiveBehaviorValidationError(validationErrors);
-    const focusedRepair = oversizedRepair || missingBehaviorRepair;
+    const frontendVerificationRepair = hasFrontendVerificationFailure(validationErrors);
+    const focusedRepair = oversizedRepair || missingBehaviorRepair || frontendVerificationRepair;
     const maxTokens = focusedRepair
       ? Math.min(estimateGenerationMaxTokens(promptFiles, { completeSolution: false }), VALIDATION_REPAIR_MAX_TOKENS)
       : estimateGenerationMaxTokens(promptFiles, options);
@@ -254,6 +262,8 @@ export class CodeGenerator {
         ? "Return only a repaired <changes> payload focused on mismatched HTML and JavaScript hooks. Add the exact missing ids/classes/data attributes to the HTML, or retarget the script to hooks that already exist. Include both HTML and JS edits when needed; do not leave selectors that match nothing."
       : missingBehaviorRepair
         ? "Return only a repaired <changes> payload focused on missing interactive behavior. Add or update JavaScript that opens, populates, closes, and keyboard-wires the modal/dialog/overlay using the exact new markup ids/classes/data attributes; do not return HTML/CSS-only repairs."
+      : frontendVerificationRepair
+        ? "Return only a repaired <changes> payload focused on the failing frontend verification assertions. Treat the reported selectors, ids, classes, text, attributes, counts, and runtime errors as binding executable contracts; update the smallest matching HTML, CSS, and JS hooks needed."
       : "Return only the repaired <changes> payload with complete file contents in CDATA blocks.";
     const response = await this.llmClient.complete(
       buildValidationRepairPrompt(feedback.summary, promptFiles, currentChanges, validationErrors, fileTree, implementationPlan),
