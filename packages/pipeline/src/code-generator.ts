@@ -7,9 +7,18 @@ import { buildGenerationRepairPrompt, buildValidationRepairPrompt } from "./prom
 import type { ImplementationPlan } from "./implementation-planner.js";
 
 const GENERATION_TIMEOUT_MS = 180_000;
+const LARGE_STATIC_FRONTEND_BYTES = 25_000;
+const STATIC_FRONTEND_RETRY_BYTES = 15_000;
+const COMPACT_STATIC_ASSET_BYTES = 8_000;
+const RETRY_COMPACT_STATIC_ASSET_BYTES = 4_000;
+const STATIC_FRONTEND_RETRY_MAX_TOKENS = 12_288;
 
 interface GenerationOptions {
   completeSolution?: boolean;
+}
+
+interface PromptFileOptions {
+  compactAssetBytes: number;
 }
 
 function estimateGenerationMaxTokens(relevantFiles: RelevantFile[], options: GenerationOptions = {}): number {
@@ -18,6 +27,69 @@ function estimateGenerationMaxTokens(relevantFiles: RelevantFile[], options: Gen
   const floor = options.completeSolution ? 8_192 : 4_096;
   const ceiling = options.completeSolution ? 32_768 : 16_384;
   return Math.max(floor, Math.min(ceiling, estimatedTokens));
+}
+
+function isStaticFrontendFile(filePath: string): boolean {
+  return /\.(?:html?|css|[cm]?js)$/i.test(filePath);
+}
+
+function totalStaticFrontendBytes(relevantFiles: RelevantFile[]): number {
+  return relevantFiles
+    .filter((file) => isStaticFrontendFile(file.path))
+    .reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
+}
+
+function shouldCompactStaticFrontendContext(relevantFiles: RelevantFile[]): boolean {
+  return totalStaticFrontendBytes(relevantFiles) > LARGE_STATIC_FRONTEND_BYTES;
+}
+
+function shouldRetryStaticFrontendGeneration(relevantFiles: RelevantFile[], error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const errorMessage = error.message.toLowerCase();
+  if (!errorMessage.includes("timed out") && !errorMessage.includes("timeout")) {
+    return false;
+  }
+
+  return totalStaticFrontendBytes(relevantFiles) > STATIC_FRONTEND_RETRY_BYTES;
+}
+
+function compactFileContent(file: RelevantFile, options: PromptFileOptions): RelevantFile {
+  if (!/\.(?:css|[cm]?js)$/i.test(file.path) || Buffer.byteLength(file.content) <= options.compactAssetBytes) {
+    return file;
+  }
+
+  const lines = file.content.split("\n");
+  const head = lines.slice(0, 120).join("\n");
+  const tail = lines.slice(-120).join("\n");
+
+  return {
+    ...file,
+    content: `${head}\n\n/* MOSAIC CONTEXT NOTE: middle of ${file.path} omitted for generation speed. Prefer adding new scoped supplemental files instead of rewriting this large existing asset unless necessary. */\n\n${tail}`,
+    reason: `${file.reason}; compacted large static asset context`
+  };
+}
+
+function promptRelevantFiles(relevantFiles: RelevantFile[], options: PromptFileOptions = { compactAssetBytes: COMPACT_STATIC_ASSET_BYTES }): RelevantFile[] {
+  if (!shouldCompactStaticFrontendContext(relevantFiles)) {
+    return relevantFiles;
+  }
+
+  return relevantFiles.map((file) => compactFileContent(file, options));
+}
+
+function retryPromptRelevantFiles(relevantFiles: RelevantFile[]): RelevantFile[] {
+  const totalStaticBytes = relevantFiles
+    .filter((file) => isStaticFrontendFile(file.path))
+    .reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
+
+  if (totalStaticBytes <= STATIC_FRONTEND_RETRY_BYTES) {
+    return relevantFiles;
+  }
+
+  return relevantFiles.map((file) => compactFileContent(file, { compactAssetBytes: RETRY_COMPACT_STATIC_ASSET_BYTES }));
 }
 
 export class CodeGenerator {
@@ -51,17 +123,36 @@ export class CodeGenerator {
       feedbackId: feedback.id
     });
 
-    const maxTokens = estimateGenerationMaxTokens(relevantFiles, options);
+    const promptFiles = promptRelevantFiles(relevantFiles);
+    const maxTokens = estimateGenerationMaxTokens(promptFiles, options);
 
-    const response = await this.llmClient.complete(
-      buildGenerationPrompt(feedback.summary, relevantFiles, fileTree, implementationPlan, options),
-      "Return only the <changes> payload with complete file contents in CDATA blocks.",
-      {
-        temperature: 0.3,
-        maxTokens,
-        timeoutMs: GENERATION_TIMEOUT_MS
+    let response;
+    try {
+      response = await this.llmClient.complete(
+        buildGenerationPrompt(feedback.summary, promptFiles, fileTree, implementationPlan, options),
+        "Return only the <changes> payload with complete file contents in CDATA blocks.",
+        {
+          temperature: 0.3,
+          maxTokens,
+          timeoutMs: GENERATION_TIMEOUT_MS
+        }
+      );
+    } catch (error) {
+      if (!shouldRetryStaticFrontendGeneration(relevantFiles, error)) {
+        throw error;
       }
-    );
+
+      const retryFiles = retryPromptRelevantFiles(relevantFiles);
+      response = await this.llmClient.complete(
+        buildGenerationPrompt(feedback.summary, retryFiles, fileTree, implementationPlan, options),
+        "The previous static frontend generation timed out. Return only the smallest complete <changes> payload. Prefer one reusable data-driven modal, and include matching behavior and styles in existing linked JS/CSS when the UI needs them.",
+        {
+          temperature: 0.2,
+          maxTokens: Math.min(estimateGenerationMaxTokens(retryFiles, options), STATIC_FRONTEND_RETRY_MAX_TOKENS),
+          timeoutMs: GENERATION_TIMEOUT_MS
+        }
+      );
+    }
 
     let parsed;
     try {
@@ -101,9 +192,10 @@ export class CodeGenerator {
       feedbackId: feedback.id
     });
 
-    const maxTokens = estimateGenerationMaxTokens(relevantFiles, options);
+    const promptFiles = promptRelevantFiles(relevantFiles);
+    const maxTokens = estimateGenerationMaxTokens(promptFiles, options);
     const response = await this.llmClient.complete(
-      buildValidationRepairPrompt(feedback.summary, relevantFiles, currentChanges, validationErrors, fileTree, implementationPlan),
+      buildValidationRepairPrompt(feedback.summary, promptFiles, currentChanges, validationErrors, fileTree, implementationPlan),
       "Return only the repaired <changes> payload with complete file contents in CDATA blocks.",
       {
         temperature: 0,

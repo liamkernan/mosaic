@@ -118,5 +118,24 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("complete, user-visible solution");
     expect(prompt).toContain("Do not use placeholder article text");
     expect(prompt).toContain("A single happy-path example is not enough");
+    expect(prompt).toContain("one reusable modal/dialog/overlay");
+    expect(prompt).toContain("data-driven behavior");
+  });
+
+  it("encourages supplemental assets for large static frontend changes", () => {
+    const prompt = buildGenerationPrompt(
+      "Add collection modals",
+      [
+        { path: "index.html", content: "<main></main>".repeat(2_000), reason: "markup" },
+        { path: "script.js", content: "console.log('ready');\n".repeat(1_500), reason: "behavior" },
+        { path: "styles.css", content: ".item { color: black; }\n".repeat(1_500), reason: "styles" }
+      ],
+      ["index.html", "script.js", "styles.css"],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(prompt).toContain("LARGE STATIC FRONTEND NOTE");
+    expect(prompt).toContain("new scoped supplemental JS/CSS files");
   });
 });

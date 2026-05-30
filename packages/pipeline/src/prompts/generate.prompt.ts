@@ -11,6 +11,15 @@ export function buildGenerationPrompt(
   const planSection = implementationPlan
     ? `\nIMPLEMENTATION PLAN:\nRequired files:\n${implementationPlan.requiredFiles.map((file) => `- ${file.path}: ${file.reason}`).join("\n")}\n\nAcceptance criteria:\n${implementationPlan.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}\n\nCompletion checklist:\n${implementationPlan.implementationChecklist.map((item) => `- ${item}`).join("\n")}\n\nVerification checklist:\n${implementationPlan.verificationChecklist.map((item) => `- ${item}`).join("\n")}\n\nVerification commands:\n${implementationPlan.verificationCommands.map((item) => `- ${item}`).join("\n")}\n`
     : "";
+  const staticFrontendBytes = relevantFiles
+    .filter((file) => /\.(?:html?|css|[cm]?js)$/i.test(file.path))
+    .reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
+  const hasCompactedStaticFrontendContext = relevantFiles.some(
+    (file) => file.reason?.includes("compacted large static asset context") || file.content.includes("MOSAIC CONTEXT NOTE")
+  );
+  const largeStaticFrontendSection = staticFrontendBytes > 45_000 || hasCompactedStaticFrontendContext
+    ? "\nLARGE STATIC FRONTEND NOTE:\n- This appears to be a large static HTML/CSS/JS site. To avoid rewriting large existing assets, prefer the smallest durable integration: make a minimal HTML hook/link/script insertion and add new scoped supplemental JS/CSS files for the feature when that satisfies the request.\n- Do not duplicate large existing files unless the existing file itself must change extensively.\n"
+    : "";
 
   return `You are a senior software engineer implementing a user-requested change in a codebase.
 
@@ -22,6 +31,7 @@ ${fileTree.join("\n")}
 RELEVANT FILES:
 ${relevantFiles.map((file) => `--- ${file.path} ---\n${file.content}\n--- END ${file.path} ---`).join("\n\n")}
 ${planSection}
+${largeStaticFrontendSection}
 
 INSTRUCTIONS:
 - ${options.completeSolution ? "Implement a complete, user-visible solution in one pass. Do not stop at scaffolding, placeholder content, or a partial happy-path patch." : "Implement the requested change with minimal modifications."}
@@ -36,6 +46,8 @@ INSTRUCTIONS:
 - If an acceptance criterion names exact fields, keys, ordering clauses, or tie-breakers, implement those exact terms. You may add a deterministic tertiary tie-breaker only after all required keys.
 - If an existing or planned test reads a field/key from a list, query, API response, or returned object, make sure that surface actually includes the field/key.
 - Do not use placeholder article text, placeholder data, inert buttons, empty handlers, or UI that appears clickable but does not complete the requested workflow.
+- For repeated cards/items/popups, implement one reusable modal/dialog/overlay and populate it from compact data in JavaScript or existing data attributes. Do not duplicate full modal markup for every item.
+- Keep static frontend changes compact enough to pass validation limits; prefer data-driven behavior and scoped selectors over hundreds of lines of repeated HTML.
 - For clickable UI, use native <button> or <a> elements whenever possible. Do not attach click-only behavior to plain div/article/section/card containers unless you also make them accessible with role, tabindex, and keyboard handling.
 - Do not leave visible links with href="#" or javascript:void(0). If a link or control is visible, it must navigate, submit, open the intended UI, or be removed.
 - If you add or change UI classes, ids, modal/dialog/overlay markup, or interactive HTML hooks, also update the matching stylesheet or script in the same response so the UI is complete.
