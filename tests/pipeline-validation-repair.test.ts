@@ -67,4 +67,41 @@ describe("applyValidationFallbacks", () => {
 
     await expect(applyValidationFallbacks(changes, repoContext, ["Total new code added exceeds limit: 300 lines"])).resolves.toBe(changes);
   });
+
+  it("links new static assets from html when validation reports they are orphaned", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "index.html"), "<!doctype html><html><head></head><body><main></main></body></html>\n", "utf8");
+
+    const repoContext: RepoContext = {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath,
+      installationId: 1,
+      fileTree: [{ path: "index.html", type: "file" }]
+    };
+    const changes: GeneratedChange[] = [
+      {
+        filePath: "collection-modal.js",
+        originalContent: "",
+        modifiedContent: "document.body.dataset.ready = 'true';\n",
+        explanation: "add collection modal behavior"
+      },
+      {
+        filePath: "collection-modal.css",
+        originalContent: "",
+        modifiedContent: ".collection-modal { display: block; }\n",
+        explanation: "add collection modal styles"
+      }
+    ];
+
+    const completed = await applyValidationFallbacks(changes, repoContext, [
+      "New static asset collection-modal.js is not linked from index.html",
+      "New static asset collection-modal.css is not linked from index.html"
+    ]);
+
+    const htmlChange = completed.find((change) => change.filePath === "index.html");
+    expect(htmlChange?.modifiedContent).toContain('<link rel="stylesheet" href="./collection-modal.css" />');
+    expect(htmlChange?.modifiedContent).toContain('<script src="./collection-modal.js"></script>');
+  });
 });

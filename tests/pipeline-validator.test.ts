@@ -418,7 +418,7 @@ describe("validate", () => {
           filePath: "index.html",
           originalContent: "<main></main>\n",
           modifiedContent:
-            '<main><button data-collection="kitchen">Kitchen</button><div class="collection-modal-overlay"><dialog class="collection-modal"></dialog></div></main>\n',
+            '<link rel="stylesheet" href="./collection-modal.css"><main><button data-collection="kitchen">Kitchen</button><div class="collection-modal-overlay"><dialog class="collection-modal"></dialog></div><script src="./collection-modal.js"></script></main>\n',
           explanation: "add modal markup"
         },
         {
@@ -449,5 +449,67 @@ describe("validate", () => {
     );
 
     expect(result.valid).toBe(true);
+  });
+
+  it("rejects new static frontend assets that are not linked from html", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "collection-modal.js",
+          originalContent: "",
+          modifiedContent: "document.body.dataset.ready = 'true';\n",
+          explanation: "add modal behavior"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [{ path: "index.html", type: "file" }],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("New static asset collection-modal.js is not linked from index.html");
+  });
+
+  it("rejects changed static scripts that query missing html hooks", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "index.html"), '<main><button class="collection-card">Kitchen</button><script src="./collection-modal.js"></script></main>\n', "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>\n",
+          modifiedContent: '<main><button class="collection-card">Kitchen</button><script src="./collection-modal.js"></script></main>\n',
+          explanation: "add modal script"
+        },
+        {
+          filePath: "collection-modal.js",
+          originalContent: "",
+          modifiedContent:
+            "document.getElementById('collectionModalClose').addEventListener('click', function () {});\ndocument.querySelectorAll('.coll-card-btn').forEach(function (button) { button.addEventListener('click', function () {}); });\n",
+          explanation: "wire modal behavior"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [{ path: "index.html", type: "file" }],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("queries missing HTML id(s): collectionModalClose");
+    expect(result.errors.join("\n")).toContain("queries selector(s) with no matching HTML: .coll-card-btn");
   });
 });

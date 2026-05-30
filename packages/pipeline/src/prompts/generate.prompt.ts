@@ -41,6 +41,7 @@ INSTRUCTIONS:
 - Treat every acceptance criterion from the implementation plan as binding. Do not silently weaken, reinterpret, or replace it.
 - Treat loaded tests as executable contracts. Before editing, identify every asserted field/key/status/return value/side effect in relevant tests and make the implementation satisfy those assertions.
 - For moderate or complex requests, prefer coherent complete behavior over the smallest possible diff, while still avoiding unrelated refactors.
+- If you add a new static JS or CSS file to an HTML site, update the HTML to load it with a matching <script src> or <link rel="stylesheet"> tag in the same response.
 - Add or update focused tests when the repository has a relevant test pattern and the request changes behavior.
 - For sort/order/filter/ranking changes, cover the primary behavior and every stated tie-breaker with adversarial tests. A single happy-path example is not enough.
 - If an acceptance criterion names exact fields, keys, ordering clauses, or tie-breakers, implement those exact terms. You may add a deterministic tertiary tie-breaker only after all required keys.

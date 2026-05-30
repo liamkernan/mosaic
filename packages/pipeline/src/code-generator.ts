@@ -102,7 +102,8 @@ function hasOversizedPatchValidationError(validationErrors: string[]): boolean {
 
 function hasMissingInteractiveBehaviorValidationError(validationErrors: string[]): boolean {
   return validationErrors.some((error) =>
-    /modal|overlay|dialog/i.test(error) && /behavior|script/i.test(error)
+    (/modal|overlay|dialog/i.test(error) && /behavior|script/i.test(error)) ||
+    /queries missing HTML id|queries selector/i.test(error)
   );
 }
 

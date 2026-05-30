@@ -95,6 +95,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("Acceptance criteria");
     expect(prompt).toContain("Verification commands");
     expect(prompt).toContain("Journal cards open and populate full article content.");
+    expect(prompt).toContain("If you add a new static JS or CSS file");
     expect(prompt).toContain("satisfy every completion checklist item");
     expect(prompt).toContain("Treat loaded tests as executable contracts");
     expect(prompt).toContain("surface actually includes the field/key");
@@ -156,5 +157,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("aggressively remove duplicated markup");
     expect(prompt).toContain("modal/dialog/overlay behavior is missing");
     expect(prompt).toContain("Do not return HTML/CSS-only repairs");
+    expect(prompt).toContain("new static asset is not linked");
+    expect(prompt).toContain("script queries missing HTML ids/selectors");
   });
 });

@@ -101,8 +101,7 @@ async function runFrontendSmoke(tempRepo: string, changes: GeneratedChange[]): P
   }
 
   const html = await readOptionalFile(join(tempRepo, "index.html"));
-  const script = await readOptionalFile(join(tempRepo, "script.js"));
-  if (!html || !script) {
+  if (!html) {
     return [];
   }
 
@@ -121,10 +120,23 @@ async function runFrontendSmoke(tempRepo: string, changes: GeneratedChange[]): P
     error: (...args: unknown[]) => runtimeErrors.push(args.map(String).join(" "))
   };
 
+  const scriptPaths = [...dom.window.document.querySelectorAll("script[src]")]
+    .map((scriptElement) => scriptElement.getAttribute("src") ?? "")
+    .filter((src) => src.length > 0 && !/^(?:[a-z]+:)?\/\//i.test(src))
+    .map((src) => src.replace(/^\.\//, "").replace(/^\//, ""));
+
   try {
-    const scriptElement = dom.window.document.createElement("script");
-    scriptElement.textContent = script;
-    dom.window.document.body.appendChild(scriptElement);
+    for (const scriptPath of scriptPaths) {
+      const script = await readOptionalFile(join(tempRepo, scriptPath));
+      if (!script) {
+        runtimeErrors.push(`Linked script could not be loaded: ${scriptPath}`);
+        continue;
+      }
+
+      const scriptElement = dom.window.document.createElement("script");
+      scriptElement.textContent = script;
+      dom.window.document.body.appendChild(scriptElement);
+    }
     await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
   } finally {
     dom.window.close();

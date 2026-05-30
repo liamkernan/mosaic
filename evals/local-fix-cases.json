@@ -151,14 +151,14 @@
       "confidence": 0.8
     },
     "expectedReferenceFiles": ["README.md"],
-    "requiredChangedFilePatterns": ["index.html", "script.js", "styles.css"],
+    "requiredChangedFilePatterns": ["index.html", [".js"], [".css"]],
     "requiredFileContains": [
       {
         "path": "index.html",
         "text": "collection"
       },
       {
-        "path": "script.js",
+        "path": ["script.js", "collection-modal.js"],
         "text": "collection"
       }
     ],

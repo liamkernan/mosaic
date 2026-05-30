@@ -21,6 +21,8 @@ const ipPattern = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
 const modalTokenPattern = /\b[a-z0-9-]*(?:modal|overlay|dialog)(?:-[a-z0-9]+)*\b/gi;
 const inertAnchorPattern = /<a\b(?=[^>]*\bhref\s*=\s*["'](?:#|javascript:void\(0\);?|)["'])[^>]*>[\s\S]*?<\/a>/gi;
 const nonInteractiveClickableTagPattern = /<(div|article|section|li|span|figure)\b[^>]*(?:\bonclick\s*=|\bclass\s*=\s*["'][^"']*(?:clickable|interactive|card-link)[^"']*["'])[^>]*>/gi;
+const getElementByIdPattern = /getElementById\(\s*["']([^"']+)["']\s*\)/g;
+const querySelectorPattern = /querySelector(?:All)?\(\s*["']([^"']+)["']\s*\)/g;
 
 function countChangedLines(original: string, modified: string): number {
   const originalLines = original.split("\n");
@@ -158,6 +160,119 @@ function isStylesheet(filePath: string): boolean {
 
 function isScript(filePath: string): boolean {
   return /\.(?:[cm]?[jt]sx?)$/i.test(filePath);
+}
+
+function isLocalAssetReference(reference: string): boolean {
+  return !/^(?:[a-z]+:)?\/\//i.test(reference) && !reference.startsWith("#") && !reference.startsWith("data:");
+}
+
+function normalizeAssetReference(reference: string): string {
+  return reference.replace(/^\.\//, "").replace(/^\//, "");
+}
+
+function htmlReferencesAsset(html: string, filePath: string): boolean {
+  const normalizedPath = normalizeAssetReference(filePath);
+  const references = Array.from(html.matchAll(/\b(?:src|href)\s*=\s*["']([^"']+)["']/gi))
+    .map((match) => match[1])
+    .filter(isLocalAssetReference)
+    .map(normalizeAssetReference);
+
+  return references.some((reference) => reference === normalizedPath || reference.endsWith(`/${normalizedPath}`));
+}
+
+function scriptCreatesId(script: string, id: string): boolean {
+  const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:id\\s*=\\s*["']${escapedId}["']|\\.id\\s*=\\s*["']${escapedId}["']|setAttribute\\(\\s*["']id["']\\s*,\\s*["']${escapedId}["']\\s*\\))`).test(script);
+}
+
+function htmlHasId(html: string, id: string): boolean {
+  const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\bid\\s*=\\s*["']${escapedId}["']`, "i").test(html);
+}
+
+function isLikelyOptionalSelector(selector: string): boolean {
+  return selector.includes(":") || selector.includes(" ") || selector.includes(">") || selector.includes("+") || selector.includes("~");
+}
+
+function selectorExistsInHtml(html: string, selector: string): boolean {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (selector.startsWith("#")) {
+    return htmlHasId(html, selector.slice(1));
+  }
+
+  if (selector.startsWith(".")) {
+    const className = selector.slice(1).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\bclass\\s*=\\s*["'][^"']*\\b${className}\\b`, "i").test(html);
+  }
+
+  const attrMatch = selector.match(/^\[([a-zA-Z0-9_-]+)(?:=["']?([^"'\]]+)["']?)?\]$/);
+  if (attrMatch) {
+    const attrName = attrMatch[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const attrValue = attrMatch[2]?.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return attrValue
+      ? new RegExp(`\\b${attrName}\\s*=\\s*["']${attrValue}["']`, "i").test(html)
+      : new RegExp(`\\b${attrName}(?:\\s*=|\\s|>)`, "i").test(html);
+  }
+
+  if (/^[a-z][a-z0-9-]*$/i.test(selector)) {
+    return new RegExp(`<${escapedSelector}(?:\\s|>)`, "i").test(html);
+  }
+
+  return true;
+}
+
+function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): void {
+  const htmlPath = findRepoFile(repoContext, "index.html");
+  if (!htmlPath) {
+    return;
+  }
+
+  const htmlChange = changes.find((change) => change.filePath === htmlPath);
+  if (!htmlChange) {
+    return;
+  }
+
+  const effectiveHtml = htmlChange.modifiedContent;
+  for (const change of changes.filter((candidate) => isScript(candidate.filePath))) {
+    const missingIds = [...new Set([...change.modifiedContent.matchAll(getElementByIdPattern)]
+      .map((match) => match[1])
+      .filter((id) => !htmlHasId(effectiveHtml, id) && !scriptCreatesId(change.modifiedContent, id)))];
+
+    if (missingIds.length > 0) {
+      errors.push(`Change for ${change.filePath} queries missing HTML id(s): ${missingIds.join(", ")}`);
+    }
+
+    const missingSelectors = [...new Set([...change.modifiedContent.matchAll(querySelectorPattern)]
+      .map((match) => match[1])
+      .filter((selector) => !isLikelyOptionalSelector(selector))
+      .filter((selector) => !selectorExistsInHtml(effectiveHtml, selector)))];
+
+    if (missingSelectors.length > 0) {
+      errors.push(`Change for ${change.filePath} queries selector(s) with no matching HTML: ${missingSelectors.join(", ")}`);
+    }
+  }
+}
+
+async function validateStaticAssetLinks(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
+  const htmlPath = findRepoFile(repoContext, "index.html");
+  if (!htmlPath) {
+    return;
+  }
+
+  const htmlChange = changes.find((change) => change.filePath === htmlPath);
+  const effectiveHtml = htmlChange
+    ? htmlChange.modifiedContent
+    : await readFile(join(repoContext.localPath, htmlPath), "utf8").catch(() => "");
+
+  for (const change of changes) {
+    if (change.originalContent.length > 0 || (!isScript(change.filePath) && !isStylesheet(change.filePath))) {
+      continue;
+    }
+
+    if (!htmlReferencesAsset(effectiveHtml, change.filePath)) {
+      errors.push(`New static asset ${change.filePath} is not linked from ${htmlPath}`);
+    }
+  }
 }
 
 async function validateModalStyling(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
@@ -332,6 +447,8 @@ export async function validate(
 
   await validateModalStyling(changes, repoContext, errors);
   await validateModalBehavior(changes, repoContext, errors);
+  await validateStaticAssetLinks(changes, repoContext, errors);
+  validateScriptSelectorsAgainstHtml(changes, repoContext, errors);
 
   return {
     valid: errors.length === 0,

@@ -129,6 +129,35 @@ describe("runVerificationCommands", () => {
     expect(result.commands).toEqual([]);
   });
 
+  it("loads linked supplemental static scripts during frontend smoke verification", async () => {
+    const localPath = await createStaticSiteRepo("console.log('base');\n");
+    await writeFile(
+      join(localPath, "index.html"),
+      "<!doctype html><html><body><div id=\"target\"></div><script src=\"script.js\"></script><script src=\"collection-modal.js\"></script></body></html>\n",
+      "utf8"
+    );
+
+    const result = await runVerificationCommands(
+      [
+        {
+          filePath: "collection-modal.js",
+          originalContent: "",
+          modifiedContent: "document.querySelector('#target').textContent = 'supplemental ready';\n",
+          explanation: "add supplemental behavior"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
   it("rejects static site changes with frontend runtime errors", async () => {
     const localPath = await createStaticSiteRepo();
 

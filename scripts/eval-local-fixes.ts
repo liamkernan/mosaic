@@ -36,8 +36,8 @@ interface EvalCase {
     confidence: number;
   };
   expectedReferenceFiles?: string[];
-  requiredChangedFilePatterns?: string[];
-  requiredFileContains?: Array<{ path: string; text: string }>;
+  requiredChangedFilePatterns?: Array<string | string[]>;
+  requiredFileContains?: Array<{ path: string | string[]; text: string }>;
   verificationCommands?: string[];
   runPythonUnitTests?: boolean;
   runChangedPythonTests?: boolean;
@@ -309,16 +309,23 @@ async function evaluateChecks(
 
   if (generated) {
     for (const pattern of evalCase.requiredChangedFilePatterns ?? []) {
-      const matched = [...changedFiles].some((filePath) => filePath === pattern || filePath.includes(pattern));
+      const patterns = Array.isArray(pattern) ? pattern : [pattern];
+      const matched = [...changedFiles].some((filePath) =>
+        patterns.some((candidate) => filePath === candidate || filePath.includes(candidate))
+      );
       if (!matched) {
-        errors.push(`No generated change matched required path pattern: ${pattern}`);
+        errors.push(`No generated change matched required path pattern: ${patterns.join(" OR ")}`);
       }
     }
 
     for (const requirement of evalCase.requiredFileContains ?? []) {
-      const content = await readFile(join(repoPath, requirement.path), "utf8").catch(() => "");
-      if (!content.includes(requirement.text)) {
-        errors.push(`${requirement.path} does not contain required text: ${requirement.text}`);
+      const paths = Array.isArray(requirement.path) ? requirement.path : [requirement.path];
+      const matched = await Promise.all(paths.map(async (path) => {
+        const content = await readFile(join(repoPath, path), "utf8").catch(() => "");
+        return content.includes(requirement.text);
+      }));
+      if (!matched.some(Boolean)) {
+        errors.push(`${paths.join(" OR ")} does not contain required text: ${requirement.text}`);
       }
     }
 
@@ -383,9 +390,8 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
   }
 
   const html = await readFile(join(repoPath, "index.html"), "utf8").catch(() => "");
-  const script = await readFile(join(repoPath, "script.js"), "utf8").catch(() => "");
-  if (html.length === 0 || script.length === 0) {
-    return ["Frontend assertions require index.html and script.js"];
+  if (html.length === 0) {
+    return ["Frontend assertions require index.html"];
   }
 
   const runtimeErrors: string[] = [];
@@ -403,12 +409,29 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
     error: (...args: unknown[]) => runtimeErrors.push(args.map(String).join(" "))
   };
 
-  const scriptElement = dom.window.document.createElement("script");
-  scriptElement.textContent = script;
-  dom.window.document.body.appendChild(scriptElement);
-  await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+  const scriptPaths = [...dom.window.document.querySelectorAll("script[src]")]
+    .map((scriptElement) => scriptElement.getAttribute("src") ?? "")
+    .filter((src) => src.length > 0 && !/^(?:[a-z]+:)?\/\//i.test(src))
+    .map((src) => src.replace(/^\.\//, "").replace(/^\//, ""));
+
+  if (scriptPaths.length === 0) {
+    return ["Frontend assertions require at least one local linked script"];
+  }
 
   const errors: string[] = [];
+  for (const scriptPath of scriptPaths) {
+    const script = await readFile(join(repoPath, scriptPath), "utf8").catch(() => "");
+    if (script.length === 0) {
+      errors.push(`Linked script could not be loaded: ${scriptPath}`);
+      continue;
+    }
+
+    const scriptElement = dom.window.document.createElement("script");
+    scriptElement.textContent = script;
+    dom.window.document.body.appendChild(scriptElement);
+  }
+  await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+
   for (const assertion of evalCase.frontendAssertions) {
     try {
       const clickable = querySelector(dom.window.document, assertion.click);
