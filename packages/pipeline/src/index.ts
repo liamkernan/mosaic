@@ -19,6 +19,7 @@ export * from "./repo-indexer.js";
 export * from "./staged-issues.js";
 export * from "./transient-llm.js";
 export * from "./validator.js";
+export * from "./verification-runner.js";
 export * from "./worker.js";
 export * from "./prompts/classify.prompt.js";
 export * from "./prompts/generate.prompt.js";

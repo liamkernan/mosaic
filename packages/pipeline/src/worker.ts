@@ -28,6 +28,7 @@ import { selectGenerationModelTier, shouldEscalateClassification } from "./model
 import { validatePlanCompletion } from "./plan-completion-validator.js";
 import { buildLlmRetryFeedbackItem, canRetryLlmOverload, getLlmRetryDelayMs, isRetryableLlmOverload } from "./transient-llm.js";
 import { validate } from "./validator.js";
+import { runVerificationCommands } from "./verification-runner.js";
 
 const FEEDBACK_QUEUE_NAME = "feedback-intake";
 
@@ -426,6 +427,58 @@ export class FeedbackPipelineWorker {
         classifiedFeedback,
         repoContext,
         `Validation failed: ${validation.errors.join("; ")}`,
+        options.stagedIssueNumber
+      );
+    }
+
+    let verification = await runVerificationCommands(changes, repoContext, implementationPlan);
+    if (!verification.valid) {
+      try {
+        const repairedChanges = await codeGenerator.repairValidationFailure(
+          classifiedFeedback,
+          relevantFiles,
+          fileTree,
+          changes,
+          verification.errors,
+          implementationPlan,
+          {
+            completeSolution
+          }
+        );
+
+        if (repairedChanges.length > 0 && repairedChanges.length <= repoConfig.security.max_files_changed) {
+          const repairedValidation = await validate(repairedChanges, repoContext, {
+            maxLinesAdded: repoConfig.security.max_lines_added,
+            maxChangedLines: repoConfig.security.max_changed_lines,
+            blockPatterns: repoConfig.security.block_patterns
+          });
+          const repairedPlanValidationErrors = validatePlanCompletion(repairedChanges, implementationPlan);
+          const completeRepairedValidation = repairedPlanValidationErrors.length > 0
+            ? {
+                valid: false,
+                errors: [...repairedValidation.errors, ...repairedPlanValidationErrors]
+              }
+            : repairedValidation;
+
+          if (completeRepairedValidation.valid) {
+            const repairedVerification = await runVerificationCommands(repairedChanges, repoContext, implementationPlan);
+            changes = repairedChanges;
+            validation = completeRepairedValidation;
+            verification = repairedVerification;
+          }
+        }
+      } catch (error) {
+        if (!(error instanceof LLMError)) {
+          throw error;
+        }
+      }
+    }
+
+    if (!verification.valid) {
+      return this.handleImplementationFailure(
+        classifiedFeedback,
+        repoContext,
+        `Verification failed: ${verification.errors.join("; ")}`,
         options.stagedIssueNumber
       );
     }

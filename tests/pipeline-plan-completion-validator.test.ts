@@ -6,7 +6,8 @@ const basePlan = {
   requiredFiles: [],
   acceptanceCriteria: [],
   implementationChecklist: [],
-  verificationChecklist: []
+  verificationChecklist: [],
+  verificationCommands: []
 };
 
 describe("validatePlanCompletion", () => {

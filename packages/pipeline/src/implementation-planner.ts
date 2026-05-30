@@ -16,7 +16,8 @@ const implementationPlanSchema = z.object({
   requiredFiles: z.array(planFileSchema).default([]),
   acceptanceCriteria: z.array(z.string().min(1)).default([]),
   implementationChecklist: z.array(z.string().min(1)).default([]),
-  verificationChecklist: z.array(z.string().min(1)).default([])
+  verificationChecklist: z.array(z.string().min(1)).default([]),
+  verificationCommands: z.array(z.string().min(1)).default([])
 });
 
 export type ImplementationPlan = z.infer<typeof implementationPlanSchema>;

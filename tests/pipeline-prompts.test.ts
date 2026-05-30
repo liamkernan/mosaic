@@ -74,6 +74,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("adversarial cases");
     expect(prompt).toContain("implementationChecklist");
     expect(prompt).toContain("acceptanceCriteria");
+    expect(prompt).toContain("verificationCommands");
   });
 
   it("includes implementation plan checklists in generation prompt", () => {
@@ -85,12 +86,14 @@ describe("pipeline prompts", () => {
         requiredFiles: [{ path: "script.js", reason: "wire click handlers" }],
         acceptanceCriteria: ["Journal cards must open full article content."],
         implementationChecklist: ["Journal cards open and populate full article content."],
-        verificationChecklist: ["Click each journal card and confirm modal content changes."]
+        verificationChecklist: ["Click each journal card and confirm modal content changes."],
+        verificationCommands: ["pnpm test"]
       }
     );
 
     expect(prompt).toContain("IMPLEMENTATION PLAN");
     expect(prompt).toContain("Acceptance criteria");
+    expect(prompt).toContain("Verification commands");
     expect(prompt).toContain("Journal cards open and populate full article content.");
     expect(prompt).toContain("satisfy every completion checklist item");
     expect(prompt).toContain("Treat loaded tests as executable contracts");
@@ -106,7 +109,8 @@ describe("pipeline prompts", () => {
         requiredFiles: [{ path: "script.js", reason: "wire click handlers" }],
         acceptanceCriteria: ["Journal cards must open full article content."],
         implementationChecklist: ["Journal cards open and populate full article content."],
-        verificationChecklist: ["Click each journal card and confirm modal content changes."]
+        verificationChecklist: ["Click each journal card and confirm modal content changes."],
+        verificationCommands: ["pnpm test"]
       },
       { completeSolution: true }
     );
