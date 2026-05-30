@@ -134,5 +134,89 @@
       "python3 -m unittest tests.smoke.test_baseline"
     ],
     "runChangedPythonTests": true
+  },
+  {
+    "id": "sampleformosaic-collections-modal",
+    "repoFullName": "liamkernan/sampleformosaic",
+    "repoDirName": "sampleformosaic",
+    "baseRef": "c0b6918",
+    "feedback": {
+      "source": "web_form",
+      "rawContent": "add pop ups when the user clicks on any of the popular collections, ie kitchen workspace living room, that show more information maybe pictures maybe reviews prices etc",
+      "senderIdentifier": "eval@example.com",
+      "category": "feature_request",
+      "complexity": "moderate",
+      "summary": "Add popup modals with detailed information for popular collection cards",
+      "relevantFiles": ["index.html", "script.js", "styles.css"],
+      "confidence": 0.8
+    },
+    "expectedReferenceFiles": ["README.md"],
+    "requiredChangedFilePatterns": ["index.html", "script.js", "styles.css"],
+    "requiredFileContains": [
+      {
+        "path": "index.html",
+        "text": "collection"
+      },
+      {
+        "path": "script.js",
+        "text": "collection"
+      }
+    ]
+  },
+  {
+    "id": "sampleformosaic-journal-articles",
+    "repoFullName": "liamkernan/sampleformosaic",
+    "repoDirName": "sampleformosaic",
+    "baseRef": "6796fc4",
+    "feedback": {
+      "source": "web_form",
+      "rawContent": "In the section, titled From the Journal: Styling ideas and care guides, complete the guides so that I can click on them and they open up into a full article about each topic at hand, from How to layer a shelf to candle care basics.",
+      "senderIdentifier": "eval@example.com",
+      "category": "feature_request",
+      "complexity": "complex",
+      "summary": "Make journal guide cards open full article content",
+      "relevantFiles": ["index.html", "script.js", "styles.css"],
+      "confidence": 0.72
+    },
+    "expectedReferenceFiles": ["README.md"],
+    "requiredChangedFilePatterns": ["script.js", "styles.css"],
+    "requiredFileContains": [
+      {
+        "path": "script.js",
+        "text": "article"
+      },
+      {
+        "path": "styles.css",
+        "text": "modal"
+      }
+    ]
+  },
+  {
+    "id": "sampleformosaic-product-details",
+    "repoFullName": "liamkernan/sampleformosaic",
+    "repoDirName": "sampleformosaic",
+    "baseRef": "cf66999",
+    "feedback": {
+      "source": "web_form",
+      "rawContent": "add product pages to each of the featured arrivals, so you can click on them to open up into a full page menu with specs and what not",
+      "senderIdentifier": "eval@example.com",
+      "category": "feature_request",
+      "complexity": "complex",
+      "summary": "Add individual product detail pages for featured arrivals",
+      "relevantFiles": ["index.html", "script.js", "styles.css"],
+      "confidence": 0.72
+    },
+    "expectedReferenceFiles": ["README.md"],
+    "requiredChangedFilePatterns": ["index.html", "script.js", "styles.css"],
+    "requiredFileContains": [
+      {
+        "path": "script.js",
+        "text": "product"
+      },
+      {
+        "path": "index.html",
+        "text": "product"
+      }
+    ]
   }
 ]
