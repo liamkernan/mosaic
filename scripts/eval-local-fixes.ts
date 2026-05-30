@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { JSDOM, VirtualConsole } from "jsdom";
 
 import { CodeGenerator } from "../packages/pipeline/src/code-generator.js";
 import { FeedbackClassifier } from "../packages/pipeline/src/classifier.js";
@@ -39,6 +40,18 @@ interface EvalCase {
   verificationCommands?: string[];
   runPythonUnitTests?: boolean;
   runChangedPythonTests?: boolean;
+  frontendAssertions?: FrontendAssertion[];
+}
+
+interface FrontendAssertion {
+  name: string;
+  click: string;
+  expect: Array<
+    | { selector: string; textIncludes: string }
+    | { selector: string; attribute: string; equals: string }
+    | { selector: string; hasClass: string }
+    | { selector: string; minCount: number }
+  >;
 }
 
 interface EvalResult {
@@ -60,6 +73,7 @@ function parseArgs(argv: string[]): {
   repoRoot: string;
   casesPath: string;
   model: keyof typeof ANTHROPIC_MODEL_IDS;
+  caseTimeoutMs: number;
 } {
   const args = {
     caseIds: [] as string[],
@@ -68,7 +82,8 @@ function parseArgs(argv: string[]): {
     keep: false,
     repoRoot: process.env.MOSAIC_EVAL_REPO_ROOT ?? resolve(process.env.HOME ?? ".", "Documents"),
     casesPath: "evals/local-fix-cases.json",
-    model: "sonnet" as keyof typeof ANTHROPIC_MODEL_IDS
+    model: "sonnet" as keyof typeof ANTHROPIC_MODEL_IDS,
+    caseTimeoutMs: Number(process.env.MOSAIC_EVAL_CASE_TIMEOUT_MS ?? 300_000)
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -91,6 +106,11 @@ function parseArgs(argv: string[]): {
         throw new Error(`Unknown model tier: ${model}`);
       }
       args.model = model;
+    } else if (arg === "--case-timeout-ms") {
+      args.caseTimeoutMs = Number(argv[++index]);
+      if (!Number.isFinite(args.caseTimeoutMs) || args.caseTimeoutMs <= 0) {
+        throw new Error("--case-timeout-ms must be a positive number");
+      }
     } else if (arg === "--") {
       continue;
     } else {
@@ -300,8 +320,113 @@ async function evaluateChecks(
         errors.push(`${requirement.path} does not contain required text: ${requirement.text}`);
       }
     }
+
+    for (const error of await runFrontendAssertions(evalCase, repoPath)) {
+      errors.push(error);
+    }
   }
 
+  return errors;
+}
+
+function isTextExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string; textIncludes: string } {
+  return "textIncludes" in expectation;
+}
+
+function isAttributeExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string; attribute: string; equals: string } {
+  return "attribute" in expectation;
+}
+
+function isClassExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string; hasClass: string } {
+  return "hasClass" in expectation;
+}
+
+function isCountExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string; minCount: number } {
+  return "minCount" in expectation;
+}
+
+async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Promise<string[]> {
+  if (!evalCase.frontendAssertions || evalCase.frontendAssertions.length === 0) {
+    return [];
+  }
+
+  const html = await readFile(join(repoPath, "index.html"), "utf8").catch(() => "");
+  const script = await readFile(join(repoPath, "script.js"), "utf8").catch(() => "");
+  if (html.length === 0 || script.length === 0) {
+    return ["Frontend assertions require index.html and script.js"];
+  }
+
+  const runtimeErrors: string[] = [];
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on("jsdomError", (error) => runtimeErrors.push(error.message));
+  const dom = new JSDOM(html, {
+    url: "http://localhost/",
+    pretendToBeVisual: true,
+    runScripts: "dangerously",
+    virtualConsole
+  });
+
+  dom.window.console = {
+    ...dom.window.console,
+    error: (...args: unknown[]) => runtimeErrors.push(args.map(String).join(" "))
+  };
+
+  const scriptElement = dom.window.document.createElement("script");
+  scriptElement.textContent = script;
+  dom.window.document.body.appendChild(scriptElement);
+  await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+
+  const errors: string[] = [];
+  for (const assertion of evalCase.frontendAssertions) {
+    try {
+      const clickable = dom.window.document.querySelector(assertion.click);
+      if (!clickable) {
+        errors.push(`${assertion.name}: click target not found: ${assertion.click}`);
+        continue;
+      }
+
+      clickable.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+      await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+
+      for (const expectation of assertion.expect) {
+        const elements = dom.window.document.querySelectorAll(expectation.selector);
+        if (isCountExpectation(expectation)) {
+          if (elements.length < expectation.minCount) {
+            errors.push(`${assertion.name}: expected at least ${expectation.minCount} matches for ${expectation.selector}, found ${elements.length}`);
+          }
+          continue;
+        }
+
+        const element = elements[0];
+        if (!element) {
+          errors.push(`${assertion.name}: expected element not found: ${expectation.selector}`);
+          continue;
+        }
+
+        if (isTextExpectation(expectation)) {
+          const text = element.textContent ?? "";
+          if (!text.includes(expectation.textIncludes)) {
+            errors.push(`${assertion.name}: ${expectation.selector} text did not include ${JSON.stringify(expectation.textIncludes)}`);
+          }
+        } else if (isAttributeExpectation(expectation)) {
+          const actual = element.getAttribute(expectation.attribute);
+          if (actual !== expectation.equals) {
+            errors.push(`${assertion.name}: ${expectation.selector} expected ${expectation.attribute}=${JSON.stringify(expectation.equals)}, got ${JSON.stringify(actual)}`);
+          }
+        } else if (isClassExpectation(expectation) && !element.classList.contains(expectation.hasClass)) {
+          errors.push(`${assertion.name}: ${expectation.selector} missing class ${expectation.hasClass}`);
+        }
+      }
+    } catch (error) {
+      errors.push(`${assertion.name}: frontend assertion crashed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (runtimeErrors.length > 0) {
+    errors.push(`Frontend runtime errors: ${runtimeErrors.join("; ")}`);
+  }
+
+  dom.window.close();
   return errors;
 }
 
@@ -501,10 +626,23 @@ async function main(): Promise<void> {
 
   const results: EvalResult[] = [];
   for (const evalCase of selectedCases) {
-    const result = await runCase(evalCase, options);
-    results.push(result);
-    if (!options.keep) {
-      await rm(dirname(result.tempPath), { recursive: true, force: true });
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      console.error(`Eval case timed out after ${options.caseTimeoutMs}ms: ${evalCase.id}`);
+      process.exit(124);
+    }, options.caseTimeoutMs);
+
+    try {
+      const result = await runCase(evalCase, options);
+      results.push(result);
+      if (!options.keep) {
+        await rm(dirname(result.tempPath), { recursive: true, force: true });
+      }
+    } finally {
+      if (!timedOut) {
+        clearTimeout(timeout);
+      }
     }
   }
 

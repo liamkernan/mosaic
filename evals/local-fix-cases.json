@@ -161,6 +161,35 @@
         "path": "script.js",
         "text": "collection"
       }
+    ],
+    "frontendAssertions": [
+      {
+        "name": "Kitchen collection opens a populated modal",
+        "click": ".collection-card-clickable[data-collection=\"kitchen\"]",
+        "expect": [
+          {
+            "selector": "#collectionModalOverlay",
+            "attribute": "aria-hidden",
+            "equals": "false"
+          },
+          {
+            "selector": "#collectionModalOverlay",
+            "hasClass": "is-open"
+          },
+          {
+            "selector": "#modalTitle",
+            "textIncludes": "Kitchen"
+          },
+          {
+            "selector": "#modalItems .modal-item-card",
+            "minCount": 2
+          },
+          {
+            "selector": "#modalReviewList .modal-review-item",
+            "minCount": 1
+          }
+        ]
+      }
     ]
   },
   {
@@ -189,6 +218,31 @@
         "path": "styles.css",
         "text": "modal"
       }
+    ],
+    "frontendAssertions": [
+      {
+        "name": "Candle guide opens full article content",
+        "click": ".journal-card-clickable[data-article=\"candle-care\"]",
+        "expect": [
+          {
+            "selector": "#articleModalOverlay",
+            "attribute": "aria-hidden",
+            "equals": "false"
+          },
+          {
+            "selector": "#articleModalOverlay",
+            "hasClass": "is-open"
+          },
+          {
+            "selector": "#articleTitle",
+            "textIncludes": "Candle care"
+          },
+          {
+            "selector": "#articleContent",
+            "textIncludes": "first burn"
+          }
+        ]
+      }
     ]
   },
   {
@@ -216,6 +270,35 @@
       {
         "path": "index.html",
         "text": "product"
+      }
+    ],
+    "frontendAssertions": [
+      {
+        "name": "Featured product opens detail view",
+        "click": ".product-card-clickable[data-product-key=\"sandstone-vase\"]",
+        "expect": [
+          {
+            "selector": "#productDetailOverlay",
+            "attribute": "aria-hidden",
+            "equals": "false"
+          },
+          {
+            "selector": "#productDetailOverlay",
+            "hasClass": "is-open"
+          },
+          {
+            "selector": "#productDetailTitle",
+            "textIncludes": "Sandstone Vase"
+          },
+          {
+            "selector": "#productDetailSpecs",
+            "textIncludes": "Material"
+          },
+          {
+            "selector": "#productDetailReviews .pd-review",
+            "minCount": 1
+          }
+        ]
       }
     ]
   }
