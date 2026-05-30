@@ -93,6 +93,7 @@ export class CodeGenerator {
     fileTree: string[],
     currentChanges: GeneratedChange[],
     validationErrors: string[],
+    implementationPlan?: ImplementationPlan,
     options: GenerationOptions = {}
   ): Promise<GeneratedChange[]> {
     this.llmClient.setUsageContext({
@@ -102,7 +103,7 @@ export class CodeGenerator {
 
     const maxTokens = estimateGenerationMaxTokens(relevantFiles, options);
     const response = await this.llmClient.complete(
-      buildValidationRepairPrompt(feedback.summary, relevantFiles, currentChanges, validationErrors, fileTree),
+      buildValidationRepairPrompt(feedback.summary, relevantFiles, currentChanges, validationErrors, fileTree, implementationPlan),
       "Return only the repaired <changes> payload with complete file contents in CDATA blocks.",
       {
         temperature: 0,

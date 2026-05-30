@@ -69,7 +69,10 @@ describe("pipeline prompts", () => {
 
     expect(prompt).toContain("scripts/state files");
     expect(prompt).toContain("clickable UI");
+    expect(prompt).toContain("Extract every explicit acceptance criterion");
+    expect(prompt).toContain("adversarial cases");
     expect(prompt).toContain("implementationChecklist");
+    expect(prompt).toContain("acceptanceCriteria");
   });
 
   it("includes implementation plan checklists in generation prompt", () => {
@@ -79,12 +82,14 @@ describe("pipeline prompts", () => {
       ["index.html", "script.js"],
       {
         requiredFiles: [{ path: "script.js", reason: "wire click handlers" }],
+        acceptanceCriteria: ["Journal cards must open full article content."],
         implementationChecklist: ["Journal cards open and populate full article content."],
         verificationChecklist: ["Click each journal card and confirm modal content changes."]
       }
     );
 
     expect(prompt).toContain("IMPLEMENTATION PLAN");
+    expect(prompt).toContain("Acceptance criteria");
     expect(prompt).toContain("Journal cards open and populate full article content.");
     expect(prompt).toContain("satisfy every completion checklist item");
   });
@@ -96,6 +101,7 @@ describe("pipeline prompts", () => {
       ["index.html", "script.js"],
       {
         requiredFiles: [{ path: "script.js", reason: "wire click handlers" }],
+        acceptanceCriteria: ["Journal cards must open full article content."],
         implementationChecklist: ["Journal cards open and populate full article content."],
         verificationChecklist: ["Click each journal card and confirm modal content changes."]
       },
@@ -104,5 +110,6 @@ describe("pipeline prompts", () => {
 
     expect(prompt).toContain("complete, user-visible solution");
     expect(prompt).toContain("Do not use placeholder article text");
+    expect(prompt).toContain("A single happy-path example is not enough");
   });
 });

@@ -25,6 +25,7 @@ import {
   type StagedIssueMode
 } from "./staged-issues.js";
 import { selectGenerationModelTier, shouldEscalateClassification } from "./model-routing.js";
+import { validatePlanCompletion } from "./plan-completion-validator.js";
 import { buildLlmRetryFeedbackItem, canRetryLlmOverload, getLlmRetryDelayMs, isRetryableLlmOverload } from "./transient-llm.js";
 import { validate } from "./validator.js";
 
@@ -106,6 +107,10 @@ function mergeRelevantFiles(existingFiles: Array<{ path: string; content: string
   }
 
   return [...merged.values()];
+}
+
+function stripMosaicMetadataComments(body: string): string {
+  return body.replace(/<!--\s*mosaic:staged-issue[\s\S]*?-->/g, "").trim();
 }
 
 export class FeedbackPipelineWorker {
@@ -277,6 +282,10 @@ export class FeedbackPipelineWorker {
   ): Promise<{ artifactType: "issue" | "pr"; artifactValue: string }> {
     let relevantFiles = await this.repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
     const fileTree = this.repoIndexer.fileTreeToPaths(repoContext);
+    const referenceFiles = await this.repoIndexer.findRepositoryReferenceFiles(repoContext, classifiedFeedback, {
+      issueNumber: options.stagedIssueNumber
+    });
+    relevantFiles = mergeRelevantFiles(relevantFiles, referenceFiles);
     const generationModel = selectGenerationModelTier(classifiedFeedback) === "sonnet"
       ? ANTHROPIC_MODEL_IDS.sonnet
       : ANTHROPIC_MODEL_IDS.haiku;
@@ -336,6 +345,13 @@ export class FeedbackPipelineWorker {
       maxChangedLines: repoConfig.security.max_changed_lines,
       blockPatterns: repoConfig.security.block_patterns
     });
+    const planValidationErrors = validatePlanCompletion(changes, implementationPlan);
+    if (planValidationErrors.length > 0) {
+      validation = {
+        valid: false,
+        errors: [...validation.errors, ...planValidationErrors]
+      };
+    }
 
     if (!validation.valid) {
       try {
@@ -345,6 +361,7 @@ export class FeedbackPipelineWorker {
           fileTree,
           changes,
           validation.errors,
+          implementationPlan,
           {
             completeSolution
           }
@@ -356,13 +373,20 @@ export class FeedbackPipelineWorker {
             maxChangedLines: repoConfig.security.max_changed_lines,
             blockPatterns: repoConfig.security.block_patterns
           });
+          const repairedPlanValidationErrors = validatePlanCompletion(repairedChanges, implementationPlan);
+          const completeRepairedValidation = repairedPlanValidationErrors.length > 0
+            ? {
+                valid: false,
+                errors: [...repairedValidation.errors, ...repairedPlanValidationErrors]
+              }
+            : repairedValidation;
 
-          if (repairedValidation.valid) {
+          if (completeRepairedValidation.valid) {
             changes = repairedChanges;
-            validation = repairedValidation;
+            validation = completeRepairedValidation;
           } else {
             changes = repairedChanges;
-            validation = repairedValidation;
+            validation = completeRepairedValidation;
           }
         }
       } catch (error) {
@@ -380,12 +404,19 @@ export class FeedbackPipelineWorker {
           maxChangedLines: repoConfig.security.max_changed_lines,
           blockPatterns: repoConfig.security.block_patterns
         });
+        const modalPlanValidationErrors = validatePlanCompletion(modalCompletedChanges, implementationPlan);
+        const completeModalValidation = modalPlanValidationErrors.length > 0
+          ? {
+              valid: false,
+              errors: [...modalCompletedValidation.errors, ...modalPlanValidationErrors]
+            }
+          : modalCompletedValidation;
 
-        if (modalCompletedValidation.valid) {
+        if (completeModalValidation.valid) {
           changes = modalCompletedChanges;
-          validation = modalCompletedValidation;
+          validation = completeModalValidation;
         } else {
-          validation = modalCompletedValidation;
+          validation = completeModalValidation;
         }
       }
     }
@@ -506,7 +537,7 @@ export class FeedbackPipelineWorker {
     const stagedFeedback: ClassifiedFeedback = {
       id: feedbackItem.id,
       source: stagedMetadata.source,
-      rawContent: stagedMetadata.rawContent,
+      rawContent: `${stagedMetadata.rawContent}\n\nLinked GitHub issue #${issueNumber}:\n${stripMosaicMetadataComments(issue.body ?? "")}`,
       senderIdentifier: stagedMetadata.senderIdentifier,
       repoFullName: stagedMetadata.repoFullName,
       receivedAt: new Date(stagedMetadata.receivedAt),

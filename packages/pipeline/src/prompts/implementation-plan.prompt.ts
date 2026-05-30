@@ -19,12 +19,17 @@ REPOSITORY FILE TREE:
 ${fileTree.join("\n")}
 
 CURRENTLY LOADED FILES:
-${relevantFiles.map((file) => `- ${file.path}: ${file.reason}`).join("\n")}
+${relevantFiles.map((file) => `--- ${file.path} ---\nReason: ${file.reason}\n${file.content}\n--- END ${file.path} ---`).join("\n\n")}
 
 Your job is to identify every file surface needed for a complete user-visible solution in one PR.
 
 Rules:
+- Treat repository issue files, README/docs, tests, and config as authoritative when they state expected behavior.
+- Extract every explicit acceptance criterion from authoritative sources before deciding files.
+- If a source states a sequence, ordering, tie-breaker, fallback, validation rule, or exact field/key, preserve it exactly. Do not substitute a merely stable or plausible alternative.
 - Include markup/view files, stylesheets, scripts/state files, routing files, data/content files, tests, and config when they are needed.
+- Include tests when the repository has a relevant test pattern and the change affects behavior, especially sort/order/filter/ranking logic, persistence, validation, permissions, or API responses.
+- For sort/order/filter/ranking bugs, verification must include adversarial cases for the primary condition and every stated tie-breaker.
 - For clickable UI, modals, drawers, accordions, tabs, forms, filters, navigation, or routes, include both the UI surface and the behavior/state surface.
 - For new content experiences, include the content/data source and the rendering behavior.
 - Do not include unrelated files.
@@ -38,6 +43,9 @@ JSON shape:
       "path": "relative/path.ext",
       "reason": "why this file is needed"
     }
+  ],
+  "acceptanceCriteria": [
+    "explicit requirement copied or tightly paraphrased from repo docs/tests/user request"
   ],
   "implementationChecklist": [
     "specific behavior or acceptance criterion that must be true"

@@ -9,7 +9,7 @@ export function buildGenerationPrompt(
   options: { completeSolution?: boolean } = {}
 ): string {
   const planSection = implementationPlan
-    ? `\nIMPLEMENTATION PLAN:\nRequired files:\n${implementationPlan.requiredFiles.map((file) => `- ${file.path}: ${file.reason}`).join("\n")}\n\nCompletion checklist:\n${implementationPlan.implementationChecklist.map((item) => `- ${item}`).join("\n")}\n\nVerification checklist:\n${implementationPlan.verificationChecklist.map((item) => `- ${item}`).join("\n")}\n`
+    ? `\nIMPLEMENTATION PLAN:\nRequired files:\n${implementationPlan.requiredFiles.map((file) => `- ${file.path}: ${file.reason}`).join("\n")}\n\nAcceptance criteria:\n${implementationPlan.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}\n\nCompletion checklist:\n${implementationPlan.implementationChecklist.map((item) => `- ${item}`).join("\n")}\n\nVerification checklist:\n${implementationPlan.verificationChecklist.map((item) => `- ${item}`).join("\n")}\n`
     : "";
 
   return `You are a senior software engineer implementing a user-requested change in a codebase.
@@ -28,7 +28,11 @@ INSTRUCTIONS:
 - Preserve the existing code style, indentation, and conventions EXACTLY.
 - Only modify files that need to change. Do not refactor unrelated code.
 - If an implementation plan is provided, satisfy every completion checklist item or return <changes></changes>.
+- Treat every acceptance criterion from the implementation plan as binding. Do not silently weaken, reinterpret, or replace it.
 - For moderate or complex requests, prefer coherent complete behavior over the smallest possible diff, while still avoiding unrelated refactors.
+- Add or update focused tests when the repository has a relevant test pattern and the request changes behavior.
+- For sort/order/filter/ranking changes, cover the primary behavior and every stated tie-breaker with adversarial tests. A single happy-path example is not enough.
+- If an acceptance criterion names exact fields, keys, ordering clauses, or tie-breakers, implement those exact terms. You may add a deterministic tertiary tie-breaker only after all required keys.
 - Do not use placeholder article text, placeholder data, inert buttons, empty handlers, or UI that appears clickable but does not complete the requested workflow.
 - For clickable UI, use native <button> or <a> elements whenever possible. Do not attach click-only behavior to plain div/article/section/card containers unless you also make them accessible with role, tabindex, and keyboard handling.
 - Do not leave visible links with href="#" or javascript:void(0). If a link or control is visible, it must navigate, submit, open the intended UI, or be removed.

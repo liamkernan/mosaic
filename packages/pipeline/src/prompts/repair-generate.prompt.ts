@@ -20,8 +20,18 @@ export function buildValidationRepairPrompt(
   relevantFiles: Array<{ path: string; content: string }>,
   currentChanges: Array<{ filePath: string; modifiedContent: string; explanation: string }>,
   validationErrors: string[],
-  fileTree: string[]
+  fileTree: string[],
+  implementationPlan?: {
+    requiredFiles: Array<{ path: string; reason: string }>;
+    acceptanceCriteria: string[];
+    implementationChecklist: string[];
+    verificationChecklist: string[];
+  }
 ): string {
+  const planSection = implementationPlan
+    ? `\nIMPLEMENTATION PLAN:\nRequired files:\n${implementationPlan.requiredFiles.map((file) => `- ${file.path}: ${file.reason}`).join("\n")}\n\nAcceptance criteria:\n${implementationPlan.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}\n\nCompletion checklist:\n${implementationPlan.implementationChecklist.map((item) => `- ${item}`).join("\n")}\n\nVerification checklist:\n${implementationPlan.verificationChecklist.map((item) => `- ${item}`).join("\n")}\n`
+    : "";
+
   return `You are repairing a generated code change that failed validation.
 
 USER REQUEST: ${summary}
@@ -31,6 +41,7 @@ ${validationErrors.map((error) => `- ${error}`).join("\n")}
 
 REPOSITORY FILE TREE:
 ${fileTree.join("\n")}
+${planSection}
 
 ORIGINAL RELEVANT FILES:
 ${relevantFiles.map((file) => `--- ${file.path} ---\n${file.content}\n--- END ${file.path} ---`).join("\n\n")}
@@ -41,6 +52,9 @@ ${currentChanges.map((change) => `--- ${change.filePath} ---\n${change.modifiedC
 INSTRUCTIONS:
 - Return a corrected complete change set that satisfies every validation error.
 - Preserve useful parts of the current invalid changes when safe.
+- Treat acceptance criteria as binding. If they name exact fields, keys, ordering clauses, or tie-breakers, implement those exact terms.
+- Add or update focused tests when validation reports missing behavioral coverage or the plan verification checklist requires tests.
+- For sort/order/filter/ranking changes, cover the primary behavior and every stated tie-breaker with adversarial tests.
 - Replace click-only div/article/section/card containers with native buttons or links where possible; otherwise add role, tabindex, and keyboard handling.
 - Remove or wire any visible href="#" or javascript:void(0) links so every visible control performs the requested workflow.
 - If HTML adds modal/dialog/overlay classes or hooks, include matching CSS selectors in the stylesheet in the same response.

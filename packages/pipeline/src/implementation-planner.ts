@@ -5,6 +5,7 @@ import { z } from "zod";
 import { buildImplementationPlanPrompt } from "./prompts/implementation-plan.prompt.js";
 
 const PLAN_TIMEOUT_MS = 90_000;
+const PLAN_MAX_TOKENS = 4_096;
 
 const planFileSchema = z.object({
   path: z.string().min(1),
@@ -13,6 +14,7 @@ const planFileSchema = z.object({
 
 const implementationPlanSchema = z.object({
   requiredFiles: z.array(planFileSchema).default([]),
+  acceptanceCriteria: z.array(z.string().min(1)).default([]),
   implementationChecklist: z.array(z.string().min(1)).default([]),
   verificationChecklist: z.array(z.string().min(1)).default([])
 });
@@ -60,7 +62,7 @@ export class ImplementationPlanner {
       "Return only the implementation plan JSON object.",
       {
         temperature: 0,
-        maxTokens: 2_048,
+        maxTokens: PLAN_MAX_TOKENS,
         timeoutMs: PLAN_TIMEOUT_MS
       }
     );
