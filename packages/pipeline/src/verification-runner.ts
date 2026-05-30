@@ -1,8 +1,9 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { exec as execCallback } from "node:child_process";
 import { dirname, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
+import { JSDOM, VirtualConsole } from "jsdom";
 
 import type { GeneratedChange, RepoContext } from "@mosaic/core";
 
@@ -12,6 +13,7 @@ const exec = promisify(execCallback);
 const ignoredCopyNames = new Set([".git", "node_modules", "dist", "build", "__pycache__", ".next", "vendor"]);
 const maxCommands = 3;
 const defaultTimeoutMs = 120_000;
+const frontendFilePattern = /\.(?:html?|[cm]?jsx?|tsx?)$/i;
 
 export interface VerificationResult {
   valid: boolean;
@@ -85,13 +87,60 @@ function truncateOutput(output: string): string {
   return trimmed.length > 4_000 ? `${trimmed.slice(0, 4_000)}\n...[truncated]` : trimmed;
 }
 
+function shouldRunFrontendSmoke(changes: GeneratedChange[]): boolean {
+  return changes.some((change) => frontendFilePattern.test(change.filePath));
+}
+
+async function readOptionalFile(path: string): Promise<string | null> {
+  return readFile(path, "utf8").catch(() => null);
+}
+
+async function runFrontendSmoke(tempRepo: string, changes: GeneratedChange[]): Promise<string[]> {
+  if (!shouldRunFrontendSmoke(changes)) {
+    return [];
+  }
+
+  const html = await readOptionalFile(join(tempRepo, "index.html"));
+  const script = await readOptionalFile(join(tempRepo, "script.js"));
+  if (!html || !script) {
+    return [];
+  }
+
+  const runtimeErrors: string[] = [];
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on("jsdomError", (error) => runtimeErrors.push(error.message));
+  const dom = new JSDOM(html, {
+    url: "http://localhost/",
+    pretendToBeVisual: true,
+    runScripts: "dangerously",
+    virtualConsole
+  });
+
+  dom.window.console = {
+    ...dom.window.console,
+    error: (...args: unknown[]) => runtimeErrors.push(args.map(String).join(" "))
+  };
+
+  try {
+    const scriptElement = dom.window.document.createElement("script");
+    scriptElement.textContent = script;
+    dom.window.document.body.appendChild(scriptElement);
+    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+  } finally {
+    dom.window.close();
+  }
+
+  return runtimeErrors.map((error) => `Frontend runtime smoke failed: ${truncateOutput(error)}`);
+}
+
 export async function runVerificationCommands(
   changes: GeneratedChange[],
   repoContext: RepoContext,
   implementationPlan?: ImplementationPlan
 ): Promise<VerificationResult> {
   const commands = collectVerificationCommands(changes, implementationPlan);
-  if (commands.length === 0) {
+  const runFrontend = shouldRunFrontendSmoke(changes);
+  if (commands.length === 0 && !runFrontend) {
     return {
       valid: true,
       commands: [],
@@ -109,6 +158,8 @@ export async function runVerificationCommands(
       filter: (sourcePath) => shouldCopyPath(sourcePath, repoContext.localPath)
     });
     await writeChanges(tempRepo, changes);
+
+    errors.push(...await runFrontendSmoke(tempRepo, changes));
 
     for (const command of commands) {
       try {

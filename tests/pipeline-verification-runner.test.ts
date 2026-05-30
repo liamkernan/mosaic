@@ -21,6 +21,14 @@ describe("runVerificationCommands", () => {
     return localPath;
   }
 
+  async function createStaticSiteRepo(script = "document.querySelector('#target').textContent = 'ready';\n"): Promise<string> {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-verify-site-"));
+    tempDirs.push(localPath);
+    await writeFile(localPath + "/index.html", "<!doctype html><html><body><div id=\"target\"></div><script src=\"script.js\"></script></body></html>\n", "utf8");
+    await writeFile(localPath + "/script.js", script, "utf8");
+    return localPath;
+  }
+
   it("runs allowlisted verification commands in a temp copy", async () => {
     const localPath = await createPythonRepo();
 
@@ -94,5 +102,55 @@ describe("runVerificationCommands", () => {
 
     expect(result.valid).toBe(true);
     expect(result.commands).toEqual(['python3 -m unittest "tests.reported.test_example"']);
+  });
+
+  it("runs frontend smoke verification for static site changes without test commands", async () => {
+    const localPath = await createStaticSiteRepo();
+
+    const result = await runVerificationCommands(
+      [
+        {
+          filePath: "script.js",
+          originalContent: "document.querySelector('#target').textContent = 'ready';\n",
+          modifiedContent: "document.querySelector('#target').textContent = 'updated';\n",
+          explanation: "update static script"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.commands).toEqual([]);
+  });
+
+  it("rejects static site changes with frontend runtime errors", async () => {
+    const localPath = await createStaticSiteRepo();
+
+    const result = await runVerificationCommands(
+      [
+        {
+          filePath: "script.js",
+          originalContent: "document.querySelector('#target').textContent = 'ready';\n",
+          modifiedContent: "document.querySelector('#missing').addEventListener('click', function () {});\n",
+          explanation: "wire missing control"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("Frontend runtime smoke failed");
   });
 });
