@@ -1,4 +1,4 @@
-import { getEnv, LLMError, logger, RateLimitError, type ClassifiedFeedback, type FeedbackItem } from "@mosaic/core";
+import { getEnv, LLMError, logger, RateLimitError, type ClassifiedFeedback, type FeedbackItem, type GeneratedChange } from "@mosaic/core";
 import { getOctokit } from "@mosaic/github-app";
 import { ANTHROPIC_MODEL_IDS, LLMClient } from "@mosaic/llm";
 import { Queue, Worker } from "bullmq";
@@ -29,6 +29,7 @@ import { applyValidationFallbacks } from "./validation-repair.js";
 import { runVerificationCommands } from "./verification-runner.js";
 
 const FEEDBACK_QUEUE_NAME = "feedback-intake";
+const VALIDATION_REPAIR_ATTEMPTS = 2;
 
 type RepoContext = Awaited<ReturnType<RepoIndexer["getContext"]>>;
 type PromotionResult = { handled: boolean; artifactType?: "issue" | "pr"; artifactValue?: string };
@@ -49,6 +50,26 @@ function mergeRelevantFiles(existingFiles: Array<{ path: string; content: string
 
 function stripMosaicMetadataComments(body: string): string {
   return body.replace(/<!--\s*mosaic:staged-issue[\s\S]*?-->/g, "").trim();
+}
+
+async function validateGeneratedChanges(
+  changes: GeneratedChange[],
+  repoContext: RepoContext,
+  repoConfig: RepoRuntimeConfig,
+  implementationPlan: ImplementationPlan | undefined
+) {
+  const validation = await validate(changes, repoContext, {
+    maxLinesAdded: repoConfig.security.max_lines_added,
+    maxChangedLines: repoConfig.security.max_changed_lines,
+    blockPatterns: repoConfig.security.block_patterns
+  });
+  const planValidationErrors = validatePlanCompletion(changes, implementationPlan);
+  return planValidationErrors.length > 0
+    ? {
+        valid: false,
+        errors: [...validation.errors, ...planValidationErrors]
+      }
+    : validation;
 }
 
 export class FeedbackPipelineWorker {
@@ -220,20 +241,9 @@ export class FeedbackPipelineWorker {
       );
     }
 
-    let validation = await validate(changes, repoContext, {
-      maxLinesAdded: repoConfig.security.max_lines_added,
-      maxChangedLines: repoConfig.security.max_changed_lines,
-      blockPatterns: repoConfig.security.block_patterns
-    });
-    const planValidationErrors = validatePlanCompletion(changes, implementationPlan);
-    if (planValidationErrors.length > 0) {
-      validation = {
-        valid: false,
-        errors: [...validation.errors, ...planValidationErrors]
-      };
-    }
+    let validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan);
 
-    if (!validation.valid) {
+    for (let attempt = 0; !validation.valid && attempt < VALIDATION_REPAIR_ATTEMPTS; attempt += 1) {
       try {
         const repairedChanges = await codeGenerator.repairValidationFailure(
           classifiedFeedback,
@@ -248,56 +258,22 @@ export class FeedbackPipelineWorker {
         );
 
         if (repairedChanges.length > 0 && repairedChanges.length <= repoConfig.security.max_files_changed) {
-          const repairedValidation = await validate(repairedChanges, repoContext, {
-            maxLinesAdded: repoConfig.security.max_lines_added,
-            maxChangedLines: repoConfig.security.max_changed_lines,
-            blockPatterns: repoConfig.security.block_patterns
-          });
-          const repairedPlanValidationErrors = validatePlanCompletion(repairedChanges, implementationPlan);
-          const completeRepairedValidation = repairedPlanValidationErrors.length > 0
-            ? {
-                valid: false,
-                errors: [...repairedValidation.errors, ...repairedPlanValidationErrors]
-              }
-            : repairedValidation;
-
-          if (completeRepairedValidation.valid) {
-            changes = repairedChanges;
-            validation = completeRepairedValidation;
-          } else {
-            changes = repairedChanges;
-            validation = completeRepairedValidation;
-          }
+          changes = repairedChanges;
+          validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan);
         }
       } catch (error) {
         if (!(error instanceof LLMError)) {
           throw error;
         }
+        break;
       }
     }
 
     if (!validation.valid) {
       const modalCompletedChanges = await applyValidationFallbacks(changes, repoContext, validation.errors);
       if (modalCompletedChanges !== changes && modalCompletedChanges.length <= repoConfig.security.max_files_changed) {
-        const modalCompletedValidation = await validate(modalCompletedChanges, repoContext, {
-          maxLinesAdded: repoConfig.security.max_lines_added,
-          maxChangedLines: repoConfig.security.max_changed_lines,
-          blockPatterns: repoConfig.security.block_patterns
-        });
-        const modalPlanValidationErrors = validatePlanCompletion(modalCompletedChanges, implementationPlan);
-        const completeModalValidation = modalPlanValidationErrors.length > 0
-          ? {
-              valid: false,
-              errors: [...modalCompletedValidation.errors, ...modalPlanValidationErrors]
-            }
-          : modalCompletedValidation;
-
-        if (completeModalValidation.valid) {
-          changes = modalCompletedChanges;
-          validation = completeModalValidation;
-        } else {
-          validation = completeModalValidation;
-        }
+        changes = modalCompletedChanges;
+        validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan);
       }
     }
 
@@ -326,18 +302,7 @@ export class FeedbackPipelineWorker {
         );
 
         if (repairedChanges.length > 0 && repairedChanges.length <= repoConfig.security.max_files_changed) {
-          const repairedValidation = await validate(repairedChanges, repoContext, {
-            maxLinesAdded: repoConfig.security.max_lines_added,
-            maxChangedLines: repoConfig.security.max_changed_lines,
-            blockPatterns: repoConfig.security.block_patterns
-          });
-          const repairedPlanValidationErrors = validatePlanCompletion(repairedChanges, implementationPlan);
-          const completeRepairedValidation = repairedPlanValidationErrors.length > 0
-            ? {
-                valid: false,
-                errors: [...repairedValidation.errors, ...repairedPlanValidationErrors]
-              }
-            : repairedValidation;
+          const completeRepairedValidation = await validateGeneratedChanges(repairedChanges, repoContext, repoConfig, implementationPlan);
 
           if (completeRepairedValidation.valid) {
             const repairedVerification = await runVerificationCommands(repairedChanges, repoContext, implementationPlan);

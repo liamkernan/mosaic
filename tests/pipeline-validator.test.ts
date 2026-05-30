@@ -512,4 +512,42 @@ describe("validate", () => {
     expect(result.errors.join("\n")).toContain("queries missing HTML id(s): collectionModalClose");
     expect(result.errors.join("\n")).toContain("queries selector(s) with no matching HTML: .coll-card-btn");
   });
+
+  it("accepts changed static scripts that query existing class and data-attribute hooks", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(
+      join(localPath, "index.html"),
+      '<main><button class="collection-card" data-collection="kitchen">Kitchen</button><script src="./collection-modal.js"></script></main>\n',
+      "utf8"
+    );
+
+    const result = await validate(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>\n",
+          modifiedContent:
+            '<main><button class="collection-card" data-collection="kitchen">Kitchen</button><script src="./collection-modal.js"></script></main>\n',
+          explanation: "add collection card hook"
+        },
+        {
+          filePath: "collection-modal.js",
+          originalContent: "",
+          modifiedContent:
+            "document.querySelectorAll('.collection-card[data-collection]').forEach(function (button) { button.addEventListener('click', function () {}); });\n",
+          explanation: "wire modal behavior"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [{ path: "index.html", type: "file" }],
+        installationId: 1
+      }
+    );
+
+    expect(result.errors.join("\n")).not.toContain(".collection-card[data-collection]");
+  });
 });

@@ -104,4 +104,42 @@ describe("applyValidationFallbacks", () => {
     expect(htmlChange?.modifiedContent).toContain('<link rel="stylesheet" href="./collection-modal.css" />');
     expect(htmlChange?.modifiedContent).toContain('<script src="./collection-modal.js"></script>');
   });
+
+  it("adds missing html hooks for modal scripts when validation reports unmatched selectors", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
+    tempDirs.push(localPath);
+    await writeFile(
+      join(localPath, "index.html"),
+      '<!doctype html><html><body><main><article class="collection-card"><h3>Kitchen</h3></article></main></body></html>\n',
+      "utf8"
+    );
+
+    const repoContext: RepoContext = {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath,
+      installationId: 1,
+      fileTree: [{ path: "index.html", type: "file" }]
+    };
+    const changes: GeneratedChange[] = [
+      {
+        filePath: "script.js",
+        originalContent: "console.log('ready');\n",
+        modifiedContent:
+          "document.getElementById('modalOverlay').classList.add('is-open');\ndocument.getElementById('modalTitle').textContent = 'Kitchen';\ndocument.querySelectorAll('.collection-card[data-collection]');\ndocument.querySelector('.modal-close');\n",
+        explanation: "wire collection modal"
+      }
+    ];
+
+    const completed = await applyValidationFallbacks(changes, repoContext, [
+      "Change for script.js queries missing HTML id(s): modalOverlay, modalTitle",
+      "Change for script.js queries selector(s) with no matching HTML: .collection-card[data-collection], .modal-close"
+    ]);
+
+    const htmlChange = completed.find((change) => change.filePath === "index.html");
+    expect(htmlChange?.modifiedContent).toContain('class="collection-card" data-collection="kitchen"');
+    expect(htmlChange?.modifiedContent).toContain('id="modalOverlay"');
+    expect(htmlChange?.modifiedContent).toContain('id="modalTitle"');
+    expect(htmlChange?.modifiedContent).toContain('class="modal-close"');
+  });
 });

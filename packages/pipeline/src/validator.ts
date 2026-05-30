@@ -190,6 +190,24 @@ function htmlHasId(html: string, id: string): boolean {
   return new RegExp(`\\bid\\s*=\\s*["']${escapedId}["']`, "i").test(html);
 }
 
+function tagHasClass(tag: string, className: string): boolean {
+  const escapedClassName = className.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\bclass\\s*=\\s*["'][^"']*\\b${escapedClassName}\\b`, "i").test(tag);
+}
+
+function tagHasAttributeSelector(tag: string, selector: string): boolean {
+  const attrMatch = selector.match(/^\[([a-zA-Z0-9_-]+)(?:=["']?([^"'\]]+)["']?)?\]$/);
+  if (!attrMatch) {
+    return false;
+  }
+
+  const attrName = attrMatch[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const attrValue = attrMatch[2]?.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return attrValue
+    ? new RegExp(`\\b${attrName}\\s*=\\s*["']${attrValue}["']`, "i").test(tag)
+    : new RegExp(`\\b${attrName}(?:\\s*=|\\s|>|/)`, "i").test(tag);
+}
+
 function isLikelyOptionalSelector(selector: string): boolean {
   return selector.includes(":") || selector.includes(" ") || selector.includes(">") || selector.includes("+") || selector.includes("~");
 }
@@ -200,9 +218,15 @@ function selectorExistsInHtml(html: string, selector: string): boolean {
     return htmlHasId(html, selector.slice(1));
   }
 
+  const classAttributeMatch = selector.match(/^\.([a-zA-Z0-9_-]+)(\[[^\]]+\])$/);
+  if (classAttributeMatch) {
+    return [...html.matchAll(/<[^>]+>/g)].some((match) =>
+      tagHasClass(match[0], classAttributeMatch[1]) && tagHasAttributeSelector(match[0], classAttributeMatch[2])
+    );
+  }
+
   if (selector.startsWith(".")) {
-    const className = selector.slice(1).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return new RegExp(`\\bclass\\s*=\\s*["'][^"']*\\b${className}\\b`, "i").test(html);
+    return [...html.matchAll(/<[^>]+>/g)].some((match) => tagHasClass(match[0], selector.slice(1)));
   }
 
   const attrMatch = selector.match(/^\[([a-zA-Z0-9_-]+)(?:=["']?([^"'\]]+)["']?)?\]$/);

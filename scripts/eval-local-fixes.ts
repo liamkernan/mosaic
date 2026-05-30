@@ -18,6 +18,7 @@ import { ANTHROPIC_MODEL_IDS, LLMClient } from "../packages/llm/src/client.js";
 
 const exec = promisify(execCallback);
 const ignoredNames = new Set(["node_modules", ".git", "dist", "build", "__pycache__", ".next", "vendor"]);
+const validationRepairAttempts = 2;
 
 interface EvalCase {
   id: string;
@@ -553,14 +554,50 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     errors.push(...verificationErrors);
   }
 
-  errors.push(...await evaluateChecks(
+  let checkErrors = await evaluateChecks(
     evalCase,
     repoPath,
     referenceFiles.map((file) => file.path),
     relevantFiles.map((file) => file.path),
     changes,
     generated
-  ));
+  );
+
+  if (options.generate && checkErrors.length > 0) {
+    const fileTree = repoIndexer.fileTreeToPaths(repoContext);
+    const planner = new ImplementationPlanner(createEvalLlmClient(options.model));
+    const implementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
+    const generator = new CodeGenerator(createEvalLlmClient(options.model));
+    const repairedChanges = await repairVerificationFailure(
+      generator,
+      classifiedFeedback,
+      relevantFiles,
+      fileTree,
+      implementationPlan,
+      repoContext,
+      changes,
+      checkErrors
+    );
+    if (repairedChanges.length > 0) {
+      changes = repairedChanges;
+      await writeGeneratedChanges(repoPath, changes);
+      repoContext.fileTree = await buildFileTree(repoPath);
+      const repairedVerificationErrors = await runVerification(evalCase, repoPath, changes);
+      errors.push(...repairedVerificationErrors);
+      checkErrors = repairedVerificationErrors.length > 0
+        ? checkErrors
+        : await evaluateChecks(
+            evalCase,
+            repoPath,
+            referenceFiles.map((file) => file.path),
+            relevantFiles.map((file) => file.path),
+            changes,
+            generated
+          );
+    }
+  }
+
+  errors.push(...checkErrors);
 
   return {
     id: evalCase.id,
@@ -594,7 +631,7 @@ async function generateValidatedChanges(
     };
   }
 
-  if (!validation.valid) {
+  for (let attempt = 0; !validation.valid && attempt < validationRepairAttempts; attempt += 1) {
     try {
       const repairedChanges = await generator.repairValidationFailure(
         feedback,
@@ -623,6 +660,7 @@ async function generateValidatedChanges(
       if (!message.includes("llm") && !message.includes("anthropic") && !message.includes("timed out") && !message.includes("timeout")) {
         throw error;
       }
+      break;
     }
   }
 
