@@ -298,4 +298,66 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
     expect(capturedUserMessage).toContain("do not return HTML/CSS-only repairs");
     expect(capturedTimeoutMs).toBe(120_000);
   });
+
+  it("uses focused hook repair instructions when scripts query missing html", async () => {
+    let capturedUserMessage = "";
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete: async (_systemPrompt: string, userMessage: string) => {
+        capturedUserMessage = userMessage;
+        return `<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[
+<main></main>
+]]></search>
+    <replace><![CDATA[
+<main><button class="coll-card-btn" data-collection="kitchen">Kitchen</button><div id="collectionModal"></div></main>
+]]></replace>
+    <explanation>Add missing HTML hooks for the modal script.</explanation>
+  </edit>
+</changes>`;
+      }
+    } as unknown as LLMClient;
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Add collection popups",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "feature_request",
+        complexity: "complex",
+        summary: "Add collection popups",
+        relevantFiles: ["index.html", "collection-modal.js"],
+        confidence: 0.8
+      },
+      [
+        { path: "index.html", content: "<main></main>", reason: "markup" },
+        { path: "collection-modal.js", content: "document.getElementById('collectionModal').hidden = false;", reason: "behavior" }
+      ],
+      ["index.html", "collection-modal.js"],
+      [
+        {
+          filePath: "collection-modal.js",
+          originalContent: "",
+          modifiedContent: "document.getElementById('collectionModal').hidden = false;\ndocument.querySelectorAll('.coll-card-btn');",
+          explanation: "wire modal"
+        }
+      ],
+      [
+        "Change for collection-modal.js queries missing HTML id(s): collectionModal",
+        "Change for collection-modal.js queries selector(s) with no matching HTML: .coll-card-btn"
+      ],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("mismatched HTML and JavaScript hooks");
+    expect(capturedUserMessage).toContain("Add the exact missing ids/classes/data attributes");
+    expect(capturedUserMessage).toContain("do not leave selectors that match nothing");
+  });
 });

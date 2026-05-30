@@ -107,6 +107,10 @@ function hasMissingInteractiveBehaviorValidationError(validationErrors: string[]
   );
 }
 
+function hasMissingHtmlHookValidationError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) => /queries missing HTML id|queries selector/i.test(error));
+}
+
 export class CodeGenerator {
   constructor(private readonly llmClient: LLMClient) {}
 
@@ -238,6 +242,7 @@ export class CodeGenerator {
 
     const promptFiles = promptRelevantFiles(relevantFiles);
     const oversizedRepair = hasOversizedPatchValidationError(validationErrors);
+    const missingHtmlHookRepair = hasMissingHtmlHookValidationError(validationErrors);
     const missingBehaviorRepair = hasMissingInteractiveBehaviorValidationError(validationErrors);
     const focusedRepair = oversizedRepair || missingBehaviorRepair;
     const maxTokens = focusedRepair
@@ -245,6 +250,8 @@ export class CodeGenerator {
       : estimateGenerationMaxTokens(promptFiles, options);
     const userMessage = oversizedRepair
       ? "Return only a compact repaired <changes> payload. The previous patch exceeded validation limits, so remove repeated markup/data and use one reusable data-driven implementation with matching JS/CSS."
+      : missingHtmlHookRepair
+        ? "Return only a repaired <changes> payload focused on mismatched HTML and JavaScript hooks. Add the exact missing ids/classes/data attributes to the HTML, or retarget the script to hooks that already exist. Include both HTML and JS edits when needed; do not leave selectors that match nothing."
       : missingBehaviorRepair
         ? "Return only a repaired <changes> payload focused on missing interactive behavior. Add or update JavaScript that opens, populates, closes, and keyboard-wires the modal/dialog/overlay using the exact new markup ids/classes/data attributes; do not return HTML/CSS-only repairs."
       : "Return only the repaired <changes> payload with complete file contents in CDATA blocks.";
