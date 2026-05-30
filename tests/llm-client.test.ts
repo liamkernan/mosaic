@@ -79,4 +79,21 @@ describe("LLMClient", () => {
       { timeout: 1234 }
     );
   });
+
+  it("can disable Redis-backed rate limits and usage tracking for local evals", async () => {
+    const client = new LLMClient({
+      mode: "platform",
+      platformApiKey: "test-key",
+      disableUsageTracking: true
+    });
+    client.setUsageContext({
+      repoFullName: "owner/repo",
+      feedbackId: "01TEST"
+    });
+
+    await client.complete("system", "user");
+
+    expect(enforceRepoRateLimitMock).not.toHaveBeenCalled();
+    expect(trackUsageMock).not.toHaveBeenCalled();
+  });
 });

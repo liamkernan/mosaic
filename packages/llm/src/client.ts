@@ -15,6 +15,7 @@ export interface LLMClientOptions {
   apiKey?: string;
   platformApiKey?: string;
   model?: string;
+  disableUsageTracking?: boolean;
 }
 
 export interface CompletionOptions {
@@ -31,9 +32,10 @@ export interface UsageContext {
 export class LLMClient {
   private readonly client: Anthropic;
   private readonly defaultModel: string;
+  private readonly disableUsageTracking: boolean;
   private usageContext?: UsageContext;
 
-  constructor({ mode, apiKey, platformApiKey, model }: LLMClientOptions) {
+  constructor({ mode, apiKey, platformApiKey, model, disableUsageTracking = false }: LLMClientOptions) {
     const resolvedApiKey = mode === "byok" ? apiKey : platformApiKey;
     if (!resolvedApiKey) {
       throw new LLMError(`Missing API key for LLM mode: ${mode}`);
@@ -41,6 +43,7 @@ export class LLMClient {
 
     this.client = createAnthropicClient(resolvedApiKey);
     this.defaultModel = model ?? ANTHROPIC_MODEL_IDS.sonnet;
+    this.disableUsageTracking = disableUsageTracking;
   }
 
   setUsageContext(context: UsageContext): void {
@@ -54,7 +57,7 @@ export class LLMClient {
 
     while (attempt < maxRetries) {
       try {
-        if (this.usageContext) {
+        if (this.usageContext && !this.disableUsageTracking) {
           await enforceRepoRateLimit(this.usageContext.repoFullName);
         }
 
@@ -75,7 +78,7 @@ export class LLMClient {
           .map((item) => item.text)
           .join("\n");
 
-        if (this.usageContext && response.usage) {
+        if (this.usageContext && response.usage && !this.disableUsageTracking) {
           await trackUsage({
             ...this.usageContext,
             model,

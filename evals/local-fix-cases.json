@@ -1,0 +1,138 @@
+[
+  {
+    "id": "sampleformosaic2-001-sla-sort",
+    "repoFullName": "liamkernan/sampleformosaic2",
+    "repoDirName": "sampleformosaic2",
+    "baseRef": "17103c1",
+    "issueNumber": 1,
+    "feedback": {
+      "source": "web_form",
+      "rawContent": "The support queue is supposed to show the next SLA breach first when an operator chooses `sort=sla`. Right now, an old low-priority ticket can appear above a newer urgent ticket even though the urgent ticket is due much sooner.",
+      "senderIdentifier": "eval@example.com",
+      "category": "bug_report",
+      "complexity": "moderate",
+      "summary": "Fix SLA sort order so the next SLA breach appears first",
+      "relevantFiles": ["mosaic_demo/service.py"],
+      "confidence": 0.3
+    },
+    "expectedReferenceFiles": [
+      "issues/001-sla-queue-ordering.md",
+      "tests/reported/test_001_sla_sort.py"
+    ],
+    "requiredChangedFilePatterns": [
+      "mosaic_demo/service.py",
+      "tests/"
+    ],
+    "requiredFileContains": [
+      {
+        "path": "mosaic_demo/service.py",
+        "text": "sr.sla_due_at ASC, sr.created_at ASC"
+      }
+    ],
+    "verificationCommands": [
+      "python3 -m unittest tests.reported.test_001_sla_sort tests.smoke.test_baseline"
+    ]
+  },
+  {
+    "id": "sampleformosaic2-002-idempotent-external-ref",
+    "repoFullName": "liamkernan/sampleformosaic2",
+    "repoDirName": "sampleformosaic2",
+    "baseRef": "17103c1",
+    "issueNumber": 2,
+    "feedback": {
+      "source": "web_form",
+      "rawContent": "Slack keeps retrying support request delivery and the same ticket is showing up twice. When the source and external reference are the same, update the existing request instead of creating another open request.",
+      "senderIdentifier": "eval@example.com",
+      "category": "bug_report",
+      "complexity": "moderate",
+      "summary": "Make repeated source and external reference intake idempotent",
+      "relevantFiles": ["mosaic_demo/service.py", "mosaic_demo/db.py"],
+      "confidence": 0.55
+    },
+    "expectedReferenceFiles": [
+      "issues/002-idempotent-slack-events.md",
+      "tests/reported/test_002_idempotent_external_ref.py"
+    ],
+    "requiredChangedFilePatterns": [
+      "mosaic_demo/service.py",
+      "tests/"
+    ],
+    "verificationCommands": [
+      "python3 -m unittest tests.reported.test_002_idempotent_external_ref tests.smoke.test_baseline"
+    ]
+  },
+  {
+    "id": "sampleformosaic2-003-close-audit-event",
+    "repoFullName": "liamkernan/sampleformosaic2",
+    "repoDirName": "sampleformosaic2",
+    "baseRef": "17103c1",
+    "issueNumber": 3,
+    "feedback": {
+      "source": "web_form",
+      "rawContent": "When a request is closed, the audit timeline says updated. It should be a closed event so support can report on cycle time.",
+      "senderIdentifier": "eval@example.com",
+      "category": "bug_report",
+      "complexity": "moderate",
+      "summary": "Record a closed audit event when closing support requests",
+      "relevantFiles": ["mosaic_demo/service.py"],
+      "confidence": 0.75
+    },
+    "expectedReferenceFiles": [
+      "issues/003-close-audit-event.md",
+      "tests/reported/test_003_close_audit_event.py"
+    ],
+    "requiredChangedFilePatterns": [
+      "mosaic_demo/service.py",
+      "tests/"
+    ],
+    "requiredFileContains": [
+      {
+        "path": "mosaic_demo/service.py",
+        "text": "'closed'"
+      }
+    ],
+    "verificationCommands": [
+      "python3 -m unittest tests.reported.test_003_close_audit_event tests.smoke.test_baseline"
+    ]
+  },
+  {
+    "id": "sampleformosaic2-004-metrics-endpoint",
+    "repoFullName": "liamkernan/sampleformosaic2",
+    "repoDirName": "sampleformosaic2",
+    "baseRef": "17103c1",
+    "issueNumber": 4,
+    "feedback": {
+      "source": "web_form",
+      "rawContent": "The support lead wants a small dashboard endpoint at GET /metrics with counts of open requests by priority and the oldest open request timestamp. It should stay stable when there are no open requests.",
+      "senderIdentifier": "eval@example.com",
+      "category": "feature_request",
+      "complexity": "moderate",
+      "summary": "Add a lightweight support queue metrics endpoint",
+      "relevantFiles": ["mosaic_demo/service.py", "mosaic_demo/web.py", "tests/smoke/test_baseline.py"],
+      "confidence": 0.65
+    },
+    "expectedReferenceFiles": [
+      "issues/004-product-request-metrics-endpoint.md",
+      "tests/smoke/test_baseline.py"
+    ],
+    "requiredChangedFilePatterns": [
+      "mosaic_demo/service.py",
+      "mosaic_demo/web.py",
+      "tests/"
+    ],
+    "requiredFileContains": [
+      {
+        "path": "mosaic_demo/web.py",
+        "text": "\"/metrics\""
+      },
+      {
+        "path": "mosaic_demo/service.py",
+        "text": "open_by_priority"
+      }
+    ],
+    "verificationCommands": [
+      "python3 -m unittest tests.smoke.test_baseline"
+    ],
+    "runChangedPythonTests": true
+  }
+]
