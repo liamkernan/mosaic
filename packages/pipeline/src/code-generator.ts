@@ -100,6 +100,12 @@ function hasOversizedPatchValidationError(validationErrors: string[]): boolean {
   );
 }
 
+function hasMissingInteractiveBehaviorValidationError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) =>
+    /modal|overlay|dialog/i.test(error) && /behavior|script/i.test(error)
+  );
+}
+
 export class CodeGenerator {
   constructor(private readonly llmClient: LLMClient) {}
 
@@ -230,12 +236,16 @@ export class CodeGenerator {
     });
 
     const promptFiles = promptRelevantFiles(relevantFiles);
-    const minimalRepair = hasOversizedPatchValidationError(validationErrors);
-    const maxTokens = minimalRepair
+    const oversizedRepair = hasOversizedPatchValidationError(validationErrors);
+    const missingBehaviorRepair = hasMissingInteractiveBehaviorValidationError(validationErrors);
+    const focusedRepair = oversizedRepair || missingBehaviorRepair;
+    const maxTokens = focusedRepair
       ? Math.min(estimateGenerationMaxTokens(promptFiles, { completeSolution: false }), VALIDATION_REPAIR_MAX_TOKENS)
       : estimateGenerationMaxTokens(promptFiles, options);
-    const userMessage = minimalRepair
+    const userMessage = oversizedRepair
       ? "Return only a compact repaired <changes> payload. The previous patch exceeded validation limits, so remove repeated markup/data and use one reusable data-driven implementation with matching JS/CSS."
+      : missingBehaviorRepair
+        ? "Return only a repaired <changes> payload focused on missing interactive behavior. Add or update JavaScript that opens, populates, closes, and keyboard-wires the modal/dialog/overlay using the exact new markup ids/classes/data attributes; do not return HTML/CSS-only repairs."
       : "Return only the repaired <changes> payload with complete file contents in CDATA blocks.";
     const response = await this.llmClient.complete(
       buildValidationRepairPrompt(feedback.summary, promptFiles, currentChanges, validationErrors, fileTree, implementationPlan),
@@ -243,7 +253,7 @@ export class CodeGenerator {
       {
         temperature: 0,
         maxTokens,
-        timeoutMs: minimalRepair ? VALIDATION_REPAIR_TIMEOUT_MS : GENERATION_TIMEOUT_MS
+        timeoutMs: focusedRepair ? VALIDATION_REPAIR_TIMEOUT_MS : GENERATION_TIMEOUT_MS
       }
     );
 

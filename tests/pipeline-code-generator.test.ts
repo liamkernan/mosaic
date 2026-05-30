@@ -232,4 +232,70 @@ const retrySucceeded = true;
     expect(capturedMaxTokens).toBeLessThanOrEqual(12_288);
     expect(capturedTimeoutMs).toBe(120_000);
   });
+
+  it("uses focused script repair instructions when modal behavior is missing", async () => {
+    let capturedUserMessage = "";
+    let capturedTimeoutMs = 0;
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete: async (_systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
+        capturedUserMessage = userMessage;
+        capturedTimeoutMs = options.timeoutMs ?? 0;
+        return `<changes>
+  <edit>
+    <filePath>script.js</filePath>
+    <search><![CDATA[
+console.log('ready');
+]]></search>
+    <replace><![CDATA[
+console.log('ready');
+document.querySelectorAll('[data-collection]').forEach((button) => {
+  button.addEventListener('click', () => document.getElementById('collectionModalOverlay').setAttribute('aria-hidden', 'false'));
+});
+]]></replace>
+    <explanation>Wire collection triggers to the modal overlay.</explanation>
+  </edit>
+</changes>`;
+      }
+    } as unknown as LLMClient;
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Add collection popups",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "feature_request",
+        complexity: "complex",
+        summary: "Add collection popups",
+        relevantFiles: ["index.html", "script.js", "styles.css"],
+        confidence: 0.8
+      },
+      [
+        { path: "index.html", content: '<main><div id="collectionModalOverlay" aria-hidden="true"></div></main>', reason: "markup" },
+        { path: "script.js", content: "console.log('ready');", reason: "behavior" },
+        { path: "styles.css", content: ".collection-modal-overlay { display: block; }", reason: "styles" }
+      ],
+      ["index.html", "script.js", "styles.css"],
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>",
+          modifiedContent: '<main><button data-collection="kitchen">Kitchen</button><div id="collectionModalOverlay" class="collection-modal-overlay" aria-hidden="true"></div></main>',
+          explanation: "add modal markup"
+        }
+      ],
+      ["Change for index.html adds modal UI hooks without matching behavior in changed scripts: collection-modal-overlay, dialog"],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("focused on missing interactive behavior");
+    expect(capturedUserMessage).toContain("opens, populates, closes, and keyboard-wires");
+    expect(capturedUserMessage).toContain("do not return HTML/CSS-only repairs");
+    expect(capturedTimeoutMs).toBe(120_000);
+  });
 });
