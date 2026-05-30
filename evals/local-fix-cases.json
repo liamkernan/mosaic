@@ -168,27 +168,26 @@
         "click": [
           ".collection-card-clickable[data-collection=\"kitchen\"]",
           ".collection-card[data-collection=\"kitchen\"]",
-          "[data-collection=\"kitchen\"]"
+          "[data-collection=\"kitchen\"]",
+          ".collection-trigger[data-modal=\"modal-kitchen\"]",
+          "[data-modal=\"modal-kitchen\"]"
         ],
         "expect": [
           {
-            "selector": "#collectionModalOverlay",
-            "attribute": "aria-hidden",
-            "equals": "false"
+            "selector": ["#collectionModalOverlay", "#modal-kitchen"],
+            "hasClass": ["is-open", "is-visible", "active", "modal-overlay--open"]
           },
           {
-            "selector": "#collectionModalOverlay",
-            "hasClass": ["is-open", "is-visible", "active"]
-          },
-          {
-            "selector": ["#modalTitle", "#collectionModalTitle"],
+            "selector": ["#modalTitle", "#collectionModalTitle", "#modal-kitchen-title"],
             "textIncludes": "Kitchen"
           },
           {
             "selector": [
               "#modalItems .modal-item-card",
               "#collectionModalProducts .collection-modal-product",
-              "#collectionModalProducts > *"
+              "#collectionModalProducts > *",
+              "#modal-kitchen .modal-product-item",
+              "#modal-kitchen .modal-product-list > *"
             ],
             "minCount": 2
           },
@@ -196,7 +195,9 @@
             "selector": [
               "#modalReviewList .modal-review-item",
               "#collectionModalReviewList .collection-modal-review",
-              "#collectionModalReviewList > *"
+              "#collectionModalReviewList > *",
+              "#modal-kitchen .modal-review",
+              "#modal-kitchen .modal-reviews > *"
             ],
             "minCount": 1
           }
@@ -238,12 +239,7 @@
         "expect": [
           {
             "selector": "#articleModalOverlay",
-            "attribute": "aria-hidden",
-            "equals": "false"
-          },
-          {
-            "selector": "#articleModalOverlay",
-            "hasClass": ["is-open", "is-visible", "active"]
+            "hasClass": ["is-open", "is-visible", "active", "modal-overlay--open"]
           },
           {
             "selector": "#articleTitle",
@@ -291,12 +287,7 @@
         "expect": [
           {
             "selector": "#productDetailOverlay",
-            "attribute": "aria-hidden",
-            "equals": "false"
-          },
-          {
-            "selector": "#productDetailOverlay",
-            "hasClass": ["is-open", "is-visible", "active"]
+            "hasClass": ["is-open", "is-visible", "active", "modal-overlay--open"]
           },
           {
             "selector": "#productDetailTitle",

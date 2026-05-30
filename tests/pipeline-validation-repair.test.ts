@@ -142,4 +142,38 @@ describe("applyValidationFallbacks", () => {
     expect(htmlChange?.modifiedContent).toContain('id="modalTitle"');
     expect(htmlChange?.modifiedContent).toContain('class="modal-close"');
   });
+
+  it("adds missing selector classes to semantically matching existing html hooks", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
+    tempDirs.push(localPath);
+    await writeFile(
+      join(localPath, "index.html"),
+      '<!doctype html><html><body><main><article class="collection-card"><h3>Kitchen</h3></article><article class="collection-card shifted-card"><h3>Living</h3></article></main></body></html>\n',
+      "utf8"
+    );
+
+    const repoContext: RepoContext = {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath,
+      installationId: 1,
+      fileTree: [{ path: "index.html", type: "file" }]
+    };
+    const changes: GeneratedChange[] = [
+      {
+        filePath: "modal.js",
+        originalContent: "",
+        modifiedContent: "document.querySelectorAll('.collection-card-btn').forEach(function (button) { button.addEventListener('click', function () {}); });\n",
+        explanation: "wire collection modal"
+      }
+    ];
+
+    const completed = await applyValidationFallbacks(changes, repoContext, [
+      "Change for modal.js queries selector(s) with no matching HTML: .collection-card-btn"
+    ]);
+
+    const htmlChange = completed.find((change) => change.filePath === "index.html");
+    expect(htmlChange?.modifiedContent).toContain('class="collection-card collection-card-btn"');
+    expect(htmlChange?.modifiedContent).toContain('class="collection-card shifted-card collection-card-btn"');
+  });
 });

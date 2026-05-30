@@ -192,6 +192,48 @@ function tagHasAttribute(tag: string, attrName: string): boolean {
   return new RegExp(`\\b${escapedAttrName}(?:\\s*=|\\s|>|/)`, "i").test(tag);
 }
 
+function classTokens(className: string): string[] {
+  return className
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1)
+    .filter((token) => !["btn", "button", "link", "trigger", "clickable", "open", "close"].includes(token));
+}
+
+function tagClassValues(tag: string): string[] {
+  const match = tag.match(/\bclass\s*=\s*["']([^"']*)["']/i);
+  if (!match) {
+    return [];
+  }
+
+  return match[1].split(/\s+/).filter(Boolean);
+}
+
+function tagSemanticallyMatchesClass(tag: string, missingClassName: string): boolean {
+  const missingTokens = classTokens(missingClassName);
+  if (missingTokens.length === 0) {
+    return false;
+  }
+
+  const existingTokens = new Set(tagClassValues(tag).flatMap(classTokens));
+  return missingTokens.every((token) => existingTokens.has(token));
+}
+
+function addClassToTag(tag: string, className: string): string {
+  if (tagHasClass(tag, className)) {
+    return tag;
+  }
+
+  if (/\bclass\s*=\s*["'][^"']*["']/i.test(tag)) {
+    return tag.replace(/\bclass\s*=\s*(["'])([^"']*)\1/i, (_match, quote: string, classes: string) =>
+      `class=${quote}${classes.trim()} ${className}${quote}`
+    );
+  }
+
+  return tag.replace(/\s*\/?>$/, ` class="${className}"$&`);
+}
+
 function inferAttributeValue(html: string, tagIndex: number, className: string, count: number): string {
   const nearbyHtml = html.slice(tagIndex, tagIndex + 600);
   const heading = nearbyHtml.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i)?.[1] ??
@@ -213,12 +255,28 @@ function addAttributeToClassSelector(html: string, className: string, attrName: 
   });
 }
 
+function addClassToSemanticMatches(html: string, className: string): string {
+  return html.replace(/<[a-z][a-z0-9-]*(?:\s[^<>]*)?>/gi, (tag) => {
+    if (!tagSemanticallyMatchesClass(tag, className)) {
+      return tag;
+    }
+
+    return addClassToTag(tag, className);
+  });
+}
+
 function applySelectorHookFallbacks(html: string, selectors: string[]): string {
   let completedHtml = html;
   for (const selector of selectors) {
     const classAttrMatch = selector.match(/^\.([a-zA-Z0-9_-]+)\[([a-zA-Z0-9_-]+)\]$/);
     if (classAttrMatch) {
       completedHtml = addAttributeToClassSelector(completedHtml, classAttrMatch[1], classAttrMatch[2]);
+      continue;
+    }
+
+    const classMatch = selector.match(/^\.([a-zA-Z0-9_-]+)$/);
+    if (classMatch && !htmlHasClass(completedHtml, classMatch[1])) {
+      completedHtml = addClassToSemanticMatches(completedHtml, classMatch[1]);
     }
   }
   return completedHtml;
