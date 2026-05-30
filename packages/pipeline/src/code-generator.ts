@@ -12,6 +12,8 @@ const STATIC_FRONTEND_RETRY_BYTES = 15_000;
 const COMPACT_STATIC_ASSET_BYTES = 8_000;
 const RETRY_COMPACT_STATIC_ASSET_BYTES = 4_000;
 const STATIC_FRONTEND_RETRY_MAX_TOKENS = 12_288;
+const VALIDATION_REPAIR_TIMEOUT_MS = 120_000;
+const VALIDATION_REPAIR_MAX_TOKENS = 12_288;
 
 interface GenerationOptions {
   completeSolution?: boolean;
@@ -90,6 +92,12 @@ function retryPromptRelevantFiles(relevantFiles: RelevantFile[]): RelevantFile[]
   }
 
   return relevantFiles.map((file) => compactFileContent(file, { compactAssetBytes: RETRY_COMPACT_STATIC_ASSET_BYTES }));
+}
+
+function hasOversizedPatchValidationError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) =>
+    /too large|exceeds limit|total new code added/i.test(error)
+  );
 }
 
 export class CodeGenerator {
@@ -193,14 +201,20 @@ export class CodeGenerator {
     });
 
     const promptFiles = promptRelevantFiles(relevantFiles);
-    const maxTokens = estimateGenerationMaxTokens(promptFiles, options);
+    const minimalRepair = hasOversizedPatchValidationError(validationErrors);
+    const maxTokens = minimalRepair
+      ? Math.min(estimateGenerationMaxTokens(promptFiles, { completeSolution: false }), VALIDATION_REPAIR_MAX_TOKENS)
+      : estimateGenerationMaxTokens(promptFiles, options);
+    const userMessage = minimalRepair
+      ? "Return only a compact repaired <changes> payload. The previous patch exceeded validation limits, so remove repeated markup/data and use one reusable data-driven implementation with matching JS/CSS."
+      : "Return only the repaired <changes> payload with complete file contents in CDATA blocks.";
     const response = await this.llmClient.complete(
       buildValidationRepairPrompt(feedback.summary, promptFiles, currentChanges, validationErrors, fileTree, implementationPlan),
-      "Return only the repaired <changes> payload with complete file contents in CDATA blocks.",
+      userMessage,
       {
         temperature: 0,
         maxTokens,
-        timeoutMs: GENERATION_TIMEOUT_MS
+        timeoutMs: minimalRepair ? VALIDATION_REPAIR_TIMEOUT_MS : GENERATION_TIMEOUT_MS
       }
     );
 

@@ -138,4 +138,18 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("LARGE STATIC FRONTEND NOTE");
     expect(prompt).toContain("new scoped supplemental JS/CSS files");
   });
+
+  it("adds oversized patch guidance to validation repair prompts", () => {
+    const prompt = buildValidationRepairPrompt(
+      "Add collection popups",
+      [{ path: "index.html", content: "<main></main>" }],
+      [{ filePath: "index.html", modifiedContent: "<dialog></dialog>".repeat(300), explanation: "add popups" }],
+      ["Total new code added exceeds limit: 418 lines"],
+      ["index.html", "script.js", "styles.css"]
+    );
+
+    expect(prompt).toContain("OVERSIZED PATCH REPAIR MODE");
+    expect(prompt).toContain("one shared overlay/dialog");
+    expect(prompt).toContain("aggressively remove duplicated markup");
+  });
 });

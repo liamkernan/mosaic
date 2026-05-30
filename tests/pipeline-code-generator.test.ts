@@ -124,4 +124,66 @@ const retrySucceeded = true;
     expect(prompts[1]).toContain("LARGE STATIC FRONTEND NOTE");
     expect(changes).toHaveLength(1);
   });
+
+  it("uses compact repair instructions when validation says the patch is too large", async () => {
+    let capturedUserMessage = "";
+    let capturedMaxTokens = 0;
+    let capturedTimeoutMs = 0;
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete: async (_systemPrompt: string, userMessage: string, options: { maxTokens?: number; timeoutMs?: number }) => {
+        capturedUserMessage = userMessage;
+        capturedMaxTokens = options.maxTokens ?? 0;
+        capturedTimeoutMs = options.timeoutMs ?? 0;
+        return `<changes>
+  <change>
+    <filePath>index.html</filePath>
+    <modifiedContent><![CDATA[
+<button type="button" data-modal="one">Open</button>
+]]></modifiedContent>
+    <explanation>Replace duplicated modal markup with compact trigger markup.</explanation>
+  </change>
+</changes>`;
+      }
+    } as unknown as LLMClient;
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Add popups",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "feature_request",
+        complexity: "complex",
+        summary: "Add popups",
+        relevantFiles: ["index.html", "script.js", "styles.css"],
+        confidence: 0.8
+      },
+      [
+        { path: "index.html", content: "<main></main>".repeat(2_000), reason: "markup" },
+        { path: "script.js", content: "console.log('ready');", reason: "behavior" },
+        { path: "styles.css", content: ".collection { color: black; }\n".repeat(1_000), reason: "styles" }
+      ],
+      ["index.html", "script.js", "styles.css"],
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>",
+          modifiedContent: "<main>" + "<dialog></dialog>".repeat(300) + "</main>",
+          explanation: "add popups"
+        }
+      ],
+      ["Total new code added exceeds limit: 418 lines"],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("previous patch exceeded validation limits");
+    expect(capturedUserMessage).toContain("one reusable data-driven implementation");
+    expect(capturedMaxTokens).toBeLessThanOrEqual(12_288);
+    expect(capturedTimeoutMs).toBe(120_000);
+  });
 });

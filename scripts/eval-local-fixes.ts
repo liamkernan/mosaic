@@ -11,6 +11,7 @@ import { ImplementationPlanner, type ImplementationPlan } from "../packages/pipe
 import { validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
 import { RepoIndexer } from "../packages/pipeline/src/repo-indexer.js";
 import { validate } from "../packages/pipeline/src/validator.js";
+import { applyValidationFallbacks } from "../packages/pipeline/src/validation-repair.js";
 import { getEnv } from "../packages/core/src/config.js";
 import type { ClassifiedFeedback, ComplexityLevel, FeedbackCategory, FeedbackSource, FileNode, GeneratedChange, RepoContext } from "../packages/core/src/types.js";
 import { ANTHROPIC_MODEL_IDS, LLMClient } from "../packages/llm/src/client.js";
@@ -565,6 +566,21 @@ async function generateValidatedChanges(
   }
 
   if (!validation.valid) {
+    const completedChanges = await applyValidationFallbacks(changes, repoContext, validation.errors);
+    if (completedChanges !== changes) {
+      changes = completedChanges;
+      validation = await validate(changes, repoContext);
+      const completedPlanErrors = validatePlanCompletion(changes, implementationPlan);
+      if (completedPlanErrors.length > 0) {
+        validation = {
+          valid: false,
+          errors: [...validation.errors, ...completedPlanErrors]
+        };
+      }
+    }
+  }
+
+  if (!validation.valid) {
     throw new Error(`Generated changes failed validation: ${validation.errors.join("; ")}`);
   }
 
@@ -604,6 +620,24 @@ async function repairVerificationFailure(
       valid: false,
       errors: [...validation.errors, ...planErrors]
     };
+  }
+
+  if (!validation.valid) {
+    const completedChanges = await applyValidationFallbacks(repairedChanges, repoContext, validation.errors);
+    if (completedChanges !== repairedChanges) {
+      validation = await validate(completedChanges, repoContext);
+      const completedPlanErrors = validatePlanCompletion(completedChanges, implementationPlan);
+      if (completedPlanErrors.length > 0) {
+        validation = {
+          valid: false,
+          errors: [...validation.errors, ...completedPlanErrors]
+        };
+      }
+
+      if (validation.valid) {
+        return completedChanges;
+      }
+    }
   }
 
   if (!validation.valid) {

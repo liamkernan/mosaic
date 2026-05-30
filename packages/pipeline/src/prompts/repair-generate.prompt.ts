@@ -39,6 +39,9 @@ export function buildValidationRepairPrompt(
   const largeStaticFrontendSection = staticFrontendBytes > 45_000 || hasCompactedStaticFrontendContext
     ? "\nLARGE STATIC FRONTEND NOTE:\n- This appears to be a large static HTML/CSS/JS site. Prefer a minimal HTML hook/link/script insertion plus new scoped supplemental JS/CSS files when that can satisfy the requested workflow.\n- Do not duplicate large existing assets unless the existing file itself must change extensively.\n"
     : "";
+  const oversizedPatchSection = validationErrors.some((error) => /too large|exceeds limit|total new code added/i.test(error))
+    ? "\nOVERSIZED PATCH REPAIR MODE:\n- The current change set is too large to accept. Replace repeated or duplicated UI with one reusable component and compact data.\n- For repeated popups/modals, keep one shared overlay/dialog and fill its title, description, items, and reviews from JavaScript data or existing data attributes.\n- Preserve the requested user-visible behavior, but aggressively remove duplicated markup and verbose sample content.\n"
+    : "";
 
   return `You are repairing a generated code change that failed validation.
 
@@ -51,6 +54,7 @@ REPOSITORY FILE TREE:
 ${fileTree.join("\n")}
 ${planSection}
 ${largeStaticFrontendSection}
+${oversizedPatchSection}
 
 ORIGINAL RELEVANT FILES:
 ${relevantFiles.map((file) => `--- ${file.path} ---\n${file.content}\n--- END ${file.path} ---`).join("\n\n")}
