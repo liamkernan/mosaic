@@ -16,7 +16,7 @@ llm:
   mode: byok
 security:
   max_files_changed: 5
-  max_lines_added: 200
+  max_lines_added: 350
   max_changed_lines: 500
   block_patterns:
     - "eval("

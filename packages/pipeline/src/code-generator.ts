@@ -104,18 +104,47 @@ export class CodeGenerator {
   constructor(private readonly llmClient: LLMClient) {}
 
   private toGeneratedChanges(
-    parsed: Array<{ filePath: string; modifiedContent: string; explanation: string }>,
+    parsed: Array<{ filePath: string; modifiedContent?: string; search?: string; replace?: string; explanation: string }>,
     relevantFiles: RelevantFile[]
   ): GeneratedChange[] {
     const originals = new Map(relevantFiles.map((file) => [file.path, file.content]));
 
     return parsed
-      .map((change) => ({
-        filePath: change.filePath,
-        originalContent: originals.get(change.filePath) ?? "",
-        modifiedContent: change.modifiedContent,
-        explanation: change.explanation
-      }))
+      .map((change) => {
+        const originalContent = originals.get(change.filePath) ?? "";
+        if (change.modifiedContent !== undefined) {
+          return {
+            filePath: change.filePath,
+            originalContent,
+            modifiedContent: change.modifiedContent,
+            explanation: change.explanation
+          };
+        }
+
+        if (change.search === undefined || change.replace === undefined) {
+          throw new LLMError(`Change for ${change.filePath} did not include modifiedContent or search/replace edit`);
+        }
+
+        if (originalContent.length === 0) {
+          throw new LLMError(`Search/replace edit cannot create new file ${change.filePath}`);
+        }
+
+        const firstIndex = originalContent.indexOf(change.search);
+        if (firstIndex === -1) {
+          throw new LLMError(`Search block for ${change.filePath} was not found exactly once`);
+        }
+
+        if (originalContent.indexOf(change.search, firstIndex + change.search.length) !== -1) {
+          throw new LLMError(`Search block for ${change.filePath} matched more than once`);
+        }
+
+        return {
+          filePath: change.filePath,
+          originalContent,
+          modifiedContent: originalContent.slice(0, firstIndex) + change.replace + originalContent.slice(firstIndex + change.search.length),
+          explanation: change.explanation
+        };
+      })
       .filter((change) => change.originalContent !== change.modifiedContent);
   }
 

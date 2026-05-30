@@ -152,6 +152,14 @@ function findRepoFile(repoContext: RepoContext, fileName: string): string | unde
   return findFileInTree(repoContext.fileTree, fileName);
 }
 
+function isStylesheet(filePath: string): boolean {
+  return /\.css$/i.test(filePath);
+}
+
+function isScript(filePath: string): boolean {
+  return /\.(?:[cm]?[jt]sx?)$/i.test(filePath);
+}
+
 async function validateModalStyling(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
   const changedPaths = collectChangedPaths(changes);
   const stylePath = findRepoFile(repoContext, "styles.css");
@@ -160,9 +168,15 @@ async function validateModalStyling(changes: GeneratedChange[], repoContext: Rep
   }
 
   const styleChange = changes.find((change) => change.filePath === stylePath);
-  const effectiveStyles = styleChange
+  const existingStyles = styleChange
     ? styleChange.modifiedContent
     : await readFile(join(repoContext.localPath, stylePath), "utf8").catch(() => "");
+  const effectiveStyles = [
+    existingStyles,
+    ...changes
+      .filter((change) => isStylesheet(change.filePath) && change.filePath !== stylePath)
+      .map((change) => change.modifiedContent)
+  ].join("\n");
 
   for (const change of changes) {
     if (!/\.(?:html?|[cm]?[jt]sx)$/i.test(change.filePath)) {
@@ -182,13 +196,11 @@ async function validateModalStyling(changes: GeneratedChange[], repoContext: Rep
     }
 
     if (!changedPaths.has(stylePath)) {
-      errors.push(
-        `Change for ${change.filePath} adds modal UI hooks (${missingTokens.join(", ")}) but does not update ${stylePath} with matching styles`
-      );
+      errors.push(`Change for ${change.filePath} adds modal UI hooks (${missingTokens.join(", ")}) but does not update a stylesheet with matching styles`);
       continue;
     }
 
-    errors.push(`Change for ${change.filePath} adds modal UI hooks without matching selectors in ${stylePath}: ${missingTokens.join(", ")}`);
+    errors.push(`Change for ${change.filePath} adds modal UI hooks without matching selectors in changed stylesheets: ${missingTokens.join(", ")}`);
   }
 }
 
@@ -200,9 +212,15 @@ async function validateModalBehavior(changes: GeneratedChange[], repoContext: Re
   }
 
   const scriptChange = changes.find((change) => change.filePath === scriptPath);
-  const effectiveScript = scriptChange
+  const existingScript = scriptChange
     ? scriptChange.modifiedContent
     : await readFile(join(repoContext.localPath, scriptPath), "utf8").catch(() => "");
+  const effectiveScript = [
+    existingScript,
+    ...changes
+      .filter((change) => isScript(change.filePath) && change.filePath !== scriptPath)
+      .map((change) => change.modifiedContent)
+  ].join("\n");
 
   for (const change of changes) {
     if (!/\.(?:html?|[cm]?[jt]sx)$/i.test(change.filePath)) {
@@ -225,13 +243,11 @@ async function validateModalBehavior(changes: GeneratedChange[], repoContext: Re
     }
 
     if (!changedPaths.has(scriptPath)) {
-      errors.push(
-        `Change for ${change.filePath} adds modal UI hooks (${missingTokens.join(", ")}) but does not update ${scriptPath} with matching behavior`
-      );
+      errors.push(`Change for ${change.filePath} adds modal UI hooks (${missingTokens.join(", ")}) but does not update a script with matching behavior`);
       continue;
     }
 
-    errors.push(`Change for ${change.filePath} adds modal UI hooks without matching behavior in ${scriptPath}: ${missingTokens.join(", ")}`);
+    errors.push(`Change for ${change.filePath} adds modal UI hooks without matching behavior in changed scripts: ${missingTokens.join(", ")}`);
   }
 }
 
@@ -309,7 +325,7 @@ export async function validate(
     }
   }
 
-  const maxLinesAdded = limits.maxLinesAdded ?? 200;
+  const maxLinesAdded = limits.maxLinesAdded ?? 350;
   if (totalLinesAdded >= maxLinesAdded) {
     errors.push(`Total new code added exceeds limit: ${totalLinesAdded} lines`);
   }

@@ -120,6 +120,8 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("A single happy-path example is not enough");
     expect(prompt).toContain("one reusable modal/dialog/overlay");
     expect(prompt).toContain("data-driven behavior");
+    expect(prompt).toContain("<edit>");
+    expect(prompt).toContain("search block must match the original file exactly once");
   });
 
   it("encourages supplemental assets for large static frontend changes", () => {

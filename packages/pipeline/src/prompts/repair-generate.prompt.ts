@@ -6,7 +6,8 @@ Your job:
 - Preserve the intended content exactly.
 - Do not summarize.
 - Do not drop fields.
-- Put complete file contents inside <![CDATA[ ... ]]> blocks.
+- Preserve either <change> full-file blocks or <edit> search/replace blocks.
+- Put complete file contents and search/replace blocks inside <![CDATA[ ... ]]> blocks.
 - If the content is too incomplete to repair safely, return exactly <changes></changes>.
 
 Malformed response:
@@ -75,11 +76,23 @@ INSTRUCTIONS:
 - If HTML adds modal/dialog/overlay classes or hooks, include matching CSS selectors in the stylesheet in the same response.
 - If JavaScript is needed for new interactive UI, include the matching script changes in the same response.
 - Return ONLY the response format below. No markdown fences. No prose before or after.
-- Put complete updated file contents inside CDATA blocks.
+- For existing files, prefer exact <edit> search/replace blocks when the repair is localized. Use <change> full-file blocks only when search/replace cannot express the repair safely or when creating a new file.
+- Every <edit> search block must match the original file exactly once. Include enough surrounding context to make it unique.
+- Put complete updated file contents or search/replace blocks inside CDATA.
 - If you cannot repair safely, return exactly <changes></changes>.
 
 Respond ONLY in this format:
 <changes>
+  <edit>
+    <filePath>relative/path/to/existing-file.ext</filePath>
+    <search><![CDATA[
+...exact original text to replace...
+]]></search>
+    <replace><![CDATA[
+...replacement text...
+]]></replace>
+    <explanation>One sentence explaining what you changed and why.</explanation>
+  </edit>
   <change>
     <filePath>relative/path/to/file.ext</filePath>
     <modifiedContent><![CDATA[

@@ -250,7 +250,7 @@ describe("validate", () => {
     );
 
     expect(result.valid).toBe(false);
-    expect(result.errors.join("\n")).toContain("does not update styles.css");
+    expect(result.errors.join("\n")).toContain("does not update a stylesheet");
   });
 
   it("rejects modal UI changes that do not add matching behavior", async () => {
@@ -284,7 +284,7 @@ describe("validate", () => {
     );
 
     expect(result.valid).toBe(false);
-    expect(result.errors.join("\n")).toContain("does not update script.js");
+    expect(result.errors.join("\n")).toContain("does not update a script");
   });
 
   it("accepts modal UI changes with matching styles and behavior", async () => {
@@ -355,6 +355,84 @@ describe("validate", () => {
           modifiedContent:
             "const articleModalOverlay = document.querySelector('.article-modal-overlay');\ndocument.querySelectorAll('[data-article]').forEach((button) => button.addEventListener('click', () => articleModalOverlay.classList.add('is-open')));\n",
           explanation: "wire article modal behavior"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [
+          { path: "index.html", type: "file" },
+          { path: "styles.css", type: "file" },
+          { path: "script.js", type: "file" }
+        ],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it("allows moderately sized static UI changes under the default added-line budget", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    const originalContent = "<main></main>\n";
+    await writeFile(join(localPath, "index.html"), originalContent, "utf8");
+    const modifiedContent = [
+      "<main>",
+      ...Array.from({ length: 270 }, (_, index) => `<section data-row="${index}">Row ${index}</section>`),
+      "</main>"
+    ].join("\n");
+
+    const result = await validate(
+      [
+        {
+          filePath: "index.html",
+          originalContent,
+          modifiedContent,
+          explanation: "add a moderate static UI surface"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [{ path: "index.html", type: "file" }],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it("accepts modal behavior and styles in supplemental frontend assets", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
+    await writeFile(join(localPath, "styles.css"), ".collection-card { display: block; }\n", "utf8");
+    await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>\n",
+          modifiedContent:
+            '<main><button data-collection="kitchen">Kitchen</button><div class="collection-modal-overlay"><dialog class="collection-modal"></dialog></div></main>\n',
+          explanation: "add modal markup"
+        },
+        {
+          filePath: "collection-modal.css",
+          originalContent: "",
+          modifiedContent: ".collection-modal-overlay { position: fixed; inset: 0; }\n.collection-modal { display: block; }\n",
+          explanation: "style collection modal"
+        },
+        {
+          filePath: "collection-modal.js",
+          originalContent: "",
+          modifiedContent:
+            "const collectionModal = document.querySelector('.collection-modal');\ndocument.querySelectorAll('[data-collection]').forEach((button) => button.addEventListener('click', () => collectionModal.showModal()));\n",
+          explanation: "wire collection modal behavior"
         }
       ],
       {

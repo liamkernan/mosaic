@@ -541,26 +541,33 @@ async function generateValidatedChanges(
   }
 
   if (!validation.valid) {
-    const repairedChanges = await generator.repairValidationFailure(
-      feedback,
-      relevantFiles,
-      fileTree,
-      changes,
-      validation.errors,
-      implementationPlan,
-      {
-        completeSolution: true
+    try {
+      const repairedChanges = await generator.repairValidationFailure(
+        feedback,
+        relevantFiles,
+        fileTree,
+        changes,
+        validation.errors,
+        implementationPlan,
+        {
+          completeSolution: true
+        }
+      );
+      if (repairedChanges.length > 0) {
+        changes = repairedChanges;
+        validation = await validate(changes, repoContext);
+        const repairedPlanErrors = validatePlanCompletion(changes, implementationPlan);
+        if (repairedPlanErrors.length > 0) {
+          validation = {
+            valid: false,
+            errors: [...validation.errors, ...repairedPlanErrors]
+          };
+        }
       }
-    );
-    if (repairedChanges.length > 0) {
-      changes = repairedChanges;
-      validation = await validate(changes, repoContext);
-      const repairedPlanErrors = validatePlanCompletion(changes, implementationPlan);
-      if (repairedPlanErrors.length > 0) {
-        validation = {
-          valid: false,
-          errors: [...validation.errors, ...repairedPlanErrors]
-        };
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+      if (!message.includes("llm") && !message.includes("anthropic") && !message.includes("timed out") && !message.includes("timeout")) {
+        throw error;
       }
     }
   }

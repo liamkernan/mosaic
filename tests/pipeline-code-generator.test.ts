@@ -70,6 +70,52 @@ const generated = true;
     expect(generatedChanges[0]?.originalContent).toBe(hugeScript);
   });
 
+  it("applies exact search replace edits to original files", async () => {
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete: async () => `<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[
+<main><p>Old</p></main>
+]]></search>
+    <replace><![CDATA[
+<main><button type="button">Open details</button></main>
+]]></replace>
+    <explanation>Replace static copy with an interactive control.</explanation>
+  </edit>
+</changes>`
+    } as unknown as LLMClient;
+
+    const changes = await new CodeGenerator(fakeClient).generate(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Add details",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "feature_request",
+        complexity: "moderate",
+        summary: "Add details",
+        relevantFiles: ["index.html"],
+        confidence: 0.8
+      },
+      [{ path: "index.html", content: "<main><p>Old</p></main>", reason: "markup" }],
+      ["index.html"]
+    );
+
+    expect(changes).toEqual([
+      {
+        filePath: "index.html",
+        originalContent: "<main><p>Old</p></main>",
+        modifiedContent: '<main><button type="button">Open details</button></main>',
+        explanation: "Replace static copy with an interactive control."
+      }
+    ]);
+  });
+
   it("retries static frontend generation with a lean prompt after an LLM timeout", async () => {
     const prompts: string[] = [];
     const userMessages: string[] = [];

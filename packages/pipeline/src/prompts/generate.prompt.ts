@@ -55,11 +55,23 @@ INSTRUCTIONS:
 - If the request is ambiguous, choose the most conservative interpretation.
 - Do NOT add comments like '// Added by Mosaic' or '// Changed'.
 - Return ONLY the response format below. No markdown fences. No prose before or after.
-- Put the complete updated file contents inside CDATA so you do not need to escape quotes or newlines.
+- For existing files, prefer the exact <edit> search/replace form when the change is localized. Use <change> with complete updated file contents only when search/replace cannot express the edit safely or when creating a new file.
+- Every <edit> search block must match the original file exactly once. Include enough surrounding context to make it unique.
+- Put complete updated file contents or search/replace blocks inside CDATA so you do not need to escape quotes or newlines.
 - If you genuinely cannot implement this change safely, return exactly <changes></changes>.
 
 Respond ONLY in this format:
 <changes>
+  <edit>
+    <filePath>relative/path/to/existing-file.ext</filePath>
+    <search><![CDATA[
+...exact original text to replace...
+]]></search>
+    <replace><![CDATA[
+...replacement text...
+]]></replace>
+    <explanation>One sentence explaining what you changed and why.</explanation>
+  </edit>
   <change>
     <filePath>relative/path/to/file.ext</filePath>
     <modifiedContent><![CDATA[

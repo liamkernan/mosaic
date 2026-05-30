@@ -2,7 +2,9 @@ import { LLMError } from "@mosaic/core";
 
 interface GeneratedChangeResponse {
   filePath: string;
-  modifiedContent: string;
+  modifiedContent?: string;
+  search?: string;
+  replace?: string;
   explanation: string;
 }
 
@@ -18,16 +20,55 @@ function decodeXmlText(value: string): string {
 function parseTaggedChanges(response: string): GeneratedChangeResponse[] {
   const changesMatch = response.match(/<changes>([\s\S]*?)<\/changes>/i);
   const source = changesMatch?.[1] ?? response;
-  const matches = Array.from(
+  const fullFileMatches = Array.from(
     source.matchAll(
       /<change>\s*<filePath>([\s\S]*?)<\/filePath>\s*<modifiedContent><!\[CDATA\[([\s\S]*?)\]\]><\/modifiedContent>\s*<explanation>([\s\S]*?)<\/explanation>\s*<\/change>/gi
     )
   );
+  const editMatches = Array.from(
+    source.matchAll(
+      /<edit>\s*<filePath>([\s\S]*?)<\/filePath>\s*<search><!\[CDATA\[([\s\S]*?)\]\]><\/search>\s*<replace><!\[CDATA\[([\s\S]*?)\]\]><\/replace>\s*<explanation>([\s\S]*?)<\/explanation>\s*<\/edit>/gi
+    )
+  );
 
-  return matches.map((match) => ({
-    filePath: decodeXmlText(match[1].trim()),
-    modifiedContent: match[2].replace(/^\n/, "").replace(/\n$/, ""),
-    explanation: decodeXmlText(match[3].trim())
+  return [
+    ...fullFileMatches.map((match) => ({
+      filePath: decodeXmlText(match[1].trim()),
+      modifiedContent: match[2].replace(/^\n/, "").replace(/\n$/, ""),
+      explanation: decodeXmlText(match[3].trim())
+    })),
+    ...editMatches.map((match) => ({
+      filePath: decodeXmlText(match[1].trim()),
+      search: match[2].replace(/^\n/, "").replace(/\n$/, ""),
+      replace: match[3].replace(/^\n/, "").replace(/\n$/, ""),
+      explanation: decodeXmlText(match[4].trim())
+    }))
+  ];
+}
+
+function isGeneratedChangeResponse(value: unknown): value is GeneratedChangeResponse {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const item = value as Record<string, unknown>;
+  return typeof item.filePath === "string" &&
+    typeof item.explanation === "string" &&
+    (typeof item.modifiedContent === "string" || (typeof item.search === "string" && typeof item.replace === "string"));
+}
+
+function parseJsonChanges(response: string): GeneratedChangeResponse[] {
+  const parsed = JSON.parse(extractJsonArrayCandidate(response)) as unknown;
+  if (!Array.isArray(parsed) || !parsed.every(isGeneratedChangeResponse)) {
+    throw new LLMError("Code generation returned invalid structured output");
+  }
+
+  return parsed.map((change) => ({
+    filePath: change.filePath,
+    modifiedContent: change.modifiedContent,
+    search: change.search,
+    replace: change.replace,
+    explanation: change.explanation
   }));
 }
 
@@ -61,7 +102,7 @@ export function parseGeneratedChanges(response: string): GeneratedChangeResponse
   }
 
   try {
-    return JSON.parse(extractJsonArrayCandidate(response)) as GeneratedChangeResponse[];
+    return parseJsonChanges(response);
   } catch (error) {
     throw new LLMError("Code generation returned invalid structured output", { cause: error as Error });
   }
