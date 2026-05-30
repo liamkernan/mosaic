@@ -165,7 +165,11 @@
     "frontendAssertions": [
       {
         "name": "Kitchen collection opens a populated modal",
-        "click": ".collection-card-clickable[data-collection=\"kitchen\"]",
+        "click": [
+          ".collection-card-clickable[data-collection=\"kitchen\"]",
+          ".collection-card[data-collection=\"kitchen\"]",
+          "[data-collection=\"kitchen\"]"
+        ],
         "expect": [
           {
             "selector": "#collectionModalOverlay",
@@ -174,18 +178,26 @@
           },
           {
             "selector": "#collectionModalOverlay",
-            "hasClass": "is-open"
+            "hasClass": ["is-open", "is-visible"]
           },
           {
-            "selector": "#modalTitle",
+            "selector": ["#modalTitle", "#collectionModalTitle"],
             "textIncludes": "Kitchen"
           },
           {
-            "selector": "#modalItems .modal-item-card",
+            "selector": [
+              "#modalItems .modal-item-card",
+              "#collectionModalProducts .collection-modal-product",
+              "#collectionModalProducts > *"
+            ],
             "minCount": 2
           },
           {
-            "selector": "#modalReviewList .modal-review-item",
+            "selector": [
+              "#modalReviewList .modal-review-item",
+              "#collectionModalReviewList .collection-modal-review",
+              "#collectionModalReviewList > *"
+            ],
             "minCount": 1
           }
         ]

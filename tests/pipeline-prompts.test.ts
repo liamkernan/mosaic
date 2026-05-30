@@ -120,6 +120,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("A single happy-path example is not enough");
     expect(prompt).toContain("one reusable modal/dialog/overlay");
     expect(prompt).toContain("data-driven behavior");
+    expect(prompt).toContain("interactive UI as atomic");
     expect(prompt).toContain("<edit>");
     expect(prompt).toContain("search block must match the original file exactly once");
   });
@@ -153,5 +154,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("OVERSIZED PATCH REPAIR MODE");
     expect(prompt).toContain("one shared overlay/dialog");
     expect(prompt).toContain("aggressively remove duplicated markup");
+    expect(prompt).toContain("modal/dialog/overlay behavior is missing");
+    expect(prompt).toContain("Do not return HTML/CSS-only repairs");
   });
 });

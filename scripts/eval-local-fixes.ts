@@ -46,12 +46,12 @@ interface EvalCase {
 
 interface FrontendAssertion {
   name: string;
-  click: string;
+  click: string | string[];
   expect: Array<
-    | { selector: string; textIncludes: string }
-    | { selector: string; attribute: string; equals: string }
-    | { selector: string; hasClass: string }
-    | { selector: string; minCount: number }
+    | { selector: string | string[]; textIncludes: string }
+    | { selector: string | string[]; attribute: string; equals: string }
+    | { selector: string | string[]; hasClass: string | string[] }
+    | { selector: string | string[]; minCount: number }
   >;
 }
 
@@ -330,20 +330,51 @@ async function evaluateChecks(
   return errors;
 }
 
-function isTextExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string; textIncludes: string } {
+function isTextExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string | string[]; textIncludes: string } {
   return "textIncludes" in expectation;
 }
 
-function isAttributeExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string; attribute: string; equals: string } {
+function isAttributeExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string | string[]; attribute: string; equals: string } {
   return "attribute" in expectation;
 }
 
-function isClassExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string; hasClass: string } {
+function isClassExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string | string[]; hasClass: string | string[] } {
   return "hasClass" in expectation;
 }
 
-function isCountExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string; minCount: number } {
+function isCountExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string | string[]; minCount: number } {
   return "minCount" in expectation;
+}
+
+function selectorLabel(selector: string | string[]): string {
+  return Array.isArray(selector) ? selector.join(" OR ") : selector;
+}
+
+function querySelector(document: Document, selector: string | string[]): Element | null {
+  const selectors = Array.isArray(selector) ? selector : [selector];
+  for (const candidate of selectors) {
+    const element = document.querySelector(candidate);
+    if (element) {
+      return element;
+    }
+  }
+
+  return null;
+}
+
+function querySelectorAll(document: Document, selector: string | string[]): Element[] {
+  const selectors = Array.isArray(selector) ? selector : [selector];
+  const elements = new Set<Element>();
+  for (const candidate of selectors) {
+    document.querySelectorAll(candidate).forEach((element) => elements.add(element));
+  }
+
+  return [...elements];
+}
+
+function hasExpectedClass(element: Element, className: string | string[]): boolean {
+  const classNames = Array.isArray(className) ? className : [className];
+  return classNames.some((candidate) => element.classList.contains(candidate));
 }
 
 async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Promise<string[]> {
@@ -380,9 +411,9 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
   const errors: string[] = [];
   for (const assertion of evalCase.frontendAssertions) {
     try {
-      const clickable = dom.window.document.querySelector(assertion.click);
+      const clickable = querySelector(dom.window.document, assertion.click);
       if (!clickable) {
-        errors.push(`${assertion.name}: click target not found: ${assertion.click}`);
+        errors.push(`${assertion.name}: click target not found: ${selectorLabel(assertion.click)}`);
         continue;
       }
 
@@ -390,32 +421,32 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
       await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
 
       for (const expectation of assertion.expect) {
-        const elements = dom.window.document.querySelectorAll(expectation.selector);
+        const elements = querySelectorAll(dom.window.document, expectation.selector);
         if (isCountExpectation(expectation)) {
           if (elements.length < expectation.minCount) {
-            errors.push(`${assertion.name}: expected at least ${expectation.minCount} matches for ${expectation.selector}, found ${elements.length}`);
+            errors.push(`${assertion.name}: expected at least ${expectation.minCount} matches for ${selectorLabel(expectation.selector)}, found ${elements.length}`);
           }
           continue;
         }
 
         const element = elements[0];
         if (!element) {
-          errors.push(`${assertion.name}: expected element not found: ${expectation.selector}`);
+          errors.push(`${assertion.name}: expected element not found: ${selectorLabel(expectation.selector)}`);
           continue;
         }
 
         if (isTextExpectation(expectation)) {
           const text = element.textContent ?? "";
           if (!text.includes(expectation.textIncludes)) {
-            errors.push(`${assertion.name}: ${expectation.selector} text did not include ${JSON.stringify(expectation.textIncludes)}`);
+            errors.push(`${assertion.name}: ${selectorLabel(expectation.selector)} text did not include ${JSON.stringify(expectation.textIncludes)}`);
           }
         } else if (isAttributeExpectation(expectation)) {
           const actual = element.getAttribute(expectation.attribute);
           if (actual !== expectation.equals) {
-            errors.push(`${assertion.name}: ${expectation.selector} expected ${expectation.attribute}=${JSON.stringify(expectation.equals)}, got ${JSON.stringify(actual)}`);
+            errors.push(`${assertion.name}: ${selectorLabel(expectation.selector)} expected ${expectation.attribute}=${JSON.stringify(expectation.equals)}, got ${JSON.stringify(actual)}`);
           }
-        } else if (isClassExpectation(expectation) && !element.classList.contains(expectation.hasClass)) {
-          errors.push(`${assertion.name}: ${expectation.selector} missing class ${expectation.hasClass}`);
+        } else if (isClassExpectation(expectation) && !hasExpectedClass(element, expectation.hasClass)) {
+          errors.push(`${assertion.name}: ${selectorLabel(expectation.selector)} missing class ${selectorLabel(expectation.hasClass)}`);
         }
       }
     } catch (error) {

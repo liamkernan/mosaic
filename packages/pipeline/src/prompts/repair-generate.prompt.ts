@@ -71,6 +71,8 @@ INSTRUCTIONS:
 - Add or update focused tests when validation reports missing behavioral coverage or the plan verification checklist requires tests.
 - For sort/order/filter/ranking changes, cover the primary behavior and every stated tie-breaker with adversarial tests.
 - If validation says total new code is too large, reduce repeated markup/data first: use one reusable modal/dialog/overlay, compact JavaScript data, and shared selectors instead of duplicating UI blocks.
+- If validation says modal/dialog/overlay behavior is missing, return script changes that wire every new trigger to the exact new modal/dialog/overlay ids/classes/data attributes. Do not return HTML/CSS-only repairs for interactive UI.
+- Modal/dialog/overlay behavior must at minimum open on click, support keyboard activation for non-native triggers, close by close button/backdrop/Escape where applicable, and update aria-hidden or native dialog state consistently.
 - Replace click-only div/article/section/card containers with native buttons or links where possible; otherwise add role, tabindex, and keyboard handling.
 - Remove or wire any visible href="#" or javascript:void(0) links so every visible control performs the requested workflow.
 - If HTML adds modal/dialog/overlay classes or hooks, include matching CSS selectors in the stylesheet in the same response.
