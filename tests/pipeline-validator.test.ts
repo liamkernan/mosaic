@@ -58,6 +58,33 @@ describe("validate", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("rejects Python syntax errors before verification", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "service.py"), "def queue():\n    return []\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "service.py",
+          originalContent: "def queue():\n    return []\n",
+          modifiedContent: "def queue(:\n    return []\n",
+          explanation: "update queue"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [{ path: "service.py", type: "file" }],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("Syntax validation failed for service.py");
+  });
+
   it("rejects changes that weaken existing test assertions", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
     tempDirs.push(localPath);

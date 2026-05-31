@@ -169,6 +169,10 @@ function hasOversizedPatchValidationError(validationErrors: string[]): boolean {
   );
 }
 
+function hasSyntaxValidationError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) => /Syntax validation failed/i.test(error));
+}
+
 function hasMissingInteractiveBehaviorValidationError(validationErrors: string[]): boolean {
   return validationErrors.some((error) =>
     (/modal|overlay|dialog/i.test(error) && /behavior|script/i.test(error)) ||
@@ -356,6 +360,7 @@ export class CodeGenerator {
 
     const promptFiles = promptRelevantFiles(relevantFiles);
     const oversizedRepair = hasOversizedPatchValidationError(validationErrors);
+    const syntaxRepair = hasSyntaxValidationError(validationErrors);
     const missingHtmlHookRepair = hasMissingHtmlHookValidationError(validationErrors);
     const missingTestCoverageRepair = hasMissingBehavioralTestCoverageError(validationErrors);
     const missingIdempotencyUpdateRepair = hasMissingIdempotencyUpdateError(validationErrors);
@@ -367,12 +372,14 @@ export class CodeGenerator {
     const frontendVerificationRepair = hasFrontendVerificationFailure(validationErrors);
     const testVerificationRepair = hasTestVerificationFailure(validationErrors);
     const testIntegrityRepair = hasTestIntegrityError(validationErrors);
-    const focusedRepair = oversizedRepair || missingBehaviorRepair || missingTestCoverageRepair || missingIdempotencyUpdateRepair || testApiShapeMismatchRepair || missingPythonImportRepair || missingEndpointRouteRepair || missingRuntimeChangeRepair || frontendVerificationRepair || testVerificationRepair || testIntegrityRepair;
+    const focusedRepair = oversizedRepair || syntaxRepair || missingBehaviorRepair || missingTestCoverageRepair || missingIdempotencyUpdateRepair || testApiShapeMismatchRepair || missingPythonImportRepair || missingEndpointRouteRepair || missingRuntimeChangeRepair || frontendVerificationRepair || testVerificationRepair || testIntegrityRepair;
     const maxTokens = focusedRepair
       ? Math.min(estimateGenerationMaxTokens(promptFiles, { completeSolution: false }), VALIDATION_REPAIR_MAX_TOKENS)
       : estimateGenerationMaxTokens(promptFiles, options);
     const userMessage = oversizedRepair
       ? "Return only a compact repaired <changes> payload. The previous patch exceeded validation limits, so remove repeated markup/data and use one reusable data-driven implementation with matching JS/CSS."
+      : syntaxRepair
+        ? "Return only a repaired <changes> payload focused on syntax validity. Fix the reported parser error in the changed source file while preserving the intended behavior, existing tests, and public API. Do not remove the affected feature or weaken tests to make parsing pass."
       : missingHtmlHookRepair
         ? "Return only a repaired <changes> payload focused on mismatched HTML and JavaScript hooks. Add the exact missing ids/classes/data attributes to the HTML, or retarget the script to hooks that already exist. Include both HTML and JS edits when needed; do not leave selectors that match nothing."
       : missingTestCoverageRepair

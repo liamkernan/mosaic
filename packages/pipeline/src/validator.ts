@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -157,6 +158,40 @@ function syntaxErrorsForFile(filePath: string, contents: string): string[] {
   });
 
   return (transpiled.diagnostics ?? []).map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
+}
+
+async function pythonSyntaxErrorsForFile(filePath: string, contents: string): Promise<string[]> {
+  if (!isPython(filePath)) {
+    return [];
+  }
+
+  return new Promise((resolve) => {
+    const process = spawn("python3", [
+      "-c",
+      [
+        "import ast, sys",
+        "source = sys.stdin.read()",
+        "try:",
+        "    ast.parse(source, filename=sys.argv[1])",
+        "except SyntaxError as exc:",
+        "    print(f'{exc.msg} at line {exc.lineno}, column {exc.offset}', file=sys.stderr)",
+        "    sys.exit(1)"
+      ].join("\n"),
+      filePath
+    ], {
+      stdio: ["pipe", "ignore", "pipe"]
+    });
+
+    let stderr = "";
+    process.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    process.on("error", () => resolve([]));
+    process.on("close", (code) => {
+      resolve(code === 0 ? [] : [stderr.trim() || "invalid Python syntax"]);
+    });
+    process.stdin.end(contents);
+  });
 }
 
 function findNewModalTokens(original: string, modified: string): string[] {
@@ -614,7 +649,10 @@ export async function validate(
       errors.push(`Change for ${change.filePath} is too large (${changedLines} changed lines)`);
     }
 
-    const parseErrors = syntaxErrorsForFile(change.filePath, change.modifiedContent);
+    const parseErrors = [
+      ...syntaxErrorsForFile(change.filePath, change.modifiedContent),
+      ...await pythonSyntaxErrorsForFile(change.filePath, change.modifiedContent)
+    ];
     if (parseErrors.length > 0) {
       errors.push(`Syntax validation failed for ${change.filePath}: ${parseErrors.join("; ")}`);
     }

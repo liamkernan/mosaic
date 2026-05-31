@@ -247,6 +247,60 @@ const retrySucceeded = true;
     expect(capturedTimeoutMs).toBe(120_000);
   });
 
+  it("uses focused syntax repair instructions for parser failures", async () => {
+    let capturedUserMessage = "";
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete: async (_systemPrompt: string, userMessage: string) => {
+        capturedUserMessage = userMessage;
+        return `<changes>
+  <change>
+    <filePath>mosaic_demo/service.py</filePath>
+    <modifiedContent><![CDATA[
+def queue():
+    return []
+]]></modifiedContent>
+    <explanation>Fix Python parser syntax.</explanation>
+  </change>
+</changes>`;
+      }
+    } as unknown as LLMClient;
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Queue is broken",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Fix support queue behavior",
+        relevantFiles: ["mosaic_demo/service.py"],
+        confidence: 0.8
+      },
+      [{ path: "mosaic_demo/service.py", content: "def queue():\n    return []\n", reason: "implementation" }],
+      ["mosaic_demo/service.py"],
+      [
+        {
+          filePath: "mosaic_demo/service.py",
+          originalContent: "def queue():\n    return []\n",
+          modifiedContent: "def queue(:\n    return []\n",
+          explanation: "update queue"
+        }
+      ],
+      ["Syntax validation failed for mosaic_demo/service.py: invalid syntax at line 1, column 11"],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("syntax validity");
+    expect(capturedUserMessage).toContain("reported parser error");
+    expect(capturedUserMessage).toContain("Do not remove the affected feature");
+  });
+
   it("uses focused script repair instructions when modal behavior is missing", async () => {
     let capturedUserMessage = "";
     let capturedTimeoutMs = 0;
