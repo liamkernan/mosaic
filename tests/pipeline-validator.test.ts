@@ -140,6 +140,81 @@ describe("validate", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("rejects accessible non-native controls without keyboard activation behavior", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
+    await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>\n",
+          modifiedContent:
+            '<main><article class="journal-card journal-card-clickable" role="button" tabindex="0" data-article="shelf-layering">Guide</article></main>\n',
+          explanation: "make journal card accessible"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [
+          { path: "index.html", type: "file" },
+          { path: "script.js", type: "file" }
+        ],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("accessible non-native control");
+    expect(result.errors.join("\n")).toContain("keyboard activation behavior");
+  });
+
+  it("accepts accessible non-native controls with Enter and Space keyboard activation", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
+    await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>\n",
+          modifiedContent:
+            '<main><article class="journal-card journal-card-clickable" role="button" tabindex="0" data-article="shelf-layering">Guide</article></main>\n',
+          explanation: "make journal card accessible"
+        },
+        {
+          filePath: "script.js",
+          originalContent: "console.log('ready');\n",
+          modifiedContent:
+            "document.querySelectorAll('.journal-card-clickable').forEach((card) => {\n" +
+            "  card.addEventListener('keydown', (event) => {\n" +
+            "    if (event.key === 'Enter' || event.key === ' ') card.click();\n" +
+            "  });\n" +
+            "});\n",
+          explanation: "add keyboard activation"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [
+          { path: "index.html", type: "file" },
+          { path: "script.js", type: "file" }
+        ],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
   it("accepts stylesheet insertions that shift existing lines", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
     tempDirs.push(localPath);

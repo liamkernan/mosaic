@@ -105,6 +105,13 @@ function findAddedNonInteractiveClickableTags(original: string, modified: string
     .filter((match) => !hasAccessibleNonNativeInteraction(match));
 }
 
+function findAddedAccessibleNonNativeInteractiveTags(original: string, modified: string): string[] {
+  const originalMatches = new Set(original.match(nonInteractiveClickableTagPattern) ?? []);
+  return [...new Set(modified.match(nonInteractiveClickableTagPattern) ?? [])]
+    .filter((match) => !originalMatches.has(match))
+    .filter(hasAccessibleNonNativeInteraction);
+}
+
 function syntaxErrorsForFile(filePath: string, contents: string): string[] {
   if (!/\.(?:[cm]?[jt]sx?)$/i.test(filePath)) {
     return [];
@@ -153,6 +160,11 @@ function hasModalKeyboardBehavior(script: string): boolean {
 
 function hasModalBehavior(script: string): boolean {
   return hasModalOpenBehavior(script) && hasModalCloseBehavior(script) && hasModalKeyboardBehavior(script);
+}
+
+function hasNonNativeKeyboardHandler(script: string): boolean {
+  return /(?:keydown|keyup|keypress)/i.test(script) &&
+    /(?:enter|space|code\s*===\s*["']space["']|key\s*===\s*["']\s["']|keycode\s*===\s*(?:13|32))/i.test(script);
 }
 
 function hasModalStyleCoverage(styles: string, tokens: string[]): boolean {
@@ -395,6 +407,41 @@ function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], repoCont
   }
 }
 
+async function validateAccessibleNonNativeControls(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
+  const addedControls: Array<{ filePath: string; tags: string[] }> = [];
+
+  for (const change of changes.filter((candidate) => /\.(?:html?|[cm]?[jt]sx?)$/i.test(candidate.filePath))) {
+    const tags = findAddedAccessibleNonNativeInteractiveTags(change.originalContent, change.modifiedContent);
+    if (tags.length > 0) {
+      addedControls.push({ filePath: change.filePath, tags });
+    }
+  }
+
+  if (addedControls.length === 0) {
+    return;
+  }
+
+  const changedScripts = changes
+    .filter((change) => isScript(change.filePath))
+    .map((change) => change.modifiedContent);
+  const existingScripts = await Promise.all(["script.js", "main.js", "app.js"]
+    .map((fileName) => findRepoFile(repoContext, fileName))
+    .filter((filePath): filePath is string => Boolean(filePath))
+    .filter((filePath) => !changes.some((change) => change.filePath === filePath))
+    .map((filePath) => readFile(join(repoContext.localPath, filePath), "utf8").catch(() => "")));
+  const effectiveScript = [...changedScripts, ...existingScripts].join("\n");
+
+  if (hasNonNativeKeyboardHandler(effectiveScript)) {
+    return;
+  }
+
+  for (const { filePath, tags } of addedControls) {
+    errors.push(
+      `Change for ${filePath} adds accessible non-native control(s) without keyboard activation behavior in scripts: ${tags.map((tag) => tag.replace(/\s+/g, " ").slice(0, 80)).join(", ")}`
+    );
+  }
+}
+
 async function validateStaticAssetLinks(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
   const htmlPath = findRepoFile(repoContext, "index.html");
   if (!htmlPath) {
@@ -592,6 +639,7 @@ export async function validate(
   await validateModalBehavior(changes, repoContext, errors);
   await validateStaticAssetLinks(changes, repoContext, errors);
   validateScriptSelectorsAgainstHtml(changes, repoContext, errors);
+  await validateAccessibleNonNativeControls(changes, repoContext, errors);
   validatePythonCrossFileImports(changes, errors);
 
   return {
