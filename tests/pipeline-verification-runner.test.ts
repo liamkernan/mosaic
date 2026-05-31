@@ -54,6 +54,54 @@ describe("runVerificationCommands", () => {
     expect(result.commands).toEqual(["python3 -m unittest tests.reported.test_example"]);
   });
 
+  it("does not expose parent process secrets to verified test processes", async () => {
+    const previousSecret = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "parent-secret-that-must-not-leak";
+
+    try {
+      const localPath = await createPythonRepo();
+      await writeFile(
+        join(localPath, "tests", "reported", "test_env.py"),
+        [
+          "import os",
+          "import unittest",
+          "",
+          "class EnvTest(unittest.TestCase):",
+          "    def test_parent_secret_is_not_exposed(self):",
+          "        self.assertIsNone(os.environ.get('ANTHROPIC_API_KEY'))",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await runVerificationCommands(
+        [],
+        {
+          fullName: "owner/repo",
+          defaultBranch: "main",
+          localPath,
+          fileTree: [],
+          installationId: 1
+        },
+        {
+          requiredFiles: [],
+          acceptanceCriteria: [],
+          implementationChecklist: [],
+          verificationChecklist: [],
+          verificationCommands: ["python3 -m unittest tests.reported.test_env"]
+        }
+      );
+
+      expect(result.valid).toBe(true);
+    } finally {
+      if (previousSecret === undefined) {
+        delete process.env.ANTHROPIC_API_KEY;
+      } else {
+        process.env.ANTHROPIC_API_KEY = previousSecret;
+      }
+    }
+  });
+
   it("rejects unsupported verification commands instead of silently passing", async () => {
     const localPath = await createPythonRepo();
 
