@@ -23,6 +23,10 @@ const inertAnchorPattern = /<a\b(?=[^>]*\bhref\s*=\s*["'](?:#|javascript:void\(0
 const nonInteractiveClickableTagPattern = /<(div|article|section|li|span|figure)\b[^>]*(?:\bonclick\s*=|\bclass\s*=\s*["'][^"']*(?:clickable|interactive|card-link)[^"']*["'])[^>]*>/gi;
 const getElementByIdPattern = /getElementById\(\s*["']([^"']+)["']\s*\)/g;
 const querySelectorPattern = /querySelector(?:All)?\(\s*["']([^"']+)["']\s*\)/g;
+const testFilePathPattern = /(?:^|\/)(?:test|tests|spec|specs|__tests__|reported)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/i;
+const testAssertionPattern = /\bassert\b|self\.assert[A-Z][A-Za-z]*\s*\(|\bexpect\s*\(|\bshould\s*\(|\btoEqual\s*\(|\btoBe\s*\(|\btoContain\s*\(/g;
+const testSkipPattern = /@(?:unittest\.)?skip\b|pytest\.mark\.skip\b|\b(?:describe|it|test)\.skip\s*\(|\b(?:xdescribe|xit)\s*\(/i;
+const trivialAssertionPattern = /^\s*(?:assert\s+True\b|self\.assertTrue\(\s*True\s*\)|expect\(\s*true\s*\)\.(?:toBe|toEqual)\(\s*true\s*\)|expect\(\s*true\s*\)\.toBeTruthy\(\s*\))/i;
 const pythonBuiltinCallNames = new Set([
   "dict",
   "int",
@@ -79,6 +83,31 @@ function countAddedLines(original: string, modified: string): number {
 function findAddedMatches(pattern: RegExp, original: string, modified: string): string[] {
   const originalMatches = new Set(original.match(pattern) ?? []);
   return [...new Set(modified.match(pattern) ?? [])].filter((match) => !originalMatches.has(match));
+}
+
+function findAddedLines(original: string, modified: string): string[] {
+  const originalLines = new Set(original.split("\n"));
+  return modified.split("\n").filter((line) => line.trim().length > 0 && !originalLines.has(line));
+}
+
+function countTestAssertions(content: string): number {
+  return [...content.matchAll(testAssertionPattern)].length;
+}
+
+function validateTestIntegrity(changes: GeneratedChange[], errors: string[]): void {
+  for (const change of changes.filter((candidate) => testFilePathPattern.test(candidate.filePath))) {
+    const originalAssertions = countTestAssertions(change.originalContent);
+    const modifiedAssertions = countTestAssertions(change.modifiedContent);
+    if (originalAssertions > 0 && modifiedAssertions < originalAssertions) {
+      errors.push(`Change for ${change.filePath} weakens existing test assertions (${originalAssertions} -> ${modifiedAssertions})`);
+    }
+
+    const suspiciousAddedLines = findAddedLines(change.originalContent, change.modifiedContent)
+      .filter((line) => testSkipPattern.test(line) || trivialAssertionPattern.test(line));
+    if (suspiciousAddedLines.length > 0) {
+      errors.push(`Change for ${change.filePath} adds skipped or trivial test assertions: ${suspiciousAddedLines.map((line) => line.trim()).join(", ")}`);
+    }
+  }
 }
 
 function stripHtml(html: string): string {
@@ -641,6 +670,7 @@ export async function validate(
   await validateScriptSelectorsAgainstHtml(changes, repoContext, errors);
   await validateAccessibleNonNativeControls(changes, repoContext, errors);
   validatePythonCrossFileImports(changes, errors);
+  validateTestIntegrity(changes, errors);
 
   return {
     valid: errors.length === 0,

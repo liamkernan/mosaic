@@ -218,6 +218,10 @@ function hasTestVerificationFailure(validationErrors: string[]): boolean {
   );
 }
 
+function hasTestIntegrityError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) => /weakens existing test assertions|skipped or trivial test assertions/i.test(error));
+}
+
 export class CodeGenerator {
   constructor(private readonly llmClient: LLMClient) {}
 
@@ -362,7 +366,8 @@ export class CodeGenerator {
     const missingBehaviorRepair = hasMissingInteractiveBehaviorValidationError(validationErrors);
     const frontendVerificationRepair = hasFrontendVerificationFailure(validationErrors);
     const testVerificationRepair = hasTestVerificationFailure(validationErrors);
-    const focusedRepair = oversizedRepair || missingBehaviorRepair || missingTestCoverageRepair || missingIdempotencyUpdateRepair || testApiShapeMismatchRepair || missingPythonImportRepair || missingEndpointRouteRepair || missingRuntimeChangeRepair || frontendVerificationRepair || testVerificationRepair;
+    const testIntegrityRepair = hasTestIntegrityError(validationErrors);
+    const focusedRepair = oversizedRepair || missingBehaviorRepair || missingTestCoverageRepair || missingIdempotencyUpdateRepair || testApiShapeMismatchRepair || missingPythonImportRepair || missingEndpointRouteRepair || missingRuntimeChangeRepair || frontendVerificationRepair || testVerificationRepair || testIntegrityRepair;
     const maxTokens = focusedRepair
       ? Math.min(estimateGenerationMaxTokens(promptFiles, { completeSolution: false }), VALIDATION_REPAIR_MAX_TOKENS)
       : estimateGenerationMaxTokens(promptFiles, options);
@@ -388,6 +393,8 @@ export class CodeGenerator {
         ? "Return only a repaired <changes> payload focused on the failing frontend verification assertions. Treat the reported selectors, ids, classes, text, attributes, counts, and runtime errors as binding executable contracts; update the smallest matching HTML, CSS, and JS hooks needed."
       : testVerificationRepair
         ? "Return only a repaired <changes> payload focused on the failing test or verification output. Preserve required behavioral test coverage; do not remove test files or drop assertions to pass validation. If a generated test asserts a field on the wrong public API shape, repair the test to assert through an existing returned object or supported accessor, or update the implementation only when the user request requires that API surface."
+      : testIntegrityRepair
+        ? "Return only a repaired <changes> payload focused on test integrity. Do not skip tests, replace assertions with trivial truth checks, or weaken existing reported coverage. Restore the original meaningful assertions and fix the application implementation so those assertions pass."
       : "Return only the repaired <changes> payload with complete file contents in CDATA blocks.";
     const response = await this.llmClient.complete(
       buildValidationRepairPrompt(feedback.summary, promptFiles, currentChanges, validationErrors, fileTree, implementationPlan),

@@ -763,4 +763,65 @@ order_by = "sr.sla_due_at ASC, sr.created_at ASC"
     expect(capturedUserMessage).toContain("actual application source files");
     expect(capturedUserMessage).toContain("do not return tests/docs-only repairs");
   });
+
+  it("uses focused test integrity repair instructions for weakened tests", async () => {
+    let capturedUserMessage = "";
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete: async (_systemPrompt: string, userMessage: string) => {
+        capturedUserMessage = userMessage;
+        return `<changes>
+  <edit>
+    <filePath>mosaic_demo/service.py</filePath>
+    <search><![CDATA[
+order_by = "sr.created_at ASC"
+]]></search>
+    <replace><![CDATA[
+order_by = "sr.sla_due_at ASC, sr.created_at ASC"
+]]></replace>
+    <explanation>Fix SLA queue ordering while preserving the reported test.</explanation>
+  </edit>
+</changes>`;
+      }
+    } as unknown as LLMClient;
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "SLA sorting is wrong",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Fix SLA sort ordering",
+        relevantFiles: ["mosaic_demo/service.py", "tests/reported/test_001_sla_sort.py"],
+        confidence: 0.7
+      },
+      [
+        { path: "mosaic_demo/service.py", content: "order_by = \"sr.created_at ASC\"\n", reason: "implementation" },
+        { path: "tests/reported/test_001_sla_sort.py", content: "self.assertEqual(urgent['id'], queue[0]['id'])\n", reason: "coverage" }
+      ],
+      ["mosaic_demo/service.py", "tests/reported/test_001_sla_sort.py"],
+      [
+        {
+          filePath: "tests/reported/test_001_sla_sort.py",
+          originalContent: "self.assertEqual(urgent['id'], queue[0]['id'])\n",
+          modifiedContent: "assert True\n",
+          explanation: "weaken test"
+        }
+      ],
+      [
+        "Change for tests/reported/test_001_sla_sort.py weakens existing test assertions (1 -> 0)"
+      ],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("test integrity");
+    expect(capturedUserMessage).toContain("Restore the original meaningful assertions");
+    expect(capturedUserMessage).toContain("fix the application implementation");
+  });
 });

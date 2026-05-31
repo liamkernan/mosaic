@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -51,6 +51,94 @@ describe("validate", () => {
         defaultBranch: "main",
         localPath: process.cwd(),
         fileTree: [],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it("rejects changes that weaken existing test assertions", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await mkdir(join(localPath, "tests", "reported"), { recursive: true });
+    await writeFile(join(localPath, "tests", "reported", "test_001_sla_sort.py"), "def test_sla_sort_orders_by_due_at(self):\n    self.assertEqual(urgent['id'], queue[0]['id'])\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "tests/reported/test_001_sla_sort.py",
+          originalContent:
+            "def test_sla_sort_orders_by_due_at(self):\n    self.assertEqual(urgent['id'], queue[0]['id'])\n",
+          modifiedContent:
+            "def test_sla_sort_orders_by_due_at(self):\n    pass\n",
+          explanation: "make test pass"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [{ path: "tests/reported/test_001_sla_sort.py", type: "file" }],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("weakens existing test assertions");
+  });
+
+  it("rejects skipped or trivial generated tests", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await mkdir(join(localPath, "tests", "reported"), { recursive: true });
+    await writeFile(join(localPath, "tests", "reported", "test_001_sla_sort.py"), "", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "tests/reported/test_001_sla_sort.py",
+          originalContent: "",
+          modifiedContent:
+            "import unittest\n\n@unittest.skip('flaky')\ndef test_sla_sort_orders_by_due_at():\n    assert True\n",
+          explanation: "add regression test"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [{ path: "tests/reported/test_001_sla_sort.py", type: "file" }],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("skipped or trivial test assertions");
+  });
+
+  it("accepts generated tests that preserve and add meaningful assertions", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await mkdir(join(localPath, "tests", "reported"), { recursive: true });
+    await writeFile(join(localPath, "tests", "reported", "test_001_sla_sort.py"), "def test_sla_sort_orders_by_due_at(self):\n    self.assertEqual(urgent['id'], queue[0]['id'])\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "tests/reported/test_001_sla_sort.py",
+          originalContent:
+            "def test_sla_sort_orders_by_due_at(self):\n    self.assertEqual(urgent['id'], queue[0]['id'])\n",
+          modifiedContent:
+            "def test_sla_sort_orders_by_due_at(self):\n    self.assertEqual(urgent['id'], queue[0]['id'])\n    assert queue[0]['sla_due_at'] < queue[1]['sla_due_at']\n",
+          explanation: "strengthen regression test"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [{ path: "tests/reported/test_001_sla_sort.py", type: "file" }],
         installationId: 1
       }
     );
