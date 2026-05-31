@@ -404,6 +404,19 @@ function hasExpectedClass(element: Element, className: string | string[]): boole
   return classNames.some((candidate) => element.classList.contains(candidate));
 }
 
+function shouldAssertKeyboardActivation(element: Element): boolean {
+  const tagName = element.tagName.toLowerCase();
+  const isNativeKeyboardControl = ["button", "input", "select", "textarea", "summary"].includes(tagName) ||
+    (tagName === "a" && element.hasAttribute("href"));
+
+  if (isNativeKeyboardControl) {
+    return false;
+  }
+
+  const role = element.getAttribute("role")?.toLowerCase();
+  return role === "button" || role === "link" || element.hasAttribute("tabindex");
+}
+
 async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Promise<string[]> {
   if (!evalCase.frontendAssertions || evalCase.frontendAssertions.length === 0) {
     return [];
@@ -465,6 +478,38 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
   }
   await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
 
+  const assertExpectations = (assertion: FrontendAssertion, label: string): void => {
+    for (const expectation of assertion.expect) {
+      const elements = querySelectorAll(dom.window.document, expectation.selector);
+      if (isCountExpectation(expectation)) {
+        if (elements.length < expectation.minCount) {
+          errors.push(`${label}: expected at least ${expectation.minCount} matches for ${selectorLabel(expectation.selector)}, found ${elements.length}`);
+        }
+        continue;
+      }
+
+      const element = elements[0];
+      if (!element) {
+        errors.push(`${label}: expected element not found: ${selectorLabel(expectation.selector)}`);
+        continue;
+      }
+
+      if (isTextExpectation(expectation)) {
+        const text = element.textContent ?? "";
+        if (!text.includes(expectation.textIncludes)) {
+          errors.push(`${label}: ${selectorLabel(expectation.selector)} text did not include ${JSON.stringify(expectation.textIncludes)}`);
+        }
+      } else if (isAttributeExpectation(expectation)) {
+        const actual = element.getAttribute(expectation.attribute);
+        if (actual !== expectation.equals) {
+          errors.push(`${label}: ${selectorLabel(expectation.selector)} expected ${expectation.attribute}=${JSON.stringify(expectation.equals)}, got ${JSON.stringify(actual)}`);
+        }
+      } else if (isClassExpectation(expectation) && !hasExpectedClass(element, expectation.hasClass)) {
+        errors.push(`${label}: ${selectorLabel(expectation.selector)} missing class ${selectorLabel(expectation.hasClass)}`);
+      }
+    }
+  };
+
   for (const assertion of evalCase.frontendAssertions) {
     try {
       const clickable = querySelector(dom.window.document, assertion.click);
@@ -473,38 +518,15 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
         continue;
       }
 
+      if (shouldAssertKeyboardActivation(clickable)) {
+        clickable.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+        await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+        assertExpectations(assertion, `${assertion.name} keyboard activation`);
+      }
+
       clickable.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
       await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
-
-      for (const expectation of assertion.expect) {
-        const elements = querySelectorAll(dom.window.document, expectation.selector);
-        if (isCountExpectation(expectation)) {
-          if (elements.length < expectation.minCount) {
-            errors.push(`${assertion.name}: expected at least ${expectation.minCount} matches for ${selectorLabel(expectation.selector)}, found ${elements.length}`);
-          }
-          continue;
-        }
-
-        const element = elements[0];
-        if (!element) {
-          errors.push(`${assertion.name}: expected element not found: ${selectorLabel(expectation.selector)}`);
-          continue;
-        }
-
-        if (isTextExpectation(expectation)) {
-          const text = element.textContent ?? "";
-          if (!text.includes(expectation.textIncludes)) {
-            errors.push(`${assertion.name}: ${selectorLabel(expectation.selector)} text did not include ${JSON.stringify(expectation.textIncludes)}`);
-          }
-        } else if (isAttributeExpectation(expectation)) {
-          const actual = element.getAttribute(expectation.attribute);
-          if (actual !== expectation.equals) {
-            errors.push(`${assertion.name}: ${selectorLabel(expectation.selector)} expected ${expectation.attribute}=${JSON.stringify(expectation.equals)}, got ${JSON.stringify(actual)}`);
-          }
-        } else if (isClassExpectation(expectation) && !hasExpectedClass(element, expectation.hasClass)) {
-          errors.push(`${assertion.name}: ${selectorLabel(expectation.selector)} missing class ${selectorLabel(expectation.hasClass)}`);
-        }
-      }
+      assertExpectations(assertion, assertion.name);
     } catch (error) {
       errors.push(`${assertion.name}: frontend assertion crashed: ${error instanceof Error ? error.message : String(error)}`);
     }
