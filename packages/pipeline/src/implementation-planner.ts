@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { buildImplementationPlanPrompt } from "./prompts/implementation-plan.prompt.js";
 
-const PLAN_TIMEOUT_MS = 90_000;
+const PLAN_TIMEOUT_MS = 60_000;
 const PLAN_MAX_TOKENS = 4_096;
 
 const planFileSchema = z.object({

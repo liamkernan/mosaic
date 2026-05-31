@@ -7,11 +7,13 @@ import { buildGenerationRepairPrompt, buildValidationRepairPrompt } from "./prom
 import type { ImplementationPlan } from "./implementation-planner.js";
 
 const GENERATION_TIMEOUT_MS = 180_000;
+const STATIC_FRONTEND_GENERATION_TIMEOUT_MS = 45_000;
+const STATIC_FRONTEND_RETRY_TIMEOUT_MS = 120_000;
 const LARGE_STATIC_FRONTEND_BYTES = 25_000;
 const STATIC_FRONTEND_RETRY_BYTES = 15_000;
 const COMPACT_STATIC_ASSET_BYTES = 8_000;
 const RETRY_COMPACT_STATIC_ASSET_BYTES = 4_000;
-const STATIC_FRONTEND_RETRY_MAX_TOKENS = 12_288;
+const STATIC_FRONTEND_RETRY_MAX_TOKENS = 8_192;
 const VALIDATION_REPAIR_TIMEOUT_MS = 120_000;
 const VALIDATION_REPAIR_MAX_TOKENS = 12_288;
 
@@ -21,6 +23,8 @@ interface GenerationOptions {
 
 interface PromptFileOptions {
   compactAssetBytes: number;
+  compactHtml?: boolean;
+  keywords?: string[];
 }
 
 function estimateGenerationMaxTokens(relevantFiles: RelevantFile[], options: GenerationOptions = {}): number {
@@ -58,14 +62,75 @@ function shouldRetryStaticFrontendGeneration(relevantFiles: RelevantFile[], erro
   return totalStaticFrontendBytes(relevantFiles) > STATIC_FRONTEND_RETRY_BYTES;
 }
 
+function extractKeywords(text: string): string[] {
+  const stopwords = new Set(["about", "add", "and", "for", "from", "into", "make", "open", "that", "the", "them", "this", "with"]);
+  return [...new Set(text.toLowerCase().match(/[a-z][a-z0-9-]{3,}/g) ?? [])]
+    .filter((word) => !stopwords.has(word))
+    .slice(0, 12);
+}
+
+function compactHtmlContent(file: RelevantFile, options: PromptFileOptions): RelevantFile {
+  if (!options.compactHtml || !/\.html?$/i.test(file.path) || Buffer.byteLength(file.content) <= options.compactAssetBytes) {
+    return file;
+  }
+
+  const lines = file.content.split("\n");
+  const headLines = options.compactAssetBytes <= RETRY_COMPACT_STATIC_ASSET_BYTES ? 40 : 80;
+  const tailLines = options.compactAssetBytes <= RETRY_COMPACT_STATIC_ASSET_BYTES ? 30 : 60;
+  const keywords = options.keywords ?? [];
+  const matchedIndexes = lines
+    .map((line, index) => ({ line: line.toLowerCase(), index }))
+    .filter(({ line }) => keywords.some((keyword) => line.includes(keyword)))
+    .map(({ index }) => index)
+    .slice(0, 8);
+  const includedIndexes = new Set<number>();
+
+  for (let index = 0; index < Math.min(headLines, lines.length); index += 1) {
+    includedIndexes.add(index);
+  }
+
+  for (const matchIndex of matchedIndexes) {
+    for (let index = Math.max(0, matchIndex - 5); index <= Math.min(lines.length - 1, matchIndex + 10); index += 1) {
+      includedIndexes.add(index);
+    }
+  }
+
+  for (let index = Math.max(0, lines.length - tailLines); index < lines.length; index += 1) {
+    includedIndexes.add(index);
+  }
+
+  const excerpt = [...includedIndexes]
+    .sort((a, b) => a - b)
+    .map((index, position, indexes) => {
+      const previous = indexes[position - 1];
+      const prefix = previous !== undefined && index > previous + 1
+        ? `\n<!-- MOSAIC CONTEXT NOTE: ${index - previous - 1} middle line(s) of ${file.path} omitted. -->\n`
+        : "";
+      return `${prefix}${lines[index]}`;
+    })
+    .join("\n");
+
+  return {
+    ...file,
+    content: `${excerpt}\n\n<!-- MOSAIC CONTEXT NOTE: ${file.path} was compacted for static frontend retry. Prefer localized <edit> blocks or small supplemental assets. -->`,
+    reason: `${file.reason}; compacted large static HTML context`
+  };
+}
+
 function compactFileContent(file: RelevantFile, options: PromptFileOptions): RelevantFile {
+  const htmlCompacted = compactHtmlContent(file, options);
+  if (htmlCompacted !== file) {
+    return htmlCompacted;
+  }
+
   if (!/\.(?:css|[cm]?js)$/i.test(file.path) || Buffer.byteLength(file.content) <= options.compactAssetBytes) {
     return file;
   }
 
   const lines = file.content.split("\n");
-  const head = lines.slice(0, 120).join("\n");
-  const tail = lines.slice(-120).join("\n");
+  const contextLines = options.compactAssetBytes <= RETRY_COMPACT_STATIC_ASSET_BYTES ? 40 : 120;
+  const head = lines.slice(0, contextLines).join("\n");
+  const tail = lines.slice(-contextLines).join("\n");
 
   return {
     ...file,
@@ -82,7 +147,7 @@ function promptRelevantFiles(relevantFiles: RelevantFile[], options: PromptFileO
   return relevantFiles.map((file) => compactFileContent(file, options));
 }
 
-function retryPromptRelevantFiles(relevantFiles: RelevantFile[]): RelevantFile[] {
+function retryPromptRelevantFiles(relevantFiles: RelevantFile[], keywords: string[]): RelevantFile[] {
   const totalStaticBytes = relevantFiles
     .filter((file) => isStaticFrontendFile(file.path))
     .reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
@@ -91,7 +156,11 @@ function retryPromptRelevantFiles(relevantFiles: RelevantFile[]): RelevantFile[]
     return relevantFiles;
   }
 
-  return relevantFiles.map((file) => compactFileContent(file, { compactAssetBytes: RETRY_COMPACT_STATIC_ASSET_BYTES }));
+  return relevantFiles.map((file) => compactFileContent(file, {
+    compactAssetBytes: RETRY_COMPACT_STATIC_ASSET_BYTES,
+    compactHtml: true,
+    keywords
+  }));
 }
 
 function hasOversizedPatchValidationError(validationErrors: string[]): boolean {
@@ -207,6 +276,9 @@ export class CodeGenerator {
 
     const promptFiles = promptRelevantFiles(relevantFiles);
     const maxTokens = estimateGenerationMaxTokens(promptFiles, options);
+    const generationTimeoutMs = shouldCompactStaticFrontendContext(relevantFiles)
+      ? STATIC_FRONTEND_GENERATION_TIMEOUT_MS
+      : GENERATION_TIMEOUT_MS;
 
     let response;
     try {
@@ -216,7 +288,7 @@ export class CodeGenerator {
         {
           temperature: 0.3,
           maxTokens,
-          timeoutMs: GENERATION_TIMEOUT_MS
+          timeoutMs: generationTimeoutMs
         }
       );
     } catch (error) {
@@ -224,14 +296,14 @@ export class CodeGenerator {
         throw error;
       }
 
-      const retryFiles = retryPromptRelevantFiles(relevantFiles);
+      const retryFiles = retryPromptRelevantFiles(relevantFiles, extractKeywords(`${feedback.summary} ${feedback.rawContent}`));
       response = await this.llmClient.complete(
         buildGenerationPrompt(feedback.summary, retryFiles, fileTree, implementationPlan, options),
-        "The previous static frontend generation timed out. Return only the smallest complete <changes> payload. Prefer one reusable data-driven modal, and include matching behavior and styles in existing linked JS/CSS when the UI needs them.",
+        "The previous static frontend generation timed out. Return only a small localized <changes> payload: prefer exact <edit> blocks or new scoped supplemental JS/CSS files linked from HTML. Do not rewrite full existing HTML/CSS/JS files. Implement one reusable data-driven modal/dialog and matching behavior/styles.",
         {
           temperature: 0.2,
           maxTokens: Math.min(estimateGenerationMaxTokens(retryFiles, options), STATIC_FRONTEND_RETRY_MAX_TOKENS),
-          timeoutMs: GENERATION_TIMEOUT_MS
+          timeoutMs: STATIC_FRONTEND_RETRY_TIMEOUT_MS
         }
       );
     }

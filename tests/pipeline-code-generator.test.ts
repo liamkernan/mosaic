@@ -119,13 +119,15 @@ const generated = true;
   it("retries static frontend generation with a lean prompt after an LLM timeout", async () => {
     const prompts: string[] = [];
     const userMessages: string[] = [];
+    const timeoutMs: number[] = [];
     const fakeClient = {
       setUsageContext: () => {},
-      complete: async (systemPrompt: string, userMessage: string) => {
+      complete: async (systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
         prompts.push(systemPrompt);
         userMessages.push(userMessage);
+        timeoutMs.push(options.timeoutMs ?? 0);
         if (prompts.length === 1) {
-          throw new LLMError("Anthropic completion timed out after 180000ms");
+          throw new LLMError(`Anthropic completion timed out after ${options.timeoutMs}ms`);
         }
 
         return `<changes>
@@ -144,19 +146,28 @@ const retrySucceeded = true;
       {
         id: "01TEST",
         source: "web_form",
-        rawContent: "Add a collection modal",
+        rawContent: "Make journal guide cards open full articles",
         senderIdentifier: "user@example.com",
         repoFullName: "owner/repo",
         receivedAt: new Date(),
         metadata: {},
         category: "feature_request",
         complexity: "complex",
-        summary: "Add a collection modal",
+        summary: "Make journal guide cards open full article content",
         relevantFiles: ["index.html", "script.js", "styles.css"],
         confidence: 0.8
       },
       [
-        { path: "index.html", content: "<main></main>".repeat(2_000), reason: "markup" },
+        {
+          path: "index.html",
+          content: [
+            "<header>Welcome</header>",
+            ...Array.from({ length: 1_000 }, (_, index) => `<div>Filler ${index}</div>`),
+            '<section class="journal-section"><button class="journal-card">Shelf styling guide</button></section>',
+            ...Array.from({ length: 1_000 }, (_, index) => `<div>More filler ${index}</div>`)
+          ].join("\n"),
+          reason: "markup"
+        },
         { path: "script.js", content: "console.log('ready');", reason: "behavior" },
         { path: "styles.css", content: ".collection { color: black; }\n".repeat(1_000), reason: "styles" }
       ],
@@ -166,7 +177,10 @@ const retrySucceeded = true;
     );
 
     expect(prompts).toHaveLength(2);
+    expect(timeoutMs).toEqual([45_000, 120_000]);
     expect(userMessages[1]).toContain("previous static frontend generation timed out");
+    expect(prompts[1]).toContain("middle line(s) of index.html omitted");
+    expect(prompts[1]).toContain("journal-section");
     expect(prompts[1]).toContain("LARGE STATIC FRONTEND NOTE");
     expect(changes).toHaveLength(1);
   });
