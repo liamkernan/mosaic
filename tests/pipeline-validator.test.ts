@@ -638,6 +638,37 @@ describe("validate", () => {
     expect(result.errors.join("\n")).toContain("queries selector(s) with no matching HTML: .coll-card-btn");
   });
 
+  it("rejects script-only changes that query selectors missing from existing html", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "index.html"), '<main><button class="collection-card">Kitchen</button><script src="./collection-modal.js"></script></main>\n', "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "collection-modal.js",
+          originalContent: "console.log('ready');\n",
+          modifiedContent:
+            "document.querySelectorAll('.coll-card-btn').forEach(function (button) { button.addEventListener('click', function () {}); });\n",
+          explanation: "wire modal behavior"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [
+          { path: "index.html", type: "file" },
+          { path: "collection-modal.js", type: "file" }
+        ],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("queries selector(s) with no matching HTML: .coll-card-btn");
+  });
+
   it("accepts changed static scripts that query existing class and data-attribute hooks", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
     tempDirs.push(localPath);

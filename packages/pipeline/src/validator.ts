@@ -375,18 +375,18 @@ function selectorExistsInHtml(html: string, selector: string): boolean {
   return true;
 }
 
-function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): void {
+async function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
   const htmlPath = findRepoFile(repoContext, "index.html");
   if (!htmlPath) {
     return;
   }
 
   const htmlChange = changes.find((change) => change.filePath === htmlPath);
-  if (!htmlChange) {
+  const effectiveHtml = htmlChange?.modifiedContent ?? await readFile(join(repoContext.localPath, htmlPath), "utf8").catch(() => "");
+  if (effectiveHtml.length === 0) {
     return;
   }
 
-  const effectiveHtml = htmlChange.modifiedContent;
   for (const change of changes.filter((candidate) => isScript(candidate.filePath))) {
     const missingIds = [...new Set([...change.modifiedContent.matchAll(getElementByIdPattern)]
       .map((match) => match[1])
@@ -638,7 +638,7 @@ export async function validate(
   await validateModalStyling(changes, repoContext, errors);
   await validateModalBehavior(changes, repoContext, errors);
   await validateStaticAssetLinks(changes, repoContext, errors);
-  validateScriptSelectorsAgainstHtml(changes, repoContext, errors);
+  await validateScriptSelectorsAgainstHtml(changes, repoContext, errors);
   await validateAccessibleNonNativeControls(changes, repoContext, errors);
   validatePythonCrossFileImports(changes, errors);
 
