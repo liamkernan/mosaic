@@ -287,7 +287,7 @@ describe("validate", () => {
     expect(result.errors.join("\n")).toContain("does not update a script");
   });
 
-  it("accepts modal UI changes with matching styles and behavior", async () => {
+  it("rejects modal UI changes that only add open behavior", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
     tempDirs.push(localPath);
     await writeFile(join(localPath, "index.html"), "<div>before</div>\n", "utf8");
@@ -307,6 +307,50 @@ describe("validate", () => {
           filePath: "script.js",
           originalContent: "console.log('ready');\n",
           modifiedContent: "document.querySelector('.journal-modal').classList.add('is-open');\n",
+          explanation: "only opens journal modal"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [
+          { path: "index.html", type: "file" },
+          { path: "styles.css", type: "file" },
+          { path: "script.js", type: "file" }
+        ],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("without complete open/close/keyboard behavior");
+  });
+
+  it("accepts modal UI changes with matching styles and behavior", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "index.html"), "<div>before</div>\n", "utf8");
+    await writeFile(join(localPath, "styles.css"), ".journal-modal { display: block; }\n", "utf8");
+    await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<div>before</div>\n",
+          modifiedContent:
+            '<button data-article="shelf-styling">Open</button><div class="journal-modal"></div>\n',
+          explanation: "add journal modal"
+        },
+        {
+          filePath: "script.js",
+          originalContent: "console.log('ready');\n",
+          modifiedContent:
+            "const journalModal = document.querySelector('.journal-modal');\n" +
+            "document.querySelector('[data-article]').addEventListener('click', () => journalModal.classList.add('is-open'));\n" +
+            "document.querySelector('.journal-modal').addEventListener('click', () => journalModal.classList.remove('is-open'));\n" +
+            "document.addEventListener('keydown', (event) => { if (event.key === 'Escape') journalModal.classList.remove('is-open'); });\n",
           explanation: "wire journal modal behavior"
         }
       ],
@@ -353,7 +397,10 @@ describe("validate", () => {
           filePath: "script.js",
           originalContent: "console.log('ready');\n",
           modifiedContent:
-            "const articleModalOverlay = document.querySelector('.article-modal-overlay');\ndocument.querySelectorAll('[data-article]').forEach((button) => button.addEventListener('click', () => articleModalOverlay.classList.add('is-open')));\n",
+            "const articleModalOverlay = document.querySelector('.article-modal-overlay');\n" +
+            "document.querySelectorAll('[data-article]').forEach((button) => button.addEventListener('click', () => articleModalOverlay.classList.add('is-open')));\n" +
+            "document.querySelector('.article-modal-close').addEventListener('click', () => articleModalOverlay.classList.remove('is-open'));\n" +
+            "document.addEventListener('keydown', (event) => { if (event.key === 'Escape') articleModalOverlay.classList.remove('is-open'); });\n",
           explanation: "wire article modal behavior"
         }
       ],
@@ -431,7 +478,10 @@ describe("validate", () => {
           filePath: "collection-modal.js",
           originalContent: "",
           modifiedContent:
-            "const collectionModal = document.querySelector('.collection-modal');\ndocument.querySelectorAll('[data-collection]').forEach((button) => button.addEventListener('click', () => collectionModal.showModal()));\n",
+            "const collectionModal = document.querySelector('.collection-modal');\n" +
+            "document.querySelectorAll('[data-collection]').forEach((button) => button.addEventListener('click', () => collectionModal.showModal()));\n" +
+            "document.querySelector('.collection-modal-overlay').addEventListener('click', () => collectionModal.close());\n" +
+            "document.addEventListener('keydown', (event) => { if (event.key === 'Escape') collectionModal.close(); });\n",
           explanation: "wire collection modal behavior"
         }
       ],

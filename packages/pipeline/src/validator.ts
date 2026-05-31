@@ -133,10 +133,26 @@ function compactToken(token: string): string {
   return token.replace(/[^a-z0-9]/gi, "").toLowerCase();
 }
 
-function hasModalBehavior(script: string): boolean {
+function hasModalOpenBehavior(script: string): boolean {
   const lowerScript = script.toLowerCase();
-  return /(?:addeventlistener|queryselector|getelementbyid|classlist|dataset|onclick|showmodal|close\()/i.test(script) &&
+  return /(?:addeventlistener|onclick|showmodal|classlist\.add|setattribute\(\s*["']aria-hidden["']\s*,\s*["']false["']|hidden\s*=\s*false)/i.test(script) &&
     /(?:modal|overlay|dialog)/i.test(lowerScript);
+}
+
+function hasModalCloseBehavior(script: string): boolean {
+  const lowerScript = script.toLowerCase();
+  return /(?:close\(\)|classlist\.remove|setattribute\(\s*["']aria-hidden["']\s*,\s*["']true["']|hidden\s*=\s*true)/i.test(script) &&
+    /(?:modal|overlay|dialog|close)/i.test(lowerScript);
+}
+
+function hasModalKeyboardBehavior(script: string): boolean {
+  const lowerScript = script.toLowerCase();
+  return /(?:keydown|keyup|keypress|escape|enter|code\s*===\s*["']space["']|key\s*===\s*["']\s["'])/i.test(script) &&
+    /(?:modal|overlay|dialog)/i.test(lowerScript);
+}
+
+function hasModalBehavior(script: string): boolean {
+  return hasModalOpenBehavior(script) && hasModalCloseBehavior(script) && hasModalKeyboardBehavior(script);
 }
 
 function hasModalStyleCoverage(styles: string, tokens: string[]): boolean {
@@ -480,6 +496,7 @@ async function validateModalBehavior(changes: GeneratedChange[], repoContext: Re
     const compactScript = compactToken(effectiveScript);
     const missingTokens = newModalTokens.filter((token) => !effectiveScript.toLowerCase().includes(token) && !compactScript.includes(compactToken(token)));
     if (missingTokens.length === 0) {
+      errors.push(`Change for ${change.filePath} adds modal UI hooks without complete open/close/keyboard behavior in changed scripts`);
       continue;
     }
 
