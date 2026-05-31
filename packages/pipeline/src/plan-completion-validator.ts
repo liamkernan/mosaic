@@ -4,6 +4,7 @@ import type { ImplementationPlan } from "./implementation-planner.js";
 
 const behavioralKeywords = /\b(?:sort|order|ordering|rank|ranking|filter|tie-?breaker|fallback|dedupe|idempotent|permission|validation|api|endpoint|status|state)\b/i;
 const testPathPattern = /(?:^|\/)(?:test|tests|spec|specs|__tests__|reported)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/i;
+const documentationPathPattern = /(?:^|\/)(?:readme|changelog|docs?|documentation)(?:\/|\.|$)|\.(?:md|mdx|rst|txt)$/i;
 const orderedClausePattern = /`([^`]*(?:ASC|DESC|ORDER BY)[^`]*)`/gi;
 const idempotencyPlanPattern = /\b(?:dedupe|duplicate|idempotent|idempotency|retry|same source|external[_\s-]?ref(?:erence)?)\b/i;
 const endpointPathPattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+(`?)(\/[a-zA-Z0-9_./:-]+)\1/g;
@@ -19,6 +20,13 @@ function planText(plan: ImplementationPlan, sourceText = ""): string {
 
 function changedTestFiles(changes: GeneratedChange[]): GeneratedChange[] {
   return changes.filter((change) => testPathPattern.test(change.filePath));
+}
+
+function changedRuntimeFiles(changes: GeneratedChange[]): GeneratedChange[] {
+  return changes.filter((change) =>
+    !testPathPattern.test(change.filePath) &&
+    !documentationPathPattern.test(change.filePath)
+  );
 }
 
 function extractPythonListFunctionFields(content: string): Map<string, Set<string>> {
@@ -96,6 +104,13 @@ function planRequiresBehavioralTests(plan: ImplementationPlan, sourceText = ""):
   );
 
   return behavioralKeywords.test(text) && (checklistRequestsTestChanges || requiredTestFileChange);
+}
+
+function planRequiresRuntimeChange(plan: ImplementationPlan): boolean {
+  return plan.requiredFiles.some((file) =>
+    !testPathPattern.test(file.path) &&
+    !documentationPathPattern.test(file.path)
+  );
 }
 
 function orderedClauseTerms(clause: string): string[] {
@@ -209,19 +224,23 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
     errors.push("Implementation plan requires behavioral test coverage, but the generated change does not modify any test/spec file");
   }
 
-  const implementationChanges = changes.filter((change) => !testPathPattern.test(change.filePath));
+  const runtimeChanges = changedRuntimeFiles(changes);
+  if (planRequiresRuntimeChange(plan) && runtimeChanges.length === 0) {
+    errors.push("Implementation plan requires runtime/source changes, but the generated change only modifies tests or documentation");
+  }
+
   for (const endpointPath of extractEndpointPaths(plan, sourceText)) {
-    if (!implementationChanges.some((change) => contentContainsEndpointPath(change.modifiedContent, endpointPath))) {
+    if (!runtimeChanges.some((change) => contentContainsEndpointPath(change.modifiedContent, endpointPath))) {
       errors.push(`Acceptance criteria require endpoint path ${endpointPath}, but no implementation change appears to route or handle that path`);
     }
   }
 
-  if (planRequiresIdempotencyUpdate(plan, sourceText) && !implementationChanges.some((change) => contentHasIdempotencyUpdatePath(change.modifiedContent))) {
+  if (planRequiresIdempotencyUpdate(plan, sourceText) && !runtimeChanges.some((change) => contentHasIdempotencyUpdatePath(change.modifiedContent))) {
     errors.push("Acceptance criteria require an idempotent duplicate/retry update path, but no implementation change appears to look up and update an existing record by the idempotency key");
   }
 
   for (const terms of extractOrderedClauses(plan, sourceText)) {
-    const matched = implementationChanges.some((change) => contentContainsTermsInOrder(change.modifiedContent, terms));
+    const matched = runtimeChanges.some((change) => contentContainsTermsInOrder(change.modifiedContent, terms));
     if (!matched) {
       errors.push(`Acceptance criteria require ordered clause ${terms.join(", ")}, but no implementation change contains those terms in that order`);
     }

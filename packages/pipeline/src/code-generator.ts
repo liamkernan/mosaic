@@ -200,6 +200,10 @@ function hasMissingEndpointRouteError(validationErrors: string[]): boolean {
   return validationErrors.some((error) => /require endpoint path .* no implementation change appears to route or handle/i.test(error));
 }
 
+function hasMissingRuntimeChangeError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) => /requires runtime\/source changes|only modifies tests or documentation/i.test(error));
+}
+
 function hasFrontendVerificationFailure(validationErrors: string[]): boolean {
   return validationErrors.some((error) =>
     /Verification failed:/i.test(error) &&
@@ -354,10 +358,11 @@ export class CodeGenerator {
     const testApiShapeMismatchRepair = hasTestApiShapeMismatchError(validationErrors);
     const missingPythonImportRepair = hasMissingPythonImportError(validationErrors);
     const missingEndpointRouteRepair = hasMissingEndpointRouteError(validationErrors);
+    const missingRuntimeChangeRepair = hasMissingRuntimeChangeError(validationErrors);
     const missingBehaviorRepair = hasMissingInteractiveBehaviorValidationError(validationErrors);
     const frontendVerificationRepair = hasFrontendVerificationFailure(validationErrors);
     const testVerificationRepair = hasTestVerificationFailure(validationErrors);
-    const focusedRepair = oversizedRepair || missingBehaviorRepair || missingTestCoverageRepair || missingIdempotencyUpdateRepair || testApiShapeMismatchRepair || missingPythonImportRepair || missingEndpointRouteRepair || frontendVerificationRepair || testVerificationRepair;
+    const focusedRepair = oversizedRepair || missingBehaviorRepair || missingTestCoverageRepair || missingIdempotencyUpdateRepair || testApiShapeMismatchRepair || missingPythonImportRepair || missingEndpointRouteRepair || missingRuntimeChangeRepair || frontendVerificationRepair || testVerificationRepair;
     const maxTokens = focusedRepair
       ? Math.min(estimateGenerationMaxTokens(promptFiles, { completeSolution: false }), VALIDATION_REPAIR_MAX_TOKENS)
       : estimateGenerationMaxTokens(promptFiles, options);
@@ -375,6 +380,8 @@ export class CodeGenerator {
         ? "Return only a repaired <changes> payload focused on the missing Python import. Preserve the implementation and tests; update the caller module import or qualified reference so every newly called sibling-module helper is actually imported or defined."
       : missingEndpointRouteRepair
         ? "Return only a repaired <changes> payload focused on the missing endpoint route. Preserve the service/helper implementation and tests; update the routing or handler surface so the exact requested HTTP path is handled and returns the requested response instead of falling through to not found."
+      : missingRuntimeChangeRepair
+        ? "Return only a repaired <changes> payload focused on the missing runtime/source implementation. Preserve useful tests and documentation, but add or update the actual application source files named by the implementation plan so the user's reported behavior changes in the running software; do not return tests/docs-only repairs."
       : missingBehaviorRepair
         ? "Return only a repaired <changes> payload focused on missing interactive behavior. Add or update JavaScript that opens, populates, closes, and keyboard-wires the modal/dialog/overlay using the exact new markup ids/classes/data attributes; do not return HTML/CSS-only repairs."
       : frontendVerificationRepair

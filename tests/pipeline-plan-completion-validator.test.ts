@@ -84,6 +84,73 @@ describe("validatePlanCompletion", () => {
     expect(errors.join("\n")).toContain("does not modify any test/spec file");
   });
 
+  it("rejects test-only changes when the plan requires runtime files", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "tests/reported/test_001_sla_sort.py",
+          originalContent: "def test_sla(): pass\n",
+          modifiedContent: "def test_sla_sort_orders_by_due_at(): assert True\n",
+          explanation: "add regression coverage"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "mosaic_demo/service.py", reason: "fix queue sorting logic" },
+          { path: "tests/reported/test_001_sla_sort.py", reason: "cover the reported sort regression" }
+        ],
+        acceptanceCriteria: ["SLA sort should show the next breach first."],
+        verificationChecklist: ["Run the reported regression test."]
+      }
+    );
+
+    expect(errors.join("\n")).toContain("requires runtime/source changes");
+  });
+
+  it("does not let documentation-only changes satisfy requested endpoint routing", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "README.md",
+          originalContent: "",
+          modifiedContent: "The service exposes GET /metrics.\n",
+          explanation: "document metrics endpoint"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [{ path: "mosaic_demo/web.py", reason: "route the metrics endpoint" }],
+        acceptanceCriteria: ["Expose a dashboard endpoint."]
+      },
+      "The support lead wants GET /metrics with open request counts."
+    );
+
+    expect(errors.join("\n")).toContain("requires runtime/source changes");
+    expect(errors.join("\n")).toContain("endpoint path /metrics");
+  });
+
+  it("allows test-only plans when no runtime files are required", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "tests/reported/test_001_sla_sort.py",
+          originalContent: "",
+          modifiedContent: "def test_sla_sort_orders_by_due_at(): assert True\n",
+          explanation: "add regression coverage"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [{ path: "tests/reported/test_001_sla_sort.py", reason: "add coverage for the reported sort regression" }],
+        acceptanceCriteria: ["Add regression coverage for SLA sorting."],
+        verificationChecklist: ["Run the new regression test."]
+      }
+    );
+
+    expect(errors).toEqual([]);
+  });
+
   it("does not require test edits when an existing reported test is only listed for verification", () => {
     const errors = validatePlanCompletion(
       [

@@ -702,4 +702,65 @@ if parsed.path == "/requests":
     expect(capturedUserMessage).toContain("exact requested HTTP path");
     expect(capturedUserMessage).toContain("falling through to not found");
   });
+
+  it("uses focused runtime implementation repair instructions for tests-only fixes", async () => {
+    let capturedUserMessage = "";
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete: async (_systemPrompt: string, userMessage: string) => {
+        capturedUserMessage = userMessage;
+        return `<changes>
+  <edit>
+    <filePath>mosaic_demo/service.py</filePath>
+    <search><![CDATA[
+order_by = "sr.created_at ASC"
+]]></search>
+    <replace><![CDATA[
+order_by = "sr.sla_due_at ASC, sr.created_at ASC"
+]]></replace>
+    <explanation>Fix SLA queue ordering in the runtime service.</explanation>
+  </edit>
+</changes>`;
+      }
+    } as unknown as LLMClient;
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "SLA sorting is wrong",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Fix SLA sort ordering",
+        relevantFiles: ["mosaic_demo/service.py", "tests/reported/test_001_sla_sort.py"],
+        confidence: 0.7
+      },
+      [
+        { path: "mosaic_demo/service.py", content: "order_by = \"sr.created_at ASC\"\n", reason: "implementation" },
+        { path: "tests/reported/test_001_sla_sort.py", content: "def test_sla(): pass\n", reason: "coverage" }
+      ],
+      ["mosaic_demo/service.py", "tests/reported/test_001_sla_sort.py"],
+      [
+        {
+          filePath: "tests/reported/test_001_sla_sort.py",
+          originalContent: "def test_sla(): pass\n",
+          modifiedContent: "def test_sla_sort_orders_by_due_at(): assert True\n",
+          explanation: "add regression test"
+        }
+      ],
+      [
+        "Implementation plan requires runtime/source changes, but the generated change only modifies tests or documentation"
+      ],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("missing runtime/source implementation");
+    expect(capturedUserMessage).toContain("actual application source files");
+    expect(capturedUserMessage).toContain("do not return tests/docs-only repairs");
+  });
 });
