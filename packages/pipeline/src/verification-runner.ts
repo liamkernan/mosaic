@@ -106,18 +106,31 @@ async function runFrontendSmoke(tempRepo: string, changes: GeneratedChange[]): P
   }
 
   const runtimeErrors: string[] = [];
+  const recordRuntimeError = (message: string): void => {
+    if (message.length > 0 && !runtimeErrors.includes(message)) {
+      runtimeErrors.push(message);
+    }
+  };
   const virtualConsole = new VirtualConsole();
-  virtualConsole.on("jsdomError", (error) => runtimeErrors.push(error.message));
+  virtualConsole.on("jsdomError", (error) => recordRuntimeError(error.message));
   const dom = new JSDOM(html, {
     url: "http://localhost/",
     pretendToBeVisual: true,
     runScripts: "dangerously",
     virtualConsole
   });
+  dom.window.addEventListener("error", (event) => {
+    const message = event.error instanceof Error ? event.error.message : event.message;
+    recordRuntimeError(message);
+  });
+  dom.window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason as unknown;
+    recordRuntimeError(reason instanceof Error ? reason.message : String(reason));
+  });
 
   dom.window.console = {
     ...dom.window.console,
-    error: (...args: unknown[]) => runtimeErrors.push(args.map(String).join(" "))
+    error: (...args: unknown[]) => recordRuntimeError(args.map(String).join(" "))
   };
 
   const scriptPaths = [...dom.window.document.querySelectorAll("script[src]")]
@@ -129,7 +142,7 @@ async function runFrontendSmoke(tempRepo: string, changes: GeneratedChange[]): P
     for (const scriptPath of scriptPaths) {
       const script = await readOptionalFile(join(tempRepo, scriptPath));
       if (!script) {
-        runtimeErrors.push(`Linked script could not be loaded: ${scriptPath}`);
+        recordRuntimeError(`Linked script could not be loaded: ${scriptPath}`);
         continue;
       }
 

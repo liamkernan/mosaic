@@ -182,4 +182,30 @@ describe("runVerificationCommands", () => {
     expect(result.valid).toBe(false);
     expect(result.errors.join("\n")).toContain("Frontend runtime smoke failed");
   });
+
+  it("rejects static site changes with browser error events", async () => {
+    const localPath = await createStaticSiteRepo();
+
+    const result = await runVerificationCommands(
+      [
+        {
+          filePath: "script.js",
+          originalContent: "document.querySelector('#target').textContent = 'ready';\n",
+          modifiedContent:
+            "setTimeout(function () { window.dispatchEvent(new ErrorEvent('error', { message: 'async frontend failure' })); }, 0);\n",
+          explanation: "wire async behavior"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("async frontend failure");
+  });
 });
