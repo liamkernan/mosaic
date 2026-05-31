@@ -550,4 +550,33 @@ describe("validate", () => {
 
     expect(result.errors.join("\n")).not.toContain(".collection-card[data-collection]");
   });
+
+  it("rejects changed Python files that call new sibling module helpers without importing them", async () => {
+    const result = await validate(
+      [
+        {
+          filePath: "app/service.py",
+          originalContent: "def list_requests(conn):\n    return []\n",
+          modifiedContent: "def list_requests(conn):\n    return []\n\ndef get_metrics(conn):\n    return {\"ok\": True}\n",
+          explanation: "add metrics helper"
+        },
+        {
+          filePath: "app/web.py",
+          originalContent: "from .service import list_requests\n\ndef route(conn):\n    return list_requests(conn)\n",
+          modifiedContent: "from .service import list_requests\n\ndef route(conn, path):\n    if path == \"/metrics\":\n        return get_metrics(conn)\n    return list_requests(conn)\n",
+          explanation: "add metrics route"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath: process.cwd(),
+        fileTree: [],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("calls get_metrics from service.py but does not import or define get_metrics");
+  });
 });

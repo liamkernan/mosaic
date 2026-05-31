@@ -8,6 +8,7 @@ const modalStyleValidationPattern =
 const unlinkedStaticAssetPattern = /New static asset ([^\s]+) is not linked from ([^\s]+)/;
 const missingHtmlIdPattern = /queries missing HTML id\(s\): (.+)$/;
 const missingHtmlSelectorPattern = /queries selector\(s\) with no matching HTML: (.+)$/;
+const missingPythonImportPattern = /Change for ([^\s]+\.py) calls (.+) from ([^\s]+)\.py but does not import or define (.+)$/;
 
 function findFilePathByName(nodes: RepoContext["fileTree"], fileName: string): string | null {
   for (const node of nodes) {
@@ -160,6 +161,51 @@ function extractMissingHtmlHooks(validationErrors: string[]): { ids: string[]; s
   }
 
   return { ids: [...ids], selectors: [...selectors] };
+}
+
+function extractMissingPythonImports(validationErrors: string[]): Array<{ filePath: string; moduleName: string; names: string[] }> {
+  const imports: Array<{ filePath: string; moduleName: string; names: string[] }> = [];
+
+  for (const error of validationErrors) {
+    const match = error.match(missingPythonImportPattern);
+    if (!match) {
+      continue;
+    }
+
+    imports.push({
+      filePath: match[1],
+      moduleName: match[3],
+      names: match[4].split(",").map((name) => name.trim()).filter(Boolean)
+    });
+  }
+
+  return imports;
+}
+
+function addPythonImport(content: string, moduleName: string, names: string[]): string {
+  const escapedModuleName = moduleName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const importPattern = new RegExp(`^from\\s+\\.${escapedModuleName}\\s+import\\s+([^\\n]+)$`, "m");
+  const existingImport = content.match(importPattern);
+
+  if (existingImport) {
+    const existingNames = existingImport[1].split(",").map((name) => name.trim()).filter(Boolean);
+    const mergedNames = [...new Set([...existingNames, ...names])];
+    return content.replace(importPattern, `from .${moduleName} import ${mergedNames.join(", ")}`);
+  }
+
+  const lines = content.split("\n");
+  let insertAt = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/^(?:from\s+__future__\s+import|from\s+[\w.]+\s+import|import\s+\w|\s*$)/.test(line)) {
+      insertAt = index + 1;
+      continue;
+    }
+    break;
+  }
+
+  lines.splice(insertAt, 0, `from .${moduleName} import ${names.join(", ")}`);
+  return lines.join("\n");
 }
 
 function htmlHasId(html: string, id: string): boolean {
@@ -492,6 +538,55 @@ export async function completeMissingHtmlHooks(
   ];
 }
 
+export async function completeMissingPythonImports(
+  changes: GeneratedChange[],
+  repoContext: RepoContext,
+  validationErrors: string[]
+): Promise<GeneratedChange[]> {
+  const missingImports = extractMissingPythonImports(validationErrors);
+  if (missingImports.length === 0) {
+    return changes;
+  }
+
+  let completedChanges = changes;
+  for (const missingImport of missingImports) {
+    const existingChange = completedChanges.find((change) => change.filePath === missingImport.filePath);
+    const originalContent = existingChange?.originalContent ??
+      await readFile(join(repoContext.localPath, missingImport.filePath), "utf8").catch(() => "");
+    const baseContent = existingChange?.modifiedContent ?? originalContent;
+    const modifiedContent = addPythonImport(baseContent, missingImport.moduleName, missingImport.names);
+
+    if (modifiedContent === baseContent) {
+      continue;
+    }
+
+    if (existingChange) {
+      completedChanges = completedChanges.map((change) =>
+        change.filePath === missingImport.filePath
+          ? {
+              ...change,
+              modifiedContent,
+              explanation: `${change.explanation} Added missing Python import required by validation.`
+            }
+          : change
+      );
+      continue;
+    }
+
+    completedChanges = [
+      ...completedChanges,
+      {
+        filePath: missingImport.filePath,
+        originalContent,
+        modifiedContent,
+        explanation: "Added missing Python import required by validation."
+      }
+    ];
+  }
+
+  return completedChanges;
+}
+
 export async function applyValidationFallbacks(
   changes: GeneratedChange[],
   repoContext: RepoContext,
@@ -499,5 +594,6 @@ export async function applyValidationFallbacks(
 ): Promise<GeneratedChange[]> {
   const withHooks = await completeMissingHtmlHooks(changes, repoContext, validationErrors);
   const withStyles = await completeMissingModalStyles(withHooks, repoContext, validationErrors);
-  return completeUnlinkedStaticAssets(withStyles, repoContext, validationErrors);
+  const withAssets = await completeUnlinkedStaticAssets(withStyles, repoContext, validationErrors);
+  return completeMissingPythonImports(withAssets, repoContext, validationErrors);
 }

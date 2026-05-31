@@ -123,6 +123,14 @@ function hasTestApiShapeMismatchError(validationErrors: string[]): boolean {
   return validationErrors.some((error) => /generated test asserts field|wrong public API shape|does not expose that field/i.test(error));
 }
 
+function hasMissingPythonImportError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) => /calls .* from .*\.py but does not import or define/i.test(error));
+}
+
+function hasMissingEndpointRouteError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) => /require endpoint path .* no implementation change appears to route or handle/i.test(error));
+}
+
 function hasFrontendVerificationFailure(validationErrors: string[]): boolean {
   return validationErrors.some((error) =>
     /Verification failed:/i.test(error) &&
@@ -272,10 +280,12 @@ export class CodeGenerator {
     const missingTestCoverageRepair = hasMissingBehavioralTestCoverageError(validationErrors);
     const missingIdempotencyUpdateRepair = hasMissingIdempotencyUpdateError(validationErrors);
     const testApiShapeMismatchRepair = hasTestApiShapeMismatchError(validationErrors);
+    const missingPythonImportRepair = hasMissingPythonImportError(validationErrors);
+    const missingEndpointRouteRepair = hasMissingEndpointRouteError(validationErrors);
     const missingBehaviorRepair = hasMissingInteractiveBehaviorValidationError(validationErrors);
     const frontendVerificationRepair = hasFrontendVerificationFailure(validationErrors);
     const testVerificationRepair = hasTestVerificationFailure(validationErrors);
-    const focusedRepair = oversizedRepair || missingBehaviorRepair || missingTestCoverageRepair || missingIdempotencyUpdateRepair || testApiShapeMismatchRepair || frontendVerificationRepair || testVerificationRepair;
+    const focusedRepair = oversizedRepair || missingBehaviorRepair || missingTestCoverageRepair || missingIdempotencyUpdateRepair || testApiShapeMismatchRepair || missingPythonImportRepair || missingEndpointRouteRepair || frontendVerificationRepair || testVerificationRepair;
     const maxTokens = focusedRepair
       ? Math.min(estimateGenerationMaxTokens(promptFiles, { completeSolution: false }), VALIDATION_REPAIR_MAX_TOKENS)
       : estimateGenerationMaxTokens(promptFiles, options);
@@ -289,6 +299,10 @@ export class CodeGenerator {
         ? "Return only a repaired <changes> payload focused on the missing idempotent duplicate/retry update path. Include an implementation edit, not tests only. In the create/insert path, normalize the stated source/key inputs, look up an existing open record by the idempotency key before INSERT/create, UPDATE that existing record and return it with the same id when found, add any expected audit/update side effects, and preserve normal distinct creation when the key is absent or different. Use a full-file <change> when a localized search/replace is risky."
       : testApiShapeMismatchRepair
         ? "Return only a repaired <changes> payload focused on the test/API shape mismatch. If a generated test reads a field from a list/query/API result that the implementation does not expose, either update the implementation to expose that field when it is part of the requested public behavior, or repair the test to assert through an existing returned object or supported accessor. Preserve behavioral coverage; do not delete assertions just to pass validation."
+      : missingPythonImportRepair
+        ? "Return only a repaired <changes> payload focused on the missing Python import. Preserve the implementation and tests; update the caller module import or qualified reference so every newly called sibling-module helper is actually imported or defined."
+      : missingEndpointRouteRepair
+        ? "Return only a repaired <changes> payload focused on the missing endpoint route. Preserve the service/helper implementation and tests; update the routing or handler surface so the exact requested HTTP path is handled and returns the requested response instead of falling through to not found."
       : missingBehaviorRepair
         ? "Return only a repaired <changes> payload focused on missing interactive behavior. Add or update JavaScript that opens, populates, closes, and keyboard-wires the modal/dialog/overlay using the exact new markup ids/classes/data attributes; do not return HTML/CSS-only repairs."
       : frontendVerificationRepair

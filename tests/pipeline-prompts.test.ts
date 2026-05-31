@@ -77,6 +77,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("acceptanceCriteria");
     expect(prompt).toContain("verificationCommands");
     expect(prompt).toContain("dedupe/idempotency/retry bugs");
+    expect(prompt).toContain("API/HTTP endpoint requests");
   });
 
   it("includes implementation plan checklists in generation prompt", () => {
@@ -103,6 +104,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("required files include a test/spec/reported file");
     expect(prompt).toContain("reported/regression test is loaded");
     expect(prompt).toContain("dedupe/idempotency/retry bugs");
+    expect(prompt).toContain("API/HTTP endpoint requests");
     expect(prompt).toContain("surface actually includes the field/key");
   });
 
@@ -166,5 +168,6 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("script queries missing HTML ids/selectors");
     expect(prompt).toContain("implementation-only and validation reports missing behavioral coverage");
     expect(prompt).toContain("dedupe/idempotency/retry validation failures");
+    expect(prompt).toContain("missing endpoint route validation failures");
   });
 });

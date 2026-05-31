@@ -217,4 +217,30 @@ def test_list_body(conn):
 
     expect(errors.join("\n")).toContain("asserts field \"body\" on list_requests result");
   });
+
+  it("requires implementation changes to route endpoint paths named in feedback", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "mosaic_demo/service.py",
+          originalContent: "",
+          modifiedContent: "def queue_metrics(conn):\n    return {\"open_by_priority\": {}}\n",
+          explanation: "add metrics helper"
+        },
+        {
+          filePath: "tests/reported/test_metrics.py",
+          originalContent: "",
+          modifiedContent: "def test_metrics_route():\n    assert call_get('/metrics')[0] == 200\n",
+          explanation: "add route test"
+        }
+      ],
+      {
+        ...basePlan,
+        acceptanceCriteria: ["Expose a dashboard endpoint."]
+      },
+      "The support lead wants GET /metrics with open request counts."
+    );
+
+    expect(errors.join("\n")).toContain("endpoint path /metrics");
+  });
 });

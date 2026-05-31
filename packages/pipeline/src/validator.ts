@@ -23,6 +23,22 @@ const inertAnchorPattern = /<a\b(?=[^>]*\bhref\s*=\s*["'](?:#|javascript:void\(0
 const nonInteractiveClickableTagPattern = /<(div|article|section|li|span|figure)\b[^>]*(?:\bonclick\s*=|\bclass\s*=\s*["'][^"']*(?:clickable|interactive|card-link)[^"']*["'])[^>]*>/gi;
 const getElementByIdPattern = /getElementById\(\s*["']([^"']+)["']\s*\)/g;
 const querySelectorPattern = /querySelector(?:All)?\(\s*["']([^"']+)["']\s*\)/g;
+const pythonBuiltinCallNames = new Set([
+  "dict",
+  "int",
+  "len",
+  "list",
+  "max",
+  "min",
+  "open",
+  "print",
+  "range",
+  "set",
+  "str",
+  "sum",
+  "super",
+  "tuple"
+]);
 
 function countChangedLines(original: string, modified: string): number {
   const originalLines = original.split("\n");
@@ -160,6 +176,92 @@ function isStylesheet(filePath: string): boolean {
 
 function isScript(filePath: string): boolean {
   return /\.(?:[cm]?[jt]sx?)$/i.test(filePath);
+}
+
+function isPython(filePath: string): boolean {
+  return /\.py$/i.test(filePath);
+}
+
+function pythonModuleName(filePath: string): string {
+  return filePath.replace(/\.py$/i, "").split("/").pop() ?? "";
+}
+
+function pythonTopLevelFunctions(content: string): Set<string> {
+  return new Set([...content.matchAll(/^(?:async\s+)?def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/gm)].map((match) => match[1]));
+}
+
+function pythonDefinedNames(content: string): Set<string> {
+  const names = new Set<string>();
+
+  for (const match of content.matchAll(/^(?:async\s+)?def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/gm)) {
+    names.add(match[1]);
+  }
+
+  for (const match of content.matchAll(/^class\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/gm)) {
+    names.add(match[1]);
+  }
+
+  for (const match of content.matchAll(/^import\s+([^\n]+)/gm)) {
+    for (const imported of match[1].split(",")) {
+      const aliasMatch = imported.trim().match(/(?:\s+as\s+)?([a-zA-Z_][a-zA-Z0-9_]*)$/);
+      if (aliasMatch) {
+        names.add(aliasMatch[1]);
+      }
+    }
+  }
+
+  for (const match of content.matchAll(/^from\s+[\w.]+\s+import\s+([^\n]+)/gm)) {
+    for (const imported of match[1].split(",")) {
+      const aliasMatch = imported.trim().match(/(?:\s+as\s+)?([a-zA-Z_][a-zA-Z0-9_]*)$/);
+      if (aliasMatch) {
+        names.add(aliasMatch[1]);
+      }
+    }
+  }
+
+  return names;
+}
+
+function pythonCallNames(content: string): Set<string> {
+  return new Set([...content.matchAll(/(?<![\w.])([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)]
+    .map((match) => match[1])
+    .filter((name) => !pythonBuiltinCallNames.has(name)));
+}
+
+function validatePythonCrossFileImports(changes: GeneratedChange[], errors: string[]): void {
+  const pythonChanges = changes.filter((change) => isPython(change.filePath));
+  const exportedFunctionsByModule = new Map<string, Set<string>>();
+
+  for (const change of pythonChanges) {
+    const exports = pythonTopLevelFunctions(change.modifiedContent);
+    if (exports.size > 0) {
+      exportedFunctionsByModule.set(pythonModuleName(change.filePath), exports);
+    }
+  }
+
+  if (exportedFunctionsByModule.size === 0) {
+    return;
+  }
+
+  for (const change of pythonChanges) {
+    const currentModule = pythonModuleName(change.filePath);
+    const definedNames = pythonDefinedNames(change.modifiedContent);
+    const callNames = pythonCallNames(change.modifiedContent);
+
+    for (const [moduleName, exportedFunctions] of exportedFunctionsByModule) {
+      if (moduleName === currentModule) {
+        continue;
+      }
+
+      const missingImports = [...callNames]
+        .filter((name) => exportedFunctions.has(name))
+        .filter((name) => !definedNames.has(name));
+
+      if (missingImports.length > 0) {
+        errors.push(`Change for ${change.filePath} calls ${missingImports.join(", ")} from ${moduleName}.py but does not import or define ${missingImports.join(", ")}`);
+      }
+    }
+  }
 }
 
 function isLocalAssetReference(reference: string): boolean {
@@ -473,6 +575,7 @@ export async function validate(
   await validateModalBehavior(changes, repoContext, errors);
   await validateStaticAssetLinks(changes, repoContext, errors);
   validateScriptSelectorsAgainstHtml(changes, repoContext, errors);
+  validatePythonCrossFileImports(changes, errors);
 
   return {
     valid: errors.length === 0,

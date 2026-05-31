@@ -551,4 +551,141 @@ cursor = conn.execute("INSERT INTO service_requests")
     expect(capturedUserMessage).toContain("Include an implementation edit");
     expect(capturedUserMessage).toContain("return it with the same id");
   });
+
+  it("uses focused Python import repair instructions when a new helper is called without import", async () => {
+    let capturedUserMessage = "";
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete: async (_systemPrompt: string, userMessage: string) => {
+        capturedUserMessage = userMessage;
+        return `<changes>
+  <edit>
+    <filePath>mosaic_demo/web.py</filePath>
+    <search><![CDATA[
+from .service import close_request, create_request, get_request, list_requests
+]]></search>
+    <replace><![CDATA[
+from .service import close_request, create_request, get_metrics, get_request, list_requests
+]]></replace>
+    <explanation>Import the metrics helper used by the route.</explanation>
+  </edit>
+</changes>`;
+      }
+    } as unknown as LLMClient;
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Need a dashboard metrics endpoint",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "feature_request",
+        complexity: "moderate",
+        summary: "Add a support metrics endpoint",
+        relevantFiles: ["mosaic_demo/service.py", "mosaic_demo/web.py"],
+        confidence: 0.7
+      },
+      [
+        { path: "mosaic_demo/service.py", content: "def get_metrics(conn):\n    return {}\n", reason: "implementation" },
+        { path: "mosaic_demo/web.py", content: "from .service import close_request, create_request, get_request, list_requests\n", reason: "route" }
+      ],
+      ["mosaic_demo/service.py", "mosaic_demo/web.py"],
+      [
+        {
+          filePath: "mosaic_demo/service.py",
+          originalContent: "",
+          modifiedContent: "def get_metrics(conn):\n    return {}\n",
+          explanation: "add metrics helper"
+        },
+        {
+          filePath: "mosaic_demo/web.py",
+          originalContent: "from .service import list_requests\n",
+          modifiedContent: "from .service import list_requests\n\ndef route(conn):\n    return get_metrics(conn)\n",
+          explanation: "add metrics route"
+        }
+      ],
+      [
+        "Change for mosaic_demo/web.py calls get_metrics from service.py but does not import or define get_metrics"
+      ],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("missing Python import");
+    expect(capturedUserMessage).toContain("Preserve the implementation and tests");
+    expect(capturedUserMessage).toContain("newly called sibling-module helper");
+  });
+
+  it("uses focused endpoint route repair instructions when a requested path is not handled", async () => {
+    let capturedUserMessage = "";
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete: async (_systemPrompt: string, userMessage: string) => {
+        capturedUserMessage = userMessage;
+        return `<changes>
+  <edit>
+    <filePath>mosaic_demo/web.py</filePath>
+    <search><![CDATA[
+if parsed.path == "/requests":
+]]></search>
+    <replace><![CDATA[
+if parsed.path == "/metrics":
+    self.send_json(200, queue_metrics(conn))
+    return
+if parsed.path == "/requests":
+]]></replace>
+    <explanation>Route the metrics endpoint to the metrics helper.</explanation>
+  </edit>
+</changes>`;
+      }
+    } as unknown as LLMClient;
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Need GET /metrics for dashboard counts",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "feature_request",
+        complexity: "moderate",
+        summary: "Add a support metrics endpoint",
+        relevantFiles: ["mosaic_demo/service.py", "mosaic_demo/web.py"],
+        confidence: 0.7
+      },
+      [
+        { path: "mosaic_demo/service.py", content: "def queue_metrics(conn):\n    return {}\n", reason: "implementation" },
+        { path: "mosaic_demo/web.py", content: "if parsed.path == \"/requests\":\n", reason: "route" }
+      ],
+      ["mosaic_demo/service.py", "mosaic_demo/web.py"],
+      [
+        {
+          filePath: "mosaic_demo/service.py",
+          originalContent: "",
+          modifiedContent: "def queue_metrics(conn):\n    return {}\n",
+          explanation: "add metrics helper"
+        },
+        {
+          filePath: "mosaic_demo/web.py",
+          originalContent: "if parsed.path == \"/requests\":\n",
+          modifiedContent: "if parsed.path == \"/requests\":\n",
+          explanation: "leave route unchanged"
+        }
+      ],
+      [
+        "Acceptance criteria require endpoint path /metrics, but no implementation change appears to route or handle that path"
+      ],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("missing endpoint route");
+    expect(capturedUserMessage).toContain("exact requested HTTP path");
+    expect(capturedUserMessage).toContain("falling through to not found");
+  });
 });

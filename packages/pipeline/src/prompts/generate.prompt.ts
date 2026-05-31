@@ -47,6 +47,7 @@ INSTRUCTIONS:
 - If a reported/regression test is loaded for a behavioral bug, do not rely on it unchanged in complete-solution mode; extend it with a missing edge case or add a repository-native companion test, and return that test edit with the implementation.
 - For sort/order/filter/ranking changes, cover the primary behavior and every stated tie-breaker with adversarial tests. A single happy-path example is not enough.
 - For dedupe/idempotency/retry bugs, implement the lookup/update path before insert/create, preserve the existing record identity when the stated idempotency key matches, preserve distinct record creation when the key is absent or different, and test both duplicate and non-duplicate paths.
+- For API/HTTP endpoint requests, update both the routing/handler surface and the backing service/data surface. Tests should exercise the public route path, not only the helper function.
 - If an acceptance criterion names exact fields, keys, ordering clauses, or tie-breakers, implement those exact terms. You may add a deterministic tertiary tie-breaker only after all required keys.
 - If an existing or planned test reads a field/key from a list, query, API response, or returned object, make sure that surface actually includes the field/key.
 - Do not use placeholder article text, placeholder data, inert buttons, empty handlers, or UI that appears clickable but does not complete the requested workflow.

@@ -6,6 +6,7 @@ const behavioralKeywords = /\b(?:sort|order|ordering|rank|ranking|filter|tie-?br
 const testPathPattern = /(?:^|\/)(?:test|tests|spec|specs|__tests__|reported)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/i;
 const orderedClausePattern = /`([^`]*(?:ASC|DESC|ORDER BY)[^`]*)`/gi;
 const idempotencyPlanPattern = /\b(?:dedupe|duplicate|idempotent|idempotency|retry|same source|external[_\s-]?ref(?:erence)?)\b/i;
+const endpointPathPattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+(`?)(\/[a-zA-Z0-9_./:-]+)\1/g;
 
 function planText(plan: ImplementationPlan, sourceText = ""): string {
   return [
@@ -160,6 +161,23 @@ function contentContainsTermsInOrder(content: string, terms: string[]): boolean 
   return true;
 }
 
+function extractEndpointPaths(plan: ImplementationPlan, sourceText = ""): string[] {
+  const paths: string[] = [];
+  const text = planText(plan, sourceText);
+  let match: RegExpExecArray | null;
+
+  while ((match = endpointPathPattern.exec(text)) !== null) {
+    paths.push(match[2]);
+  }
+
+  return [...new Set(paths)];
+}
+
+function contentContainsEndpointPath(content: string, path: string): boolean {
+  const escapedPath = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`["'\`]${escapedPath}["'\`]`).test(content);
+}
+
 function planRequiresIdempotencyUpdate(plan: ImplementationPlan, sourceText = ""): boolean {
   const text = planText(plan, sourceText);
   return idempotencyPlanPattern.test(text) &&
@@ -192,6 +210,12 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
   }
 
   const implementationChanges = changes.filter((change) => !testPathPattern.test(change.filePath));
+  for (const endpointPath of extractEndpointPaths(plan, sourceText)) {
+    if (!implementationChanges.some((change) => contentContainsEndpointPath(change.modifiedContent, endpointPath))) {
+      errors.push(`Acceptance criteria require endpoint path ${endpointPath}, but no implementation change appears to route or handle that path`);
+    }
+  }
+
   if (planRequiresIdempotencyUpdate(plan, sourceText) && !implementationChanges.some((change) => contentHasIdempotencyUpdatePath(change.modifiedContent))) {
     errors.push("Acceptance criteria require an idempotent duplicate/retry update path, but no implementation change appears to look up and update an existing record by the idempotency key");
   }

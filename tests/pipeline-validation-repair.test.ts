@@ -176,4 +176,35 @@ describe("applyValidationFallbacks", () => {
     expect(htmlChange?.modifiedContent).toContain('class="collection-card collection-card-btn"');
     expect(htmlChange?.modifiedContent).toContain('class="collection-card shifted-card collection-card-btn"');
   });
+
+  it("adds missing sibling Python imports reported by validation", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
+    tempDirs.push(localPath);
+    const repoContext: RepoContext = {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath,
+      installationId: 1,
+      fileTree: [
+        { path: "mosaic_demo/service.py", type: "file" },
+        { path: "mosaic_demo/web.py", type: "file" }
+      ]
+    };
+    const changes: GeneratedChange[] = [
+      {
+        filePath: "mosaic_demo/web.py",
+        originalContent: "from .service import close_request, create_request, get_request, list_requests\n",
+        modifiedContent:
+          "from .service import close_request, create_request, get_request, list_requests\n\nif parsed.path == \"/metrics\":\n    self.send_json(200, queue_metrics(conn))\n",
+        explanation: "add metrics route"
+      }
+    ];
+
+    const completed = await applyValidationFallbacks(changes, repoContext, [
+      "Change for mosaic_demo/web.py calls queue_metrics from service.py but does not import or define queue_metrics"
+    ]);
+
+    const webChange = completed.find((change) => change.filePath === "mosaic_demo/web.py");
+    expect(webChange?.modifiedContent).toContain("from .service import close_request, create_request, get_request, list_requests, queue_metrics");
+  });
 });
