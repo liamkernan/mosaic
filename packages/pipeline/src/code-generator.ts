@@ -115,6 +115,14 @@ function hasMissingBehavioralTestCoverageError(validationErrors: string[]): bool
   return validationErrors.some((error) => /requires behavioral test coverage|does not modify any test\/spec file/i.test(error));
 }
 
+function hasMissingIdempotencyUpdateError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) => /idempotent duplicate\/retry update path|idempotency key|look up and update an existing record/i.test(error));
+}
+
+function hasTestApiShapeMismatchError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) => /generated test asserts field|wrong public API shape|does not expose that field/i.test(error));
+}
+
 function hasFrontendVerificationFailure(validationErrors: string[]): boolean {
   return validationErrors.some((error) =>
     /Verification failed:/i.test(error) &&
@@ -262,10 +270,12 @@ export class CodeGenerator {
     const oversizedRepair = hasOversizedPatchValidationError(validationErrors);
     const missingHtmlHookRepair = hasMissingHtmlHookValidationError(validationErrors);
     const missingTestCoverageRepair = hasMissingBehavioralTestCoverageError(validationErrors);
+    const missingIdempotencyUpdateRepair = hasMissingIdempotencyUpdateError(validationErrors);
+    const testApiShapeMismatchRepair = hasTestApiShapeMismatchError(validationErrors);
     const missingBehaviorRepair = hasMissingInteractiveBehaviorValidationError(validationErrors);
     const frontendVerificationRepair = hasFrontendVerificationFailure(validationErrors);
     const testVerificationRepair = hasTestVerificationFailure(validationErrors);
-    const focusedRepair = oversizedRepair || missingBehaviorRepair || missingTestCoverageRepair || frontendVerificationRepair || testVerificationRepair;
+    const focusedRepair = oversizedRepair || missingBehaviorRepair || missingTestCoverageRepair || missingIdempotencyUpdateRepair || testApiShapeMismatchRepair || frontendVerificationRepair || testVerificationRepair;
     const maxTokens = focusedRepair
       ? Math.min(estimateGenerationMaxTokens(promptFiles, { completeSolution: false }), VALIDATION_REPAIR_MAX_TOKENS)
       : estimateGenerationMaxTokens(promptFiles, options);
@@ -275,6 +285,10 @@ export class CodeGenerator {
         ? "Return only a repaired <changes> payload focused on mismatched HTML and JavaScript hooks. Add the exact missing ids/classes/data attributes to the HTML, or retarget the script to hooks that already exist. Include both HTML and JS edits when needed; do not leave selectors that match nothing."
       : missingTestCoverageRepair
         ? "Return only a repaired <changes> payload focused on missing behavioral test coverage. Keep the implementation changes and add or update a focused test/spec file already present in the repository or required by the implementation plan; do not return an implementation-only repair."
+      : missingIdempotencyUpdateRepair
+        ? "Return only a repaired <changes> payload focused on the missing idempotent duplicate/retry update path. Include an implementation edit, not tests only. In the create/insert path, normalize the stated source/key inputs, look up an existing open record by the idempotency key before INSERT/create, UPDATE that existing record and return it with the same id when found, add any expected audit/update side effects, and preserve normal distinct creation when the key is absent or different. Use a full-file <change> when a localized search/replace is risky."
+      : testApiShapeMismatchRepair
+        ? "Return only a repaired <changes> payload focused on the test/API shape mismatch. If a generated test reads a field from a list/query/API result that the implementation does not expose, either update the implementation to expose that field when it is part of the requested public behavior, or repair the test to assert through an existing returned object or supported accessor. Preserve behavioral coverage; do not delete assertions just to pass validation."
       : missingBehaviorRepair
         ? "Return only a repaired <changes> payload focused on missing interactive behavior. Add or update JavaScript that opens, populates, closes, and keyboard-wires the modal/dialog/overlay using the exact new markup ids/classes/data attributes; do not return HTML/CSS-only repairs."
       : frontendVerificationRepair

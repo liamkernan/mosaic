@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { JSDOM, VirtualConsole } from "jsdom";
 
 import { CodeGenerator } from "../packages/pipeline/src/code-generator.js";
+import { mergeGeneratedChanges } from "../packages/pipeline/src/change-set.js";
 import { FeedbackClassifier } from "../packages/pipeline/src/classifier.js";
 import { ImplementationPlanner, type ImplementationPlan } from "../packages/pipeline/src/implementation-planner.js";
 import { validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
@@ -20,6 +21,7 @@ import { ANTHROPIC_MODEL_IDS, LLMClient } from "../packages/llm/src/client.js";
 const exec = promisify(execCallback);
 const ignoredNames = new Set(["node_modules", ".git", "dist", "build", "__pycache__", ".next", "vendor"]);
 const validationRecoveryAttempts = 3;
+const oversizedPatchPattern = /too large|exceeds limit|total new code added/i;
 
 function isRecoverableLlmFailure(error: unknown): boolean {
   const maybeError = error as { code?: unknown; name?: unknown; message?: unknown };
@@ -639,8 +641,9 @@ async function generateValidatedChanges(
   let changes = await generator.generate(feedback, relevantFiles, fileTree, implementationPlan, {
     completeSolution: true
   });
+  const feedbackText = `${feedback.summary}\n${feedback.rawContent}`;
   let validation = await validate(changes, repoContext);
-  const planErrors = validatePlanCompletion(changes, implementationPlan);
+  const planErrors = validatePlanCompletion(changes, implementationPlan, feedbackText);
   if (planErrors.length > 0) {
     validation = {
       valid: false,
@@ -663,10 +666,12 @@ async function generateValidatedChanges(
         }
       );
       if (repairedChanges.length > 0) {
-        changes = repairedChanges;
+        changes = validation.errors.some((error) => oversizedPatchPattern.test(error))
+          ? repairedChanges
+          : mergeGeneratedChanges(changes, repairedChanges);
         madeProgress = true;
         validation = await validate(changes, repoContext);
-        const repairedPlanErrors = validatePlanCompletion(changes, implementationPlan);
+        const repairedPlanErrors = validatePlanCompletion(changes, implementationPlan, feedbackText);
         if (repairedPlanErrors.length > 0) {
           validation = {
             valid: false,
@@ -686,7 +691,7 @@ async function generateValidatedChanges(
         changes = completedChanges;
         madeProgress = true;
         validation = await validate(changes, repoContext);
-        const completedPlanErrors = validatePlanCompletion(changes, implementationPlan);
+        const completedPlanErrors = validatePlanCompletion(changes, implementationPlan, feedbackText);
         if (completedPlanErrors.length > 0) {
           validation = {
             valid: false,
@@ -742,8 +747,11 @@ async function repairVerificationFailure(
     return [];
   }
 
+  repairedChanges = mergeGeneratedChanges(currentChanges, repairedChanges);
+
+  const feedbackText = `${feedback.summary}\n${feedback.rawContent}`;
   let validation = await validate(repairedChanges, repoContext);
-  const planErrors = validatePlanCompletion(repairedChanges, implementationPlan);
+  const planErrors = validatePlanCompletion(repairedChanges, implementationPlan, feedbackText);
   if (planErrors.length > 0) {
     validation = {
       valid: false,
@@ -755,7 +763,7 @@ async function repairVerificationFailure(
     const completedChanges = await applyValidationFallbacks(repairedChanges, repoContext, validation.errors);
     if (completedChanges !== repairedChanges) {
       validation = await validate(completedChanges, repoContext);
-      const completedPlanErrors = validatePlanCompletion(completedChanges, implementationPlan);
+      const completedPlanErrors = validatePlanCompletion(completedChanges, implementationPlan, feedbackText);
       if (completedPlanErrors.length > 0) {
         validation = {
           valid: false,

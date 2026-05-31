@@ -44,6 +44,7 @@ INSTRUCTIONS:
 - If you add a new static JS or CSS file to an HTML site, update the HTML to load it with a matching <script src> or <link rel="stylesheet"> tag in the same response.
 - Add or update focused tests when the repository has a relevant test pattern and the request changes behavior.
 - If the implementation plan required files include a test/spec/reported file for a behavioral request, the response must modify at least one matching test file in the same change set.
+- If a reported/regression test is loaded for a behavioral bug, do not rely on it unchanged in complete-solution mode; extend it with a missing edge case or add a repository-native companion test, and return that test edit with the implementation.
 - For sort/order/filter/ranking changes, cover the primary behavior and every stated tie-breaker with adversarial tests. A single happy-path example is not enough.
 - For dedupe/idempotency/retry bugs, implement the lookup/update path before insert/create, preserve the existing record identity when the stated idempotency key matches, preserve distinct record creation when the key is absent or different, and test both duplicate and non-duplicate paths.
 - If an acceptance criterion names exact fields, keys, ordering clauses, or tie-breakers, implement those exact terms. You may add a deterministic tertiary tie-breaker only after all required keys.

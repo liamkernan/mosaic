@@ -6,6 +6,7 @@ import { Redis } from "ioredis";
 
 import { FeedbackClassifier } from "./classifier.js";
 import { ArtifactStore } from "./artifact-store.js";
+import { mergeGeneratedChanges } from "./change-set.js";
 import { CodeGenerator } from "./code-generator.js";
 import { decideFeedbackDisposition } from "./disposition.js";
 import { ImplementationPlanner, type ImplementationPlan } from "./implementation-planner.js";
@@ -30,6 +31,7 @@ import { runVerificationCommands } from "./verification-runner.js";
 
 const FEEDBACK_QUEUE_NAME = "feedback-intake";
 const VALIDATION_RECOVERY_ATTEMPTS = 3;
+const oversizedPatchPattern = /too large|exceeds limit|total new code added/i;
 
 type RepoContext = Awaited<ReturnType<RepoIndexer["getContext"]>>;
 type PromotionResult = { handled: boolean; artifactType?: "issue" | "pr"; artifactValue?: string };
@@ -56,14 +58,15 @@ async function validateGeneratedChanges(
   changes: GeneratedChange[],
   repoContext: RepoContext,
   repoConfig: RepoRuntimeConfig,
-  implementationPlan: ImplementationPlan | undefined
+  implementationPlan: ImplementationPlan | undefined,
+  feedbackText = ""
 ) {
   const validation = await validate(changes, repoContext, {
     maxLinesAdded: repoConfig.security.max_lines_added,
     maxChangedLines: repoConfig.security.max_changed_lines,
     blockPatterns: repoConfig.security.block_patterns
   });
-  const planValidationErrors = validatePlanCompletion(changes, implementationPlan);
+  const planValidationErrors = validatePlanCompletion(changes, implementationPlan, feedbackText);
   return planValidationErrors.length > 0
     ? {
         valid: false,
@@ -193,6 +196,7 @@ export class FeedbackPipelineWorker {
     const codeGenerator = new CodeGenerator(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, generationModel));
     const completeSolution = shouldUseImplementationPlanning(options.issueMode);
     let implementationPlan: ImplementationPlan | undefined;
+    const feedbackText = `${classifiedFeedback.summary}\n${classifiedFeedback.rawContent}`;
 
     if (completeSolution) {
       const planner = new ImplementationPlanner(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.sonnet));
@@ -205,7 +209,7 @@ export class FeedbackPipelineWorker {
       relevantFiles = mergeRelevantFiles(relevantFiles, plannedFiles);
     }
 
-    let changes;
+    let changes: GeneratedChange[];
     try {
       changes = await codeGenerator.generate(classifiedFeedback, relevantFiles, fileTree, implementationPlan, {
         completeSolution
@@ -241,7 +245,7 @@ export class FeedbackPipelineWorker {
       );
     }
 
-    let validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan);
+    let validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan, feedbackText);
 
     for (let attempt = 0; !validation.valid && attempt < VALIDATION_RECOVERY_ATTEMPTS; attempt += 1) {
       let madeProgress = false;
@@ -258,10 +262,13 @@ export class FeedbackPipelineWorker {
           }
         );
 
-        if (repairedChanges.length > 0 && repairedChanges.length <= repoConfig.security.max_files_changed) {
-          changes = repairedChanges;
+        const candidateChanges = validation.errors.some((error) => oversizedPatchPattern.test(error))
+          ? repairedChanges
+          : mergeGeneratedChanges(changes, repairedChanges);
+        if (repairedChanges.length > 0 && candidateChanges.length <= repoConfig.security.max_files_changed) {
+          changes = candidateChanges;
           madeProgress = true;
-          validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan);
+          validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan, feedbackText);
         }
       } catch (error) {
         if (!(error instanceof LLMError)) {
@@ -274,7 +281,7 @@ export class FeedbackPipelineWorker {
         if (completedChanges !== changes && completedChanges.length <= repoConfig.security.max_files_changed) {
           changes = completedChanges;
           madeProgress = true;
-          validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan);
+          validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan, feedbackText);
         }
       }
 
@@ -307,12 +314,13 @@ export class FeedbackPipelineWorker {
           }
         );
 
-        if (repairedChanges.length > 0 && repairedChanges.length <= repoConfig.security.max_files_changed) {
-          const completeRepairedValidation = await validateGeneratedChanges(repairedChanges, repoContext, repoConfig, implementationPlan);
+        const candidateChanges = mergeGeneratedChanges(changes, repairedChanges);
+        if (repairedChanges.length > 0 && candidateChanges.length <= repoConfig.security.max_files_changed) {
+          const completeRepairedValidation = await validateGeneratedChanges(candidateChanges, repoContext, repoConfig, implementationPlan, feedbackText);
 
           if (completeRepairedValidation.valid) {
-            const repairedVerification = await runVerificationCommands(repairedChanges, repoContext, implementationPlan);
-            changes = repairedChanges;
+            const repairedVerification = await runVerificationCommands(candidateChanges, repoContext, implementationPlan);
+            changes = candidateChanges;
             validation = completeRepairedValidation;
             verification = repairedVerification;
           }

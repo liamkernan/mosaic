@@ -72,6 +72,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("Extract every explicit acceptance criterion");
     expect(prompt).toContain("Translate loaded tests into acceptance criteria");
     expect(prompt).toContain("adversarial cases");
+    expect(prompt).toContain("reported/regression test already exists");
     expect(prompt).toContain("implementationChecklist");
     expect(prompt).toContain("acceptanceCriteria");
     expect(prompt).toContain("verificationCommands");
@@ -100,6 +101,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("satisfy every completion checklist item");
     expect(prompt).toContain("Treat loaded tests as executable contracts");
     expect(prompt).toContain("required files include a test/spec/reported file");
+    expect(prompt).toContain("reported/regression test is loaded");
     expect(prompt).toContain("dedupe/idempotency/retry bugs");
     expect(prompt).toContain("surface actually includes the field/key");
   });
@@ -162,5 +164,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("Do not return HTML/CSS-only repairs");
     expect(prompt).toContain("new static asset is not linked");
     expect(prompt).toContain("script queries missing HTML ids/selectors");
+    expect(prompt).toContain("implementation-only and validation reports missing behavioral coverage");
+    expect(prompt).toContain("dedupe/idempotency/retry validation failures");
   });
 });

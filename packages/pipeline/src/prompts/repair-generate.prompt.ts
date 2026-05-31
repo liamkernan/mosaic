@@ -69,7 +69,10 @@ INSTRUCTIONS:
 - Treat acceptance criteria as binding. If they name exact fields, keys, ordering clauses, or tie-breakers, implement those exact terms.
 - Treat loaded tests and verification failures as executable contracts. If a failure is a missing field/key/status/return value, update the implementation surface that should provide it.
 - Add or update focused tests when validation reports missing behavioral coverage or the plan verification checklist requires tests.
+- If the current invalid changes are implementation-only and validation reports missing behavioral coverage, return the implementation change plus a focused test/spec/reported-file change in the same payload. Do not return another implementation-only payload.
+- If a reported/regression test is loaded, extend it with a complementary assertion or edge case instead of relying on it unchanged.
 - For sort/order/filter/ranking changes, cover the primary behavior and every stated tie-breaker with adversarial tests.
+- For dedupe/idempotency/retry validation failures, the repair must include an implementation edit to the create/insert path. Look up the existing record by the stated idempotency key before INSERT/create, update and return the existing record with the same id when found, and keep distinct creation for missing or different keys.
 - If validation says a new static asset is not linked, update the HTML to load that exact JS or CSS file; do not leave supplemental behavior/style files orphaned.
 - If validation says a script queries missing HTML ids/selectors, either add those exact hooks to the HTML or update the script to target hooks that actually exist. Do not keep JavaScript selectors that match nothing.
 - If validation says total new code is too large, reduce repeated markup/data first: use one reusable modal/dialog/overlay, compact JavaScript data, and shared selectors instead of duplicating UI blocks.

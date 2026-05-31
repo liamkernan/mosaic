@@ -489,4 +489,66 @@ self.assertIn("screenshot", second["body"])
     expect(capturedUserMessage).toContain("wrong public API shape");
     expect(capturedTimeoutMs).toBe(120_000);
   });
+
+  it("uses focused idempotency repair instructions when update path is missing", async () => {
+    let capturedUserMessage = "";
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete: async (_systemPrompt: string, userMessage: string) => {
+        capturedUserMessage = userMessage;
+        return `<changes>
+  <edit>
+    <filePath>mosaic_demo/service.py</filePath>
+    <search><![CDATA[
+cursor = conn.execute("INSERT INTO service_requests")
+]]></search>
+    <replace><![CDATA[
+existing = conn.execute("SELECT id FROM service_requests WHERE source = ? AND external_ref = ? AND status = 'open'", (source, external_ref)).fetchone()
+if existing:
+    conn.execute("UPDATE service_requests SET body = ? WHERE id = ?", (body, existing["id"]))
+cursor = conn.execute("INSERT INTO service_requests")
+]]></replace>
+    <explanation>Lookup and update existing requests before inserting duplicates.</explanation>
+  </edit>
+</changes>`;
+      }
+    } as unknown as LLMClient;
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Slack retry created duplicate requests",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Make source and external reference intake idempotent",
+        relevantFiles: ["mosaic_demo/service.py"],
+        confidence: 0.7
+      },
+      [{ path: "mosaic_demo/service.py", content: "cursor = conn.execute(\"INSERT INTO service_requests\")\n", reason: "implementation" }],
+      ["mosaic_demo/service.py"],
+      [
+        {
+          filePath: "mosaic_demo/service.py",
+          originalContent: "cursor = conn.execute(\"INSERT INTO service_requests\")\n",
+          modifiedContent: "cursor = conn.execute(\"INSERT INTO service_requests\")\n",
+          explanation: "insert request"
+        }
+      ],
+      [
+        "Acceptance criteria require an idempotent duplicate/retry update path, but no implementation change appears to look up and update an existing record by the idempotency key"
+      ],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("missing idempotent duplicate/retry update path");
+    expect(capturedUserMessage).toContain("look up an existing open record by the idempotency key");
+    expect(capturedUserMessage).toContain("Include an implementation edit");
+    expect(capturedUserMessage).toContain("return it with the same id");
+  });
 });

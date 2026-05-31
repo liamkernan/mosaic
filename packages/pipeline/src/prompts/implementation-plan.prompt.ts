@@ -30,6 +30,7 @@ Rules:
 - If a source states a sequence, ordering, tie-breaker, fallback, validation rule, or exact field/key, preserve it exactly. Do not substitute a merely stable or plausible alternative.
 - Include markup/view files, stylesheets, scripts/state files, routing files, data/content files, tests, and config when they are needed.
 - Include tests when the repository has a relevant test pattern and the change affects behavior, especially sort/order/filter/ranking logic, persistence, validation, permissions, or API responses.
+- When a relevant reported/regression test already exists, plan a concrete test edit that extends it with a missing edge case or adds a companion test rather than only listing it as a command to run.
 - For sort/order/filter/ranking bugs, verification must include adversarial cases for the primary condition and every stated tie-breaker.
 - For dedupe/idempotency/retry bugs, acceptance criteria and verification must include both the duplicate/update path and the non-duplicate path where records should remain distinct.
 - Extract exact safe test commands from issue files, README/docs, or package scripts when available. Use only test commands such as python unittest, pytest, npm test, pnpm test, or vitest; omit setup, server, curl, database mutation, deploy, or destructive commands.
