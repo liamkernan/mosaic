@@ -54,7 +54,7 @@ describe("runVerificationCommands", () => {
     expect(result.commands).toEqual(["python3 -m unittest tests.reported.test_example"]);
   });
 
-  it("ignores unsafe verification commands", async () => {
+  it("rejects unsupported verification commands instead of silently passing", async () => {
     const localPath = await createPythonRepo();
 
     const result = await runVerificationCommands(
@@ -75,8 +75,9 @@ describe("runVerificationCommands", () => {
       }
     );
 
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
     expect(result.commands).toEqual([]);
+    expect(result.errors.join("\n")).toContain("Unsupported verification command was not run");
   });
 
   it("infers changed Python test modules", async () => {

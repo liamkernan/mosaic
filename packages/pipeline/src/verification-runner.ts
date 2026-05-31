@@ -65,6 +65,12 @@ function collectVerificationCommands(changes: GeneratedChange[], implementationP
   return [...new Set(commands)].slice(0, maxCommands);
 }
 
+function unsupportedPlannedVerificationCommands(implementationPlan?: ImplementationPlan): string[] {
+  return (implementationPlan?.verificationCommands ?? [])
+    .map((command) => command.trim())
+    .filter((command) => command.length > 0 && !isAllowedVerificationCommand(command));
+}
+
 async function writeChanges(repoPath: string, changes: GeneratedChange[]): Promise<void> {
   for (const change of changes) {
     const absolutePath = join(repoPath, change.filePath);
@@ -164,8 +170,9 @@ export async function runVerificationCommands(
   implementationPlan?: ImplementationPlan
 ): Promise<VerificationResult> {
   const commands = collectVerificationCommands(changes, implementationPlan);
+  const unsupportedCommands = unsupportedPlannedVerificationCommands(implementationPlan);
   const runFrontend = shouldRunFrontendSmoke(changes);
-  if (commands.length === 0 && !runFrontend) {
+  if (commands.length === 0 && unsupportedCommands.length === 0 && !runFrontend) {
     return {
       valid: true,
       commands: [],
@@ -175,7 +182,7 @@ export async function runVerificationCommands(
 
   const tempRoot = await mkdtemp(join(tmpdir(), "mosaic-verify-"));
   const tempRepo = join(tempRoot, "repo");
-  const errors: string[] = [];
+  const errors: string[] = unsupportedCommands.map((command) => `Unsupported verification command was not run: ${command}`);
 
   try {
     await cp(repoContext.localPath, tempRepo, {
