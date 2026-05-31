@@ -769,11 +769,7 @@ async function repairVerificationFailure(
     }
   }
 
-  if (!validation.valid) {
-    throw new Error(`Verification repair failed static validation: ${validation.errors.join("; ")}`);
-  }
-
-  return repairedChanges;
+  return validation.valid ? repairedChanges : [];
 }
 
 async function main(): Promise<void> {

@@ -111,10 +111,21 @@ function hasMissingHtmlHookValidationError(validationErrors: string[]): boolean 
   return validationErrors.some((error) => /queries missing HTML id|queries selector/i.test(error));
 }
 
+function hasMissingBehavioralTestCoverageError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) => /requires behavioral test coverage|does not modify any test\/spec file/i.test(error));
+}
+
 function hasFrontendVerificationFailure(validationErrors: string[]): boolean {
   return validationErrors.some((error) =>
     /Verification failed:/i.test(error) &&
     /expected element|expected at least|expected .*matches|click target|frontend runtime|selector|hasClass|attribute/i.test(error)
+  );
+}
+
+function hasTestVerificationFailure(validationErrors: string[]): boolean {
+  return validationErrors.some((error) =>
+    /Verification failed:/i.test(error) &&
+    /(?:FAILED|ERROR|AssertionError|KeyError|AttributeError|Traceback|pytest|unittest|jest|vitest|test_|\.(?:test|spec)\.)/i.test(error)
   );
 }
 
@@ -250,9 +261,11 @@ export class CodeGenerator {
     const promptFiles = promptRelevantFiles(relevantFiles);
     const oversizedRepair = hasOversizedPatchValidationError(validationErrors);
     const missingHtmlHookRepair = hasMissingHtmlHookValidationError(validationErrors);
+    const missingTestCoverageRepair = hasMissingBehavioralTestCoverageError(validationErrors);
     const missingBehaviorRepair = hasMissingInteractiveBehaviorValidationError(validationErrors);
     const frontendVerificationRepair = hasFrontendVerificationFailure(validationErrors);
-    const focusedRepair = oversizedRepair || missingBehaviorRepair || frontendVerificationRepair;
+    const testVerificationRepair = hasTestVerificationFailure(validationErrors);
+    const focusedRepair = oversizedRepair || missingBehaviorRepair || missingTestCoverageRepair || frontendVerificationRepair || testVerificationRepair;
     const maxTokens = focusedRepair
       ? Math.min(estimateGenerationMaxTokens(promptFiles, { completeSolution: false }), VALIDATION_REPAIR_MAX_TOKENS)
       : estimateGenerationMaxTokens(promptFiles, options);
@@ -260,10 +273,14 @@ export class CodeGenerator {
       ? "Return only a compact repaired <changes> payload. The previous patch exceeded validation limits, so remove repeated markup/data and use one reusable data-driven implementation with matching JS/CSS."
       : missingHtmlHookRepair
         ? "Return only a repaired <changes> payload focused on mismatched HTML and JavaScript hooks. Add the exact missing ids/classes/data attributes to the HTML, or retarget the script to hooks that already exist. Include both HTML and JS edits when needed; do not leave selectors that match nothing."
+      : missingTestCoverageRepair
+        ? "Return only a repaired <changes> payload focused on missing behavioral test coverage. Keep the implementation changes and add or update a focused test/spec file already present in the repository or required by the implementation plan; do not return an implementation-only repair."
       : missingBehaviorRepair
         ? "Return only a repaired <changes> payload focused on missing interactive behavior. Add or update JavaScript that opens, populates, closes, and keyboard-wires the modal/dialog/overlay using the exact new markup ids/classes/data attributes; do not return HTML/CSS-only repairs."
       : frontendVerificationRepair
         ? "Return only a repaired <changes> payload focused on the failing frontend verification assertions. Treat the reported selectors, ids, classes, text, attributes, counts, and runtime errors as binding executable contracts; update the smallest matching HTML, CSS, and JS hooks needed."
+      : testVerificationRepair
+        ? "Return only a repaired <changes> payload focused on the failing test or verification output. Preserve required behavioral test coverage; do not remove test files or drop assertions to pass validation. If a generated test asserts a field on the wrong public API shape, repair the test to assert through an existing returned object or supported accessor, or update the implementation only when the user request requires that API surface."
       : "Return only the repaired <changes> payload with complete file contents in CDATA blocks.";
     const response = await this.llmClient.complete(
       buildValidationRepairPrompt(feedback.summary, promptFiles, currentChanges, validationErrors, fileTree, implementationPlan),

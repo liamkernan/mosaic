@@ -31,6 +31,7 @@ Rules:
 - Include markup/view files, stylesheets, scripts/state files, routing files, data/content files, tests, and config when they are needed.
 - Include tests when the repository has a relevant test pattern and the change affects behavior, especially sort/order/filter/ranking logic, persistence, validation, permissions, or API responses.
 - For sort/order/filter/ranking bugs, verification must include adversarial cases for the primary condition and every stated tie-breaker.
+- For dedupe/idempotency/retry bugs, acceptance criteria and verification must include both the duplicate/update path and the non-duplicate path where records should remain distinct.
 - Extract exact safe test commands from issue files, README/docs, or package scripts when available. Use only test commands such as python unittest, pytest, npm test, pnpm test, or vitest; omit setup, server, curl, database mutation, deploy, or destructive commands.
 - For clickable UI, modals, drawers, accordions, tabs, forms, filters, navigation, or routes, include both the UI surface and the behavior/state surface.
 - For new content experiences, include the content/data source and the rendering behavior.

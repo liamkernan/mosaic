@@ -75,6 +75,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("implementationChecklist");
     expect(prompt).toContain("acceptanceCriteria");
     expect(prompt).toContain("verificationCommands");
+    expect(prompt).toContain("dedupe/idempotency/retry bugs");
   });
 
   it("includes implementation plan checklists in generation prompt", () => {
@@ -98,6 +99,8 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("If you add a new static JS or CSS file");
     expect(prompt).toContain("satisfy every completion checklist item");
     expect(prompt).toContain("Treat loaded tests as executable contracts");
+    expect(prompt).toContain("required files include a test/spec/reported file");
+    expect(prompt).toContain("dedupe/idempotency/retry bugs");
     expect(prompt).toContain("surface actually includes the field/key");
   });
 

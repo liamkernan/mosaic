@@ -424,4 +424,69 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
     expect(capturedUserMessage).toContain("selectors, ids, classes, text, attributes, counts");
     expect(capturedTimeoutMs).toBe(120_000);
   });
+
+  it("uses focused test verification repair instructions without dropping coverage", async () => {
+    let capturedUserMessage = "";
+    let capturedTimeoutMs = 0;
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete: async (_systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
+        capturedUserMessage = userMessage;
+        capturedTimeoutMs = options.timeoutMs ?? 0;
+        return `<changes>
+  <edit>
+    <filePath>tests/reported/test_002_idempotent_external_ref.py</filePath>
+    <search><![CDATA[
+self.assertIn("screenshot", items[0]["body"])
+]]></search>
+    <replace><![CDATA[
+self.assertIn("screenshot", second["body"])
+]]></replace>
+    <explanation>Assert the updated body from the returned request object.</explanation>
+  </edit>
+</changes>`;
+      }
+    } as unknown as LLMClient;
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Slack retry created duplicate requests",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Make source and external reference intake idempotent",
+        relevantFiles: ["mosaic_demo/service.py", "tests/reported/test_002_idempotent_external_ref.py"],
+        confidence: 0.7
+      },
+      [
+        { path: "mosaic_demo/service.py", content: "def create_request(): pass\n", reason: "implementation" },
+        { path: "tests/reported/test_002_idempotent_external_ref.py", content: "self.assertIn(\"screenshot\", items[0][\"body\"])\n", reason: "test" }
+      ],
+      ["mosaic_demo/service.py", "tests/reported/test_002_idempotent_external_ref.py"],
+      [
+        {
+          filePath: "tests/reported/test_002_idempotent_external_ref.py",
+          originalContent: "self.assertIn(\"screenshot\", items[0][\"body\"])\n",
+          modifiedContent: "self.assertIn(\"screenshot\", items[0][\"body\"])\n",
+          explanation: "add reported test"
+        }
+      ],
+      [
+        "Verification failed: ERROR: test_duplicate_source_external_ref_updates_existing_request (tests.reported.test_002_idempotent_external_ref.IdempotentExternalRefReportedIssueTest.test_duplicate_source_external_ref_updates_existing_request)",
+        "Verification failed: KeyError: 'body'"
+      ],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("failing test or verification output");
+    expect(capturedUserMessage).toContain("Preserve required behavioral test coverage");
+    expect(capturedUserMessage).toContain("wrong public API shape");
+    expect(capturedTimeoutMs).toBe(120_000);
+  });
 });
