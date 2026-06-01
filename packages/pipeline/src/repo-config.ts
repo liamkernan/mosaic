@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import {
   complexitySchema,
+  defaultSecurityConfig,
   feedbackCategorySchema,
   feedbackSourceSchema,
   type FeedbackCategory,
@@ -12,10 +13,10 @@ import { z } from "zod";
 import YAML from "yaml";
 
 export const securityConfigSchema = z.object({
-  max_files_changed: z.number().int().positive().default(5),
-  max_lines_added: z.number().int().positive().default(350),
-  max_changed_lines: z.number().int().positive().default(500),
-  block_patterns: z.array(z.string()).default(["eval(", "child_process", "exec(", "execSync", "Function("])
+  max_files_changed: z.number().int().positive().default(defaultSecurityConfig.max_files_changed),
+  max_lines_added: z.number().int().positive().default(defaultSecurityConfig.max_lines_added),
+  max_changed_lines: z.number().int().positive().default(defaultSecurityConfig.max_changed_lines),
+  block_patterns: z.array(z.string()).default([...defaultSecurityConfig.block_patterns])
 });
 
 const repoConfigFileSchema = z.object({
@@ -47,10 +48,8 @@ export const defaultRuntimeConfig: Omit<RepoRuntimeConfig, "repoFullName"> = {
   branchPrefix: "mosaic/",
   reviewers: [],
   security: {
-    max_files_changed: 5,
-    max_lines_added: 350,
-    max_changed_lines: 500,
-    block_patterns: ["eval(", "child_process", "exec(", "execSync", "Function("]
+    ...defaultSecurityConfig,
+    block_patterns: [...defaultSecurityConfig.block_patterns]
   }
 };
 

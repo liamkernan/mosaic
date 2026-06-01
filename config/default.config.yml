@@ -21,3 +21,6 @@ security:
   block_patterns:
     - "eval("
     - "child_process"
+    - "exec("
+    - "execSync"
+    - "Function("

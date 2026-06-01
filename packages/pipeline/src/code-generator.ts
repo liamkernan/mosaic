@@ -226,6 +226,98 @@ function hasTestIntegrityError(validationErrors: string[]): boolean {
   return validationErrors.some((error) => /weakens existing test assertions|skipped or trivial test assertions/i.test(error));
 }
 
+interface ValidationRepairRoute {
+  match: (validationErrors: string[]) => boolean;
+  instruction: string;
+  maxTokens: (promptFiles: RelevantFile[]) => number;
+  timeoutMs: number;
+}
+
+function focusedValidationRepairMaxTokens(promptFiles: RelevantFile[]): number {
+  return Math.min(estimateGenerationMaxTokens(promptFiles, { completeSolution: false }), VALIDATION_REPAIR_MAX_TOKENS);
+}
+
+const VALIDATION_REPAIR_ROUTES: ValidationRepairRoute[] = [
+  {
+    match: hasOversizedPatchValidationError,
+    instruction: "Return only a compact repaired <changes> payload. The previous patch exceeded validation limits, so remove repeated markup/data and use one reusable data-driven implementation with matching JS/CSS.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasSyntaxValidationError,
+    instruction: "Return only a repaired <changes> payload focused on syntax validity. Fix the reported parser error in the changed source file while preserving the intended behavior, existing tests, and public API. Do not remove the affected feature or weaken tests to make parsing pass.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasMissingHtmlHookValidationError,
+    instruction: "Return only a repaired <changes> payload focused on mismatched HTML and JavaScript hooks. Add the exact missing ids/classes/data attributes to the HTML, or retarget the script to hooks that already exist. Include both HTML and JS edits when needed; do not leave selectors that match nothing.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasMissingBehavioralTestCoverageError,
+    instruction: "Return only a repaired <changes> payload focused on missing behavioral test coverage. Keep the implementation changes and add or update a focused test/spec file already present in the repository or required by the implementation plan; do not return an implementation-only repair.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasMissingIdempotencyUpdateError,
+    instruction: "Return only a repaired <changes> payload focused on the missing idempotent duplicate/retry update path. Include an implementation edit, not tests only. In the create/insert path, normalize the stated source/key inputs, look up an existing open record by the idempotency key before INSERT/create, UPDATE that existing record and return it with the same id when found, add any expected audit/update side effects, and preserve normal distinct creation when the key is absent or different. Use a full-file <change> when a localized search/replace is risky.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasTestApiShapeMismatchError,
+    instruction: "Return only a repaired <changes> payload focused on the test/API shape mismatch. If a generated test reads a field from a list/query/API result that the implementation does not expose, either update the implementation to expose that field when it is part of the requested public behavior, or repair the test to assert through an existing returned object or supported accessor. Preserve behavioral coverage; do not delete assertions just to pass validation.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasMissingPythonImportError,
+    instruction: "Return only a repaired <changes> payload focused on the missing Python import. Preserve the implementation and tests; update the caller module import or qualified reference so every newly called sibling-module helper is actually imported or defined.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasMissingEndpointRouteError,
+    instruction: "Return only a repaired <changes> payload focused on the missing endpoint route. Preserve the service/helper implementation and tests; update the routing or handler surface so the exact requested HTTP path is handled and returns the requested response instead of falling through to not found.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasMissingRuntimeChangeError,
+    instruction: "Return only a repaired <changes> payload focused on the missing runtime/source implementation. Preserve useful tests and documentation, but add or update the actual application source files named by the implementation plan so the user's reported behavior changes in the running software; do not return tests/docs-only repairs.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasMissingInteractiveBehaviorValidationError,
+    instruction: "Return only a repaired <changes> payload focused on missing interactive behavior. Add or update JavaScript that opens, populates, closes, and keyboard-wires the modal/dialog/overlay using the exact new markup ids/classes/data attributes; do not return HTML/CSS-only repairs.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasFrontendVerificationFailure,
+    instruction: "Return only a repaired <changes> payload focused on the failing frontend verification assertions. Treat the reported selectors, ids, classes, text, attributes, counts, and runtime errors as binding executable contracts; update the smallest matching HTML, CSS, and JS hooks needed.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasTestVerificationFailure,
+    instruction: "Return only a repaired <changes> payload focused on the failing test or verification output. Preserve required behavioral test coverage; do not remove test files or drop assertions to pass validation. If a generated test asserts a field on the wrong public API shape, repair the test to assert through an existing returned object or supported accessor, or update the implementation only when the user request requires that API surface.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasTestIntegrityError,
+    instruction: "Return only a repaired <changes> payload focused on test integrity. Do not skip tests, replace assertions with trivial truth checks, or weaken existing reported coverage. Restore the original meaningful assertions and fix the application implementation so those assertions pass.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  }
+];
+
 export class CodeGenerator {
   constructor(private readonly llmClient: LLMClient) {}
 
@@ -359,57 +451,16 @@ export class CodeGenerator {
     });
 
     const promptFiles = promptRelevantFiles(relevantFiles);
-    const oversizedRepair = hasOversizedPatchValidationError(validationErrors);
-    const syntaxRepair = hasSyntaxValidationError(validationErrors);
-    const missingHtmlHookRepair = hasMissingHtmlHookValidationError(validationErrors);
-    const missingTestCoverageRepair = hasMissingBehavioralTestCoverageError(validationErrors);
-    const missingIdempotencyUpdateRepair = hasMissingIdempotencyUpdateError(validationErrors);
-    const testApiShapeMismatchRepair = hasTestApiShapeMismatchError(validationErrors);
-    const missingPythonImportRepair = hasMissingPythonImportError(validationErrors);
-    const missingEndpointRouteRepair = hasMissingEndpointRouteError(validationErrors);
-    const missingRuntimeChangeRepair = hasMissingRuntimeChangeError(validationErrors);
-    const missingBehaviorRepair = hasMissingInteractiveBehaviorValidationError(validationErrors);
-    const frontendVerificationRepair = hasFrontendVerificationFailure(validationErrors);
-    const testVerificationRepair = hasTestVerificationFailure(validationErrors);
-    const testIntegrityRepair = hasTestIntegrityError(validationErrors);
-    const focusedRepair = oversizedRepair || syntaxRepair || missingBehaviorRepair || missingTestCoverageRepair || missingIdempotencyUpdateRepair || testApiShapeMismatchRepair || missingPythonImportRepair || missingEndpointRouteRepair || missingRuntimeChangeRepair || frontendVerificationRepair || testVerificationRepair || testIntegrityRepair;
-    const maxTokens = focusedRepair
-      ? Math.min(estimateGenerationMaxTokens(promptFiles, { completeSolution: false }), VALIDATION_REPAIR_MAX_TOKENS)
-      : estimateGenerationMaxTokens(promptFiles, options);
-    const userMessage = oversizedRepair
-      ? "Return only a compact repaired <changes> payload. The previous patch exceeded validation limits, so remove repeated markup/data and use one reusable data-driven implementation with matching JS/CSS."
-      : syntaxRepair
-        ? "Return only a repaired <changes> payload focused on syntax validity. Fix the reported parser error in the changed source file while preserving the intended behavior, existing tests, and public API. Do not remove the affected feature or weaken tests to make parsing pass."
-      : missingHtmlHookRepair
-        ? "Return only a repaired <changes> payload focused on mismatched HTML and JavaScript hooks. Add the exact missing ids/classes/data attributes to the HTML, or retarget the script to hooks that already exist. Include both HTML and JS edits when needed; do not leave selectors that match nothing."
-      : missingTestCoverageRepair
-        ? "Return only a repaired <changes> payload focused on missing behavioral test coverage. Keep the implementation changes and add or update a focused test/spec file already present in the repository or required by the implementation plan; do not return an implementation-only repair."
-      : missingIdempotencyUpdateRepair
-        ? "Return only a repaired <changes> payload focused on the missing idempotent duplicate/retry update path. Include an implementation edit, not tests only. In the create/insert path, normalize the stated source/key inputs, look up an existing open record by the idempotency key before INSERT/create, UPDATE that existing record and return it with the same id when found, add any expected audit/update side effects, and preserve normal distinct creation when the key is absent or different. Use a full-file <change> when a localized search/replace is risky."
-      : testApiShapeMismatchRepair
-        ? "Return only a repaired <changes> payload focused on the test/API shape mismatch. If a generated test reads a field from a list/query/API result that the implementation does not expose, either update the implementation to expose that field when it is part of the requested public behavior, or repair the test to assert through an existing returned object or supported accessor. Preserve behavioral coverage; do not delete assertions just to pass validation."
-      : missingPythonImportRepair
-        ? "Return only a repaired <changes> payload focused on the missing Python import. Preserve the implementation and tests; update the caller module import or qualified reference so every newly called sibling-module helper is actually imported or defined."
-      : missingEndpointRouteRepair
-        ? "Return only a repaired <changes> payload focused on the missing endpoint route. Preserve the service/helper implementation and tests; update the routing or handler surface so the exact requested HTTP path is handled and returns the requested response instead of falling through to not found."
-      : missingRuntimeChangeRepair
-        ? "Return only a repaired <changes> payload focused on the missing runtime/source implementation. Preserve useful tests and documentation, but add or update the actual application source files named by the implementation plan so the user's reported behavior changes in the running software; do not return tests/docs-only repairs."
-      : missingBehaviorRepair
-        ? "Return only a repaired <changes> payload focused on missing interactive behavior. Add or update JavaScript that opens, populates, closes, and keyboard-wires the modal/dialog/overlay using the exact new markup ids/classes/data attributes; do not return HTML/CSS-only repairs."
-      : frontendVerificationRepair
-        ? "Return only a repaired <changes> payload focused on the failing frontend verification assertions. Treat the reported selectors, ids, classes, text, attributes, counts, and runtime errors as binding executable contracts; update the smallest matching HTML, CSS, and JS hooks needed."
-      : testVerificationRepair
-        ? "Return only a repaired <changes> payload focused on the failing test or verification output. Preserve required behavioral test coverage; do not remove test files or drop assertions to pass validation. If a generated test asserts a field on the wrong public API shape, repair the test to assert through an existing returned object or supported accessor, or update the implementation only when the user request requires that API surface."
-      : testIntegrityRepair
-        ? "Return only a repaired <changes> payload focused on test integrity. Do not skip tests, replace assertions with trivial truth checks, or weaken existing reported coverage. Restore the original meaningful assertions and fix the application implementation so those assertions pass."
-      : "Return only the repaired <changes> payload with complete file contents in CDATA blocks.";
+    const repairRoute = VALIDATION_REPAIR_ROUTES.find((route) => route.match(validationErrors));
+    const maxTokens = repairRoute?.maxTokens(promptFiles) ?? estimateGenerationMaxTokens(promptFiles, options);
+    const userMessage = repairRoute?.instruction ?? "Return only the repaired <changes> payload with complete file contents in CDATA blocks.";
     const response = await this.llmClient.complete(
       buildValidationRepairPrompt(feedback.summary, promptFiles, currentChanges, validationErrors, fileTree, implementationPlan),
       userMessage,
       {
         temperature: 0,
         maxTokens,
-        timeoutMs: focusedRepair ? VALIDATION_REPAIR_TIMEOUT_MS : GENERATION_TIMEOUT_MS
+        timeoutMs: repairRoute?.timeoutMs ?? GENERATION_TIMEOUT_MS
       }
     );
 

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { type FileNode, type GeneratedChange, type RepoContext } from "@mosaic/core";
+import { defaultSecurityConfig, type FileNode, type GeneratedChange, type RepoContext } from "@mosaic/core";
 import ts from "typescript";
 
 export interface ValidationResult {
@@ -16,7 +16,6 @@ export interface ValidationLimits {
   blockPatterns?: string[];
 }
 
-const defaultUnsafePatterns = ["eval(", "Function(", "child_process", "exec(", "execSync"];
 const urlPattern = /\bhttps?:\/\/[^\s"'`]+/g;
 const ipPattern = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
 const modalTokenPattern = /\b[a-z0-9-]*(?:modal|overlay|dialog)(?:-[a-z0-9]+)*\b/gi;
@@ -627,8 +626,8 @@ export async function validate(
 ): Promise<ValidationResult> {
   const errors: string[] = [];
   let totalLinesAdded = 0;
-  const maxChangedLines = limits.maxChangedLines ?? 500;
-  const blockedPatterns = limits.blockPatterns ?? defaultUnsafePatterns;
+  const maxChangedLines = limits.maxChangedLines ?? defaultSecurityConfig.max_changed_lines;
+  const blockedPatterns = limits.blockPatterns ?? defaultSecurityConfig.block_patterns;
 
   for (const change of changes) {
     const absolutePath = join(repoContext.localPath, change.filePath);
@@ -697,7 +696,7 @@ export async function validate(
     }
   }
 
-  const maxLinesAdded = limits.maxLinesAdded ?? 350;
+  const maxLinesAdded = limits.maxLinesAdded ?? defaultSecurityConfig.max_lines_added;
   if (totalLinesAdded >= maxLinesAdded) {
     errors.push(`Total new code added exceeds limit: ${totalLinesAdded} lines`);
   }

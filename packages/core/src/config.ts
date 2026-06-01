@@ -108,6 +108,15 @@ export const feedbackCategorySchema = z.enum([
 
 export const complexitySchema = z.enum(["trivial", "simple", "moderate", "complex"]) satisfies z.ZodType<ComplexityLevel>;
 
+// Canonical repo security defaults. Keep config/default.config.yml, repo-config.ts,
+// and config/mosaic.config.ts aligned to this object.
+export const defaultSecurityConfig = {
+  max_files_changed: 5,
+  max_lines_added: 350,
+  max_changed_lines: 500,
+  block_patterns: ["eval(", "child_process", "exec(", "execSync", "Function("]
+} as const;
+
 export function getEnv(): AppEnv {
   if (cachedEnv) {
     return cachedEnv;

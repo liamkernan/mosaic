@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { complexitySchema, feedbackCategorySchema, feedbackSourceSchema } from "../packages/core/src/config.js";
+import { complexitySchema, defaultSecurityConfig, feedbackCategorySchema, feedbackSourceSchema } from "../packages/core/src/config.js";
 import { z } from "zod";
 import YAML from "yaml";
 
@@ -18,10 +18,10 @@ export const mosaicConfigSchema = z.object({
     mode: z.enum(["byok", "platform"]).default("byok")
   }).default({}),
   security: z.object({
-    max_files_changed: z.number().int().positive().default(5),
-    max_lines_added: z.number().int().positive().default(350),
-    max_changed_lines: z.number().int().positive().default(500),
-    block_patterns: z.array(z.string()).default(["eval(", "child_process"])
+    max_files_changed: z.number().int().positive().default(defaultSecurityConfig.max_files_changed),
+    max_lines_added: z.number().int().positive().default(defaultSecurityConfig.max_lines_added),
+    max_changed_lines: z.number().int().positive().default(defaultSecurityConfig.max_changed_lines),
+    block_patterns: z.array(z.string()).default([...defaultSecurityConfig.block_patterns])
   }).default({})
 });
 
