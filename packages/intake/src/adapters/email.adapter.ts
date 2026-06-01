@@ -2,22 +2,34 @@ import { Buffer } from "node:buffer";
 
 import { getEnv, logger } from "@mosaic/core";
 import { ImapFlow } from "imapflow";
+import { simpleParser } from "mailparser";
 
 import { normalize } from "../normalizer.js";
 import { enqueueFeedback } from "../queue.js";
 
-function parseHeader(raw: string, name: string): string | undefined {
-  const match = raw.match(new RegExp(`^${name}:\\s*(.+)$`, "im"));
-  return match?.[1]?.trim();
-}
-
-function extractBody(raw: string): string {
-  const sections = raw.split(/\r?\n\r?\n/);
-  return sections.slice(1).join("\n\n").trim();
-}
-
 function getRepoFromSubject(subject: string): string | undefined {
   return subject.match(/\[repo:([^\]]+)\]/i)?.[1]?.trim();
+}
+
+export interface ParsedFeedbackEmail {
+  subject: string;
+  from: string;
+  body: string;
+  repoFullName?: string;
+}
+
+export async function parseFeedbackEmail(raw: Buffer | string): Promise<ParsedFeedbackEmail> {
+  const parsed = await simpleParser(raw);
+  const subject = parsed.subject?.trim() || "Feedback submission";
+  const htmlBody = typeof parsed.html === "string" ? parsed.html : "";
+  const body = (parsed.text?.trim() || htmlBody.trim()).trim();
+
+  return {
+    subject,
+    from: parsed.from?.text.trim() || "unknown",
+    body,
+    repoFullName: getRepoFromSubject(subject)
+  };
 }
 
 export class EmailListener {
@@ -78,11 +90,8 @@ export class EmailListener {
         continue;
       }
 
-      const rawEmail = Buffer.from(message.source ?? "").toString("utf8");
-      const subject = parseHeader(rawEmail, "Subject") ?? "Feedback submission";
-      const from = parseHeader(rawEmail, "From") ?? "unknown";
-      const body = extractBody(rawEmail);
-      const repoFullName = getRepoFromSubject(subject);
+      const parsedEmail = await parseFeedbackEmail(Buffer.from(message.source ?? ""));
+      const { subject, from, body, repoFullName } = parsedEmail;
       if (!repoFullName) {
         logger.warn({ uid: message.uid, subject }, "Skipping email without [repo:owner/repo] tag");
         continue;
