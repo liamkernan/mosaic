@@ -19,7 +19,7 @@ Each run uses:
 - an environment limited to verification basics: `PATH`, `PYTHONPATH`, and `HOME=/tmp`;
 - host-side wall-clock timeout, process-group kill, and `docker rm -f` cleanup.
 
-The verification image contains Node, Python, pytest, and image-local `jsdom`. It contains no application source, no repo cache, and no secrets. The runner builds `mosaic-verify:local` from `Dockerfile.verify` on demand when the image is absent; developers can also run `pnpm verify:image`.
+The verification image contains Node, Python, pip, and image-local `jsdom`. The base image tag and `jsdom@29.1.1` are pinned; Python and pip are installed from that pinned Debian base image rather than exact apt build-revisions so fresh builds remain reproducible across Debian point releases. The image contains no application source, no repo cache, and no secrets. The runner builds `mosaic-verify:local` from `Dockerfile.verify` on demand when the image is absent; developers can also run `pnpm verify:image`.
 
 ## Fail-Closed Policy
 

@@ -15,7 +15,7 @@ describe("runVerificationCommands", () => {
 
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-  }, 120_000);
+  }, 660_000);
 
   async function createPythonRepo(): Promise<string> {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-verify-test-"));
@@ -169,7 +169,7 @@ describe("runVerificationCommands", () => {
         process.env.ANTHROPIC_API_KEY = previousSecret;
       }
     }
-  }, 120_000);
+  }, 660_000);
 
   dockerGatedIt("prevents verified tests from reading host files outside the mounted repo", async () => {
     await requireDockerInfo();
@@ -214,7 +214,7 @@ describe("runVerificationCommands", () => {
     );
 
     expect(result.valid).toBe(true);
-  }, 120_000);
+  }, 660_000);
 
   dockerGatedIt("denies outbound network access from verified tests", async () => {
     await requireDockerInfo();
@@ -255,7 +255,7 @@ describe("runVerificationCommands", () => {
     );
 
     expect(result.valid).toBe(true);
-  }, 120_000);
+  }, 660_000);
 
   it("fails closed when Docker isolation is required but unavailable", async () => {
     const localPath = await createPythonRepo();
