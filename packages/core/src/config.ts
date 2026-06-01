@@ -27,7 +27,35 @@ function optionalNonEmptyString() {
   );
 }
 
+function optionalBoolean() {
+  return z.preprocess((value) => {
+    if (value === undefined || value === null || typeof value === "boolean") {
+      return value;
+    }
+
+    if (typeof value !== "string") {
+      return value;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    if (normalized.length === 0) {
+      return undefined;
+    }
+
+    if (["1", "true", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+
+    if (["0", "false", "no", "off"].includes(normalized)) {
+      return false;
+    }
+
+    return value;
+  }, z.boolean().optional());
+}
+
 const envSchema = z.object({
+  NODE_ENV: optionalNonEmptyString(),
   GITHUB_APP_ID: optionalNonEmptyString(),
   GITHUB_PRIVATE_KEY_PATH: z.string().min(1).default("./private-key.pem"),
   GITHUB_WEBHOOK_SECRET: optionalNonEmptyString(),
@@ -52,6 +80,7 @@ const envSchema = z.object({
   PRS_PER_HOUR: z.coerce.number().int().positive().default(10),
   FEEDBACK_ITEMS_PER_HOUR: z.coerce.number().int().positive().default(100),
   MOSAIC_TRIGGER_PHRASE: optionalNonEmptyString(),
+  VERIFICATION_REQUIRE_SANDBOX: optionalBoolean(),
   MOSAIC_LLM_KEY: optionalNonEmptyString()
 });
 
@@ -92,6 +121,7 @@ export function getEnv(): AppEnv {
   cachedEnv = {
     ...parsed.data,
     MOSAIC_TRIGGER_PHRASE: parsed.data.MOSAIC_TRIGGER_PHRASE ?? "@mosaic",
+    VERIFICATION_REQUIRE_SANDBOX: parsed.data.VERIFICATION_REQUIRE_SANDBOX ?? (parsed.data.NODE_ENV === "production"),
     GITHUB_PRIVATE_KEY_PATH: resolveConfigPath(parsed.data.GITHUB_PRIVATE_KEY_PATH),
     REPO_CACHE_DIR: expandHome(parsed.data.REPO_CACHE_DIR)
   };

@@ -1,9 +1,10 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import type * as GithubApp from "../packages/github-app/src/app.js";
 
 import { resetEnvForTests } from "../packages/core/dist/index.js";
 
-let bodyContainsTrigger: typeof import("../packages/github-app/src/app.js").bodyContainsTrigger;
-let isMosaicAuthoredEvent: typeof import("../packages/github-app/src/app.js").isMosaicAuthoredEvent;
+let bodyContainsTrigger: typeof GithubApp.bodyContainsTrigger;
+let isMosaicAuthoredEvent: typeof GithubApp.isMosaicAuthoredEvent;
 
 beforeAll(async () => {
   process.env.MOSAIC_TRIGGER_PHRASE = "@custombot";

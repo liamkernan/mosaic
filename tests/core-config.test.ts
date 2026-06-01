@@ -1,10 +1,29 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { expandHome, repoFullNamePattern, resetEnvForTests } from "../packages/core/src/config.js";
 import { getEnv } from "../packages/core/src/index.js";
 
 describe("core config helpers", () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalRequireSandbox = process.env.VERIFICATION_REQUIRE_SANDBOX;
+
   beforeEach(() => {
+    resetEnvForTests();
+  });
+
+  afterEach(() => {
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+
+    if (originalRequireSandbox === undefined) {
+      delete process.env.VERIFICATION_REQUIRE_SANDBOX;
+    } else {
+      process.env.VERIFICATION_REQUIRE_SANDBOX = originalRequireSandbox;
+    }
+
     resetEnvForTests();
   });
 
@@ -36,5 +55,36 @@ describe("core config helpers", () => {
     expect(getEnv().WORKER_LOCK_DURATION_MS).toBe(600_000);
     expect(getEnv().WORKER_STALLED_INTERVAL_MS).toBe(120_000);
     expect(getEnv().WORKER_MAX_STALLED_COUNT).toBe(3);
+  });
+
+  it("defaults verification sandbox requirement to production only", () => {
+    delete process.env.VERIFICATION_REQUIRE_SANDBOX;
+
+    process.env.NODE_ENV = "production";
+    resetEnvForTests();
+    expect(getEnv().VERIFICATION_REQUIRE_SANDBOX).toBe(true);
+
+    process.env.NODE_ENV = "development";
+    resetEnvForTests();
+    expect(getEnv().VERIFICATION_REQUIRE_SANDBOX).toBe(false);
+  });
+
+  it("parses explicit verification sandbox booleans", () => {
+    process.env.NODE_ENV = "development";
+
+    process.env.VERIFICATION_REQUIRE_SANDBOX = "yes";
+    resetEnvForTests();
+    expect(getEnv().VERIFICATION_REQUIRE_SANDBOX).toBe(true);
+
+    process.env.VERIFICATION_REQUIRE_SANDBOX = "off";
+    resetEnvForTests();
+    expect(getEnv().VERIFICATION_REQUIRE_SANDBOX).toBe(false);
+  });
+
+  it("rejects invalid verification sandbox booleans", () => {
+    process.env.VERIFICATION_REQUIRE_SANDBOX = "definitely";
+    resetEnvForTests();
+
+    expect(() => getEnv()).toThrow();
   });
 });

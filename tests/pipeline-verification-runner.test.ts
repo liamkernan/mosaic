@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,10 +9,13 @@ import { runVerificationCommands } from "../packages/pipeline/src/verification-r
 
 describe("runVerificationCommands", () => {
   const tempDirs: string[] = [];
+  const requireDockerTests = process.env.MOSAIC_REQUIRE_DOCKER_TESTS === "1";
+  const dockerGatedIt = requireDockerTests ? it : it.skip;
+  const fallbackOptions = { dockerAvailable: false, requireSandbox: false } as const;
 
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-  });
+  }, 120_000);
 
   async function createPythonRepo(): Promise<string> {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-verify-test-"));
@@ -27,6 +31,18 @@ describe("runVerificationCommands", () => {
     await writeFile(localPath + "/index.html", "<!doctype html><html><body><div id=\"target\"></div><script src=\"script.js\"></script></body></html>\n", "utf8");
     await writeFile(localPath + "/script.js", script, "utf8");
     return localPath;
+  }
+
+  async function dockerInfoAvailable(): Promise<boolean> {
+    return new Promise((resolve) => {
+      const child = spawn("docker", ["info"], { stdio: "ignore" });
+      child.on("error", () => resolve(false));
+      child.on("close", (code) => resolve(code === 0));
+    });
+  }
+
+  async function requireDockerInfo(): Promise<void> {
+    expect(await dockerInfoAvailable()).toBe(true);
   }
 
   it("runs allowlisted verification commands in a temp copy", async () => {
@@ -47,12 +63,13 @@ describe("runVerificationCommands", () => {
         implementationChecklist: [],
         verificationChecklist: [],
         verificationCommands: ["python3 -m unittest tests.reported.test_example"]
-      }
+      },
+      fallbackOptions
     );
 
     expect(result.valid).toBe(true);
     expect(result.commands).toEqual(["python3 -m unittest tests.reported.test_example"]);
-  });
+  }, 120_000);
 
   it("does not expose parent process secrets to verified test processes", async () => {
     const previousSecret = process.env.ANTHROPIC_API_KEY;
@@ -89,7 +106,8 @@ describe("runVerificationCommands", () => {
           implementationChecklist: [],
           verificationChecklist: [],
           verificationCommands: ["python3 -m unittest tests.reported.test_env"]
-        }
+        },
+        fallbackOptions
       );
 
       expect(result.valid).toBe(true);
@@ -100,6 +118,194 @@ describe("runVerificationCommands", () => {
         process.env.ANTHROPIC_API_KEY = previousSecret;
       }
     }
+  }, 120_000);
+
+  dockerGatedIt("does not expose parent process secrets to verified test processes in Docker", async () => {
+    await requireDockerInfo();
+
+    const previousSecret = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "parent-secret-that-must-not-leak";
+
+    try {
+      const localPath = await createPythonRepo();
+      await writeFile(
+        join(localPath, "tests", "reported", "test_env.py"),
+        [
+          "import os",
+          "import unittest",
+          "",
+          "class EnvTest(unittest.TestCase):",
+          "    def test_parent_secret_is_not_exposed(self):",
+          "        self.assertIsNone(os.environ.get('ANTHROPIC_API_KEY'))",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await runVerificationCommands(
+        [],
+        {
+          fullName: "owner/repo",
+          defaultBranch: "main",
+          localPath,
+          fileTree: [],
+          installationId: 1
+        },
+        {
+          requiredFiles: [],
+          acceptanceCriteria: [],
+          implementationChecklist: [],
+          verificationChecklist: [],
+          verificationCommands: ["python3 -m unittest tests.reported.test_env"]
+        },
+        { dockerAvailable: true, requireSandbox: true }
+      );
+
+      expect(result.valid).toBe(true);
+    } finally {
+      if (previousSecret === undefined) {
+        delete process.env.ANTHROPIC_API_KEY;
+      } else {
+        process.env.ANTHROPIC_API_KEY = previousSecret;
+      }
+    }
+  }, 120_000);
+
+  dockerGatedIt("prevents verified tests from reading host files outside the mounted repo", async () => {
+    await requireDockerInfo();
+
+    const localPath = await createPythonRepo();
+    const secretDir = await mkdtemp(join(tmpdir(), "mosaic-host-secret-"));
+    tempDirs.push(secretDir);
+    const secretPath = join(secretDir, "secret.txt");
+    await writeFile(secretPath, "host-secret", "utf8");
+
+    await writeFile(
+      join(localPath, "tests", "reported", "test_filesystem_isolation.py"),
+      [
+        "import unittest",
+        "",
+        "class FilesystemIsolationTest(unittest.TestCase):",
+        "    def test_host_secret_is_not_visible(self):",
+        "        with self.assertRaises((FileNotFoundError, PermissionError)):",
+        `            open(${JSON.stringify(secretPath)}, "r", encoding="utf8").read()`,
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+
+    const result = await runVerificationCommands(
+      [],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      {
+        requiredFiles: [],
+        acceptanceCriteria: [],
+        implementationChecklist: [],
+        verificationChecklist: [],
+        verificationCommands: ["python3 -m unittest tests.reported.test_filesystem_isolation"]
+      },
+      { dockerAvailable: true, requireSandbox: true }
+    );
+
+    expect(result.valid).toBe(true);
+  }, 120_000);
+
+  dockerGatedIt("denies outbound network access from verified tests", async () => {
+    await requireDockerInfo();
+
+    const localPath = await createPythonRepo();
+    await writeFile(
+      join(localPath, "tests", "reported", "test_network_isolation.py"),
+      [
+        "import socket",
+        "import unittest",
+        "",
+        "class NetworkIsolationTest(unittest.TestCase):",
+        "    def test_outbound_connection_fails(self):",
+        "        with self.assertRaises(OSError):",
+        "            socket.create_connection(('1.1.1.1', 443), timeout=0.25)",
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+
+    const result = await runVerificationCommands(
+      [],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      {
+        requiredFiles: [],
+        acceptanceCriteria: [],
+        implementationChecklist: [],
+        verificationChecklist: [],
+        verificationCommands: ["python3 -m unittest tests.reported.test_network_isolation"]
+      },
+      { dockerAvailable: true, requireSandbox: true }
+    );
+
+    expect(result.valid).toBe(true);
+  }, 120_000);
+
+  it("fails closed when Docker isolation is required but unavailable", async () => {
+    const localPath = await createPythonRepo();
+
+    const result = await runVerificationCommands(
+      [],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      {
+        requiredFiles: [],
+        acceptanceCriteria: [],
+        implementationChecklist: [],
+        verificationChecklist: [],
+        verificationCommands: ["python3 -m unittest tests.reported.test_example"]
+      },
+      { dockerAvailable: false, requireSandbox: true }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("isolation unavailable");
+  });
+
+  it("falls back to the child process sandbox when Docker is unavailable and not required", async () => {
+    const localPath = await createPythonRepo();
+
+    const result = await runVerificationCommands(
+      [],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      {
+        requiredFiles: [],
+        acceptanceCriteria: [],
+        implementationChecklist: [],
+        verificationChecklist: [],
+        verificationCommands: ["python3 -m unittest tests.reported.test_example"]
+      },
+      { dockerAvailable: false, requireSandbox: false }
+    );
+
+    expect(result.valid).toBe(true);
   });
 
   it("rejects unsupported verification commands instead of silently passing", async () => {
@@ -120,7 +326,8 @@ describe("runVerificationCommands", () => {
         implementationChecklist: [],
         verificationChecklist: [],
         verificationCommands: ["python3 -m unittest tests.reported.test_example; rm -rf /"]
-      }
+      },
+      fallbackOptions
     );
 
     expect(result.valid).toBe(false);
@@ -146,7 +353,9 @@ describe("runVerificationCommands", () => {
         localPath,
         fileTree: [],
         installationId: 1
-      }
+      },
+      undefined,
+      fallbackOptions
     );
 
     expect(result.valid).toBe(true);
@@ -171,7 +380,9 @@ describe("runVerificationCommands", () => {
         localPath,
         fileTree: [],
         installationId: 1
-      }
+      },
+      undefined,
+      fallbackOptions
     );
 
     expect(result.valid).toBe(true);
@@ -201,7 +412,9 @@ describe("runVerificationCommands", () => {
         localPath,
         fileTree: [],
         installationId: 1
-      }
+      },
+      undefined,
+      fallbackOptions
     );
 
     expect(result.valid).toBe(true);
@@ -225,7 +438,9 @@ describe("runVerificationCommands", () => {
         localPath,
         fileTree: [],
         installationId: 1
-      }
+      },
+      undefined,
+      fallbackOptions
     );
 
     expect(result.valid).toBe(false);
@@ -251,7 +466,9 @@ describe("runVerificationCommands", () => {
         localPath,
         fileTree: [],
         installationId: 1
-      }
+      },
+      undefined,
+      fallbackOptions
     );
 
     expect(result.valid).toBe(false);

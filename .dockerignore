@@ -1,0 +1,9 @@
+.git
+.pnpm-store
+node_modules
+**/dist
+**/build
+.env
+.env.*
+private-key.pem
+*.pem

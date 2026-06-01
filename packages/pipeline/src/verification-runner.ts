@@ -1,21 +1,37 @@
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-import type { GeneratedChange, RepoContext } from "@mosaic/core";
+import { getEnv, logger, type GeneratedChange, type RepoContext } from "@mosaic/core";
 
 import type { ImplementationPlan } from "./implementation-planner.js";
 
-const ignoredCopyNames = new Set([".git", "node_modules", "dist", "build", "__pycache__", ".next", "vendor"]);
+const ignoredCopyNames = new Set([
+  ".env",
+  ".git",
+  ".next",
+  ".pnpm-store",
+  "node_modules",
+  "dist",
+  "build",
+  "__pycache__",
+  "private-key.pem",
+  "vendor"
+]);
 const maxCommands = 3;
 const defaultTimeoutMs = 120_000;
 const maxOutputBytes = 1024 * 1024 * 10;
-const memoryLimitKb = 1024 * 1024;
+const defaultDockerImage = "mosaic-verify:local";
+const dockerWorkdir = "/workspace";
+const dockerSmokePackageJson = "/opt/mosaic-verify/package.json";
 const frontendFilePattern = /\.(?:html?|[cm]?jsx?|tsx?)$/i;
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const rootPackageJson = join(repoRoot, "package.json");
+let dockerAvailableCache: boolean | undefined;
+const dockerImageReady = new Map<string, Promise<void>>();
 
 const frontendSmokeChildScript = `
 import { readFile } from "node:fs/promises";
@@ -98,6 +114,12 @@ export interface VerificationResult {
   errors: string[];
 }
 
+export interface VerificationRunnerOptions {
+  dockerAvailable?: boolean | (() => boolean | Promise<boolean>);
+  requireSandbox?: boolean;
+  dockerImage?: string;
+}
+
 function hasShellMetacharacters(command: string): boolean {
   return /[;&|<>`$\\]/.test(command);
 }
@@ -162,7 +184,18 @@ function shouldCopyPath(sourcePath: string, rootPath: string): boolean {
     return true;
   }
 
-  return !relativePath.split("/").some((part) => ignoredCopyNames.has(part));
+  const name = basename(sourcePath);
+  if (name === ".env" || name.startsWith(".env.")) {
+    return false;
+  }
+
+  const privateKeyPath = process.env.GITHUB_PRIVATE_KEY_PATH?.trim() || "private-key.pem";
+  const resolvedPrivateKeyPath = privateKeyPath.startsWith("/") ? privateKeyPath : resolve(repoRoot, privateKeyPath);
+  if (sourcePath === resolvedPrivateKeyPath) {
+    return false;
+  }
+
+  return !relativePath.split(/[\\/]/).some((part) => ignoredCopyNames.has(part));
 }
 
 function truncateOutput(output: string): string {
@@ -247,7 +280,7 @@ function limitedProcessArgs(executable: string, args: string[]): { executable: s
     executable: "/bin/sh",
     args: [
       "-c",
-      `ulimit -t ${Math.ceil(defaultTimeoutMs / 1000)}; ulimit -v ${memoryLimitKb} 2>/dev/null || true; exec "$@"`,
+      `ulimit -t ${Math.ceil(defaultTimeoutMs / 1000)}; exec "$@"`,
       "mosaic-verify",
       executable,
       ...args
@@ -255,20 +288,19 @@ function limitedProcessArgs(executable: string, args: string[]): { executable: s
   };
 }
 
-async function runSandboxedProcess(
+async function runProcess(
   executable: string,
   args: string[],
   cwd: string,
-  timeoutMs = defaultTimeoutMs
+  env: NodeJS.ProcessEnv,
+  timeoutMs = defaultTimeoutMs,
+  onTimeout?: () => Promise<void> | void
 ): Promise<{ stdout: string; stderr: string }> {
-  const limited = limitedProcessArgs(executable, args);
-  const sandboxed = networkSandboxArgs(limited.executable, limited.args);
-
   return new Promise((resolve, reject) => {
-    const child = spawn(sandboxed.executable, sandboxed.args, {
+    const child = spawn(executable, args, {
       cwd,
       detached: process.platform !== "win32",
-      env: verificationEnv(cwd),
+      env,
       stdio: ["ignore", "pipe", "pipe"]
     });
     const stdoutChunks: Buffer[] = [];
@@ -287,6 +319,8 @@ async function runSandboxedProcess(
       } catch {
         child.kill("SIGKILL");
       }
+
+      void onTimeout?.();
     }, timeoutMs);
 
     const collectOutput = (chunks: Buffer[], chunk: Buffer): void => {
@@ -319,7 +353,143 @@ async function runSandboxedProcess(
   });
 }
 
-async function runFrontendSmoke(tempRepo: string, changes: GeneratedChange[]): Promise<string[]> {
+async function runFallbackSandboxedProcess(
+  executable: string,
+  args: string[],
+  cwd: string,
+  timeoutMs = defaultTimeoutMs
+): Promise<{ stdout: string; stderr: string }> {
+  const limited = limitedProcessArgs(executable, args);
+  const sandboxed = networkSandboxArgs(limited.executable, limited.args);
+
+  return runProcess(sandboxed.executable, sandboxed.args, cwd, verificationEnv(cwd), timeoutMs);
+}
+
+function dockerEnv(): NodeJS.ProcessEnv {
+  return {
+    PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  };
+}
+
+async function checkDockerAvailable(): Promise<boolean> {
+  if (dockerAvailableCache !== undefined) {
+    return dockerAvailableCache;
+  }
+
+  try {
+    await runProcess("docker", ["info"], repoRoot, dockerEnv(), 10_000);
+    dockerAvailableCache = true;
+  } catch {
+    dockerAvailableCache = false;
+  }
+
+  return dockerAvailableCache;
+}
+
+async function resolveDockerAvailable(options: VerificationRunnerOptions): Promise<boolean> {
+  if (typeof options.dockerAvailable === "boolean") {
+    return options.dockerAvailable;
+  }
+
+  if (typeof options.dockerAvailable === "function") {
+    return await options.dockerAvailable();
+  }
+
+  return checkDockerAvailable();
+}
+
+function resolveRequireSandbox(options: VerificationRunnerOptions): boolean {
+  return options.requireSandbox ?? getEnv().VERIFICATION_REQUIRE_SANDBOX ?? false;
+}
+
+async function ensureDockerImage(image: string): Promise<void> {
+  const existing = dockerImageReady.get(image);
+  if (existing) {
+    return existing;
+  }
+
+  const ready = (async () => {
+    try {
+      await runProcess("docker", ["image", "inspect", image], repoRoot, dockerEnv(), 15_000);
+      return;
+    } catch {
+      await runProcess("docker", ["build", "-f", "Dockerfile.verify", "-t", image, "."], repoRoot, dockerEnv(), 10 * 60_000);
+    }
+  })();
+
+  dockerImageReady.set(image, ready);
+
+  try {
+    await ready;
+  } catch (error) {
+    dockerImageReady.delete(image);
+    throw error;
+  }
+}
+
+function dockerRunArgs(image: string, tempRepo: string, executable: string, args: string[], containerName: string): string[] {
+  const uid = typeof process.getuid === "function" ? process.getuid() : 1000;
+  const gid = typeof process.getgid === "function" ? process.getgid() : 1000;
+
+  return [
+    "run",
+    "--name",
+    containerName,
+    "--rm",
+    "--network=none",
+    "--read-only",
+    "--tmpfs",
+    "/tmp:rw,nosuid,nodev,size=64m",
+    "--cap-drop=ALL",
+    "--security-opt",
+    "no-new-privileges",
+    "--user",
+    `${uid}:${gid}`,
+    "--memory",
+    "1g",
+    "--cpus",
+    "1",
+    "--pids-limit",
+    "128",
+    "--workdir",
+    dockerWorkdir,
+    "--env",
+    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "--env",
+    `PYTHONPATH=${dockerWorkdir}`,
+    "--env",
+    "HOME=/tmp",
+    "--mount",
+    `type=bind,source=${tempRepo},target=${dockerWorkdir},readonly=false`,
+    image,
+    executable,
+    ...args
+  ];
+}
+
+async function runDockerSandboxedProcess(
+  image: string,
+  executable: string,
+  args: string[],
+  tempRepo: string,
+  timeoutMs = defaultTimeoutMs
+): Promise<{ stdout: string; stderr: string }> {
+  const containerName = `mosaic-verify-${process.pid}-${Date.now()}-${randomUUID()}`;
+  return runProcess("docker", dockerRunArgs(image, tempRepo, executable, args, containerName), repoRoot, dockerEnv(), timeoutMs, async () => {
+    await runProcess("docker", ["rm", "-f", containerName], repoRoot, dockerEnv(), 15_000).catch(() => undefined);
+  });
+}
+
+type VerificationExecutor = (executable: string, args: string[], cwd: string) => Promise<{ stdout: string; stderr: string }>;
+
+async function runFrontendSmoke(
+  tempRepo: string,
+  changes: GeneratedChange[],
+  executor: VerificationExecutor,
+  smokeExecutable: string,
+  smokePackageJson: string,
+  smokeRepoPath: string
+): Promise<string[]> {
   if (!shouldRunFrontendSmoke(changes)) {
     return [];
   }
@@ -330,9 +500,9 @@ async function runFrontendSmoke(tempRepo: string, changes: GeneratedChange[]): P
   }
 
   try {
-    const { stdout } = await runSandboxedProcess(
-      process.execPath,
-      ["--max-old-space-size=256", "--input-type=module", "--eval", frontendSmokeChildScript, rootPackageJson, tempRepo],
+    const { stdout } = await executor(
+      smokeExecutable,
+      ["--max-old-space-size=256", "--input-type=module", "--eval", frontendSmokeChildScript, smokePackageJson, smokeRepoPath],
       tempRepo
     );
     const parsed = JSON.parse(stdout) as unknown;
@@ -346,7 +516,8 @@ async function runFrontendSmoke(tempRepo: string, changes: GeneratedChange[]): P
 export async function runVerificationCommands(
   changes: GeneratedChange[],
   repoContext: RepoContext,
-  implementationPlan?: ImplementationPlan
+  implementationPlan?: ImplementationPlan,
+  options: VerificationRunnerOptions = {}
 ): Promise<VerificationResult> {
   const commands = collectVerificationCommands(changes, implementationPlan);
   const unsupportedCommands = unsupportedPlannedVerificationCommands(implementationPlan);
@@ -359,8 +530,35 @@ export async function runVerificationCommands(
     };
   }
 
+  const dockerAvailable = await resolveDockerAvailable(options);
+  const requireSandbox = resolveRequireSandbox(options);
+  if (!dockerAvailable && requireSandbox) {
+    return {
+      valid: false,
+      commands,
+      errors: [
+        ...unsupportedCommands.map((command) => `Unsupported verification command was not run: ${command}`),
+        "Verification isolation unavailable: Docker sandbox is required but Docker is not available"
+      ]
+    };
+  }
+
+  const dockerImage = options.dockerImage ?? defaultDockerImage;
+  const executor: VerificationExecutor = dockerAvailable
+    ? (executable, args, cwd) => runDockerSandboxedProcess(dockerImage, executable, args, cwd)
+    : runFallbackSandboxedProcess;
+  const smokeExecutable = dockerAvailable ? "node" : process.execPath;
+  const smokePackageJson = dockerAvailable ? dockerSmokePackageJson : rootPackageJson;
+
+  if (dockerAvailable) {
+    await ensureDockerImage(dockerImage);
+  } else {
+    logger.warn({ repo: repoContext.fullName }, "Verification running with degraded isolation because Docker is unavailable");
+  }
+
   const tempRoot = await mkdtemp(join(tmpdir(), "mosaic-verify-"));
   const tempRepo = join(tempRoot, "repo");
+  const smokeRepoPath = dockerAvailable ? dockerWorkdir : tempRepo;
   const errors: string[] = unsupportedCommands.map((command) => `Unsupported verification command was not run: ${command}`);
 
   try {
@@ -370,7 +568,7 @@ export async function runVerificationCommands(
     });
     await writeChanges(tempRepo, changes);
 
-    errors.push(...await runFrontendSmoke(tempRepo, changes));
+    errors.push(...await runFrontendSmoke(tempRepo, changes, executor, smokeExecutable, smokePackageJson, smokeRepoPath));
 
     for (const command of commands) {
       try {
@@ -379,7 +577,7 @@ export async function runVerificationCommands(
           errors.push(`Unsupported verification command was not run: ${command}`);
           continue;
         }
-        await runSandboxedProcess(tokens[0], tokens.slice(1), tempRepo);
+        await executor(tokens[0], tokens.slice(1), tempRepo);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Command failed (${command}): ${truncateOutput(message)}`);

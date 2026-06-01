@@ -7,6 +7,7 @@
     "dev": "pnpm build && concurrently \"docker compose up redis\" \"pnpm webhooks:dev\" \"pnpm --filter @mosaic/github-app dev\" \"pnpm --filter @mosaic/intake dev\" \"pnpm --filter @mosaic/pipeline dev\"",
     "start": "concurrently \"pnpm --filter @mosaic/github-app start\" \"pnpm --filter @mosaic/intake start\" \"pnpm --filter @mosaic/pipeline start\"",
     "build": "pnpm -r build",
+    "verify:image": "docker build -f Dockerfile.verify -t mosaic-verify:local .",
     "lint": "eslint .",
     "typecheck": "tsc -b packages/*/tsconfig.json",
     "test": "vitest run",

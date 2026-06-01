@@ -1,3 +1,5 @@
+/* global console, process */
+
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
