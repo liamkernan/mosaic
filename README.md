@@ -40,6 +40,44 @@ Example JSON body:
 }
 ```
 
+## Email Intake
+
+Email intake uses IMAP to read dedicated support mailboxes. An IMAP host is the mail server address, such as `imap.gmail.com`; it is different from the support email address itself.
+
+For local development with one repo mailbox, set:
+
+```bash
+EMAIL_IMAP_HOST=imap.example.com
+EMAIL_IMAP_PORT=993
+EMAIL_IMAP_USER=project-a-support@example.com
+EMAIL_IMAP_PASS=app-password
+EMAIL_IMAP_MAILBOX=INBOX
+EMAIL_REPO_FULL_NAME=owner/project-a
+```
+
+For production, configure one mailbox per repo with `EMAIL_MAILBOXES` as a deployment secret:
+
+```json
+[
+  {
+    "repoFullName": "owner/project-a",
+    "host": "imap.example.com",
+    "port": 993,
+    "user": "project-a-support@example.com",
+    "pass": "app-password"
+  },
+  {
+    "repoFullName": "owner/project-b",
+    "host": "imap.example.com",
+    "port": 993,
+    "user": "project-b-support@example.com",
+    "pass": "app-password"
+  }
+]
+```
+
+Every unread message in a configured mailbox is routed to that mailbox's `repoFullName`; senders do not need to include a repo tag in the subject.
+
 ## Safety
 
 - Generated code is always validated before any PR is created.
