@@ -1,15 +1,63 @@
 # Mosaic
 
-Mosaic is a TypeScript repo for turning user feedback into either an automated pull request, a triaged GitHub issue, or a quarantined manual-review record. It ingests feedback from web forms, email, GitHub, Discord, and Slack, classifies intent and complexity, validates generated code, and uses a GitHub App to open issues or PRs safely.
+Mosaic turns user feedback into safe GitHub outcomes: an automated pull request, a staged GitHub issue, or a quarantined manual-review record. It is designed for product teams, agencies, and internal tools where feedback arrives outside GitHub and/or may be written in non-technical langauge, but the implementation work needs to land in GitHub with traceability and guardrails.
+
+Mosaic is more than a "prompt to PR" bot. It treats feedback as an intake and triage problem first. Every submission is normalized, rate-limited, classified, mapped to repository context, checked against repo policy, validated, and only then allowed to become a PR. Feedback that is ambiguous, broad, risky, low-confidence, or above the repo's automation threshold becomes a GitHub issue instead of code.
+
+## Table of Contents
+
+- [Use Cases](#use-cases)
+- [How It Works](#how-it-works)
+- [What Makes Mosaic Different](#what-makes-mosaic-different)
+- [Packages](#packages)
+- [Quick Start](#quick-start)
+- [Intake Methods](#intake-methods)
+  - [Embeddable Web Forms](#embeddable-web-forms)
+  - [Email](#email)
+  - [GitHub Issues and Comments](#github-issues-and-comments)
+  - [Discord](#discord)
+  - [Slack](#slack)
+- [Safety](#safety)
+- [Scripts](#scripts)
+
+## Use Cases
+
+Mosaic works best when feedback is frequent, concrete, and currently trapped in places where engineers do not naturally triage it.
+
+- Customer-facing websites can embed a small feedback form that routes directly to the correct repo without exposing repo selection to the browser.
+- Support and success teams can forward mailbox feedback into GitHub without rewriting every customer note as an issue.
+- Slack or Discord communities can mention a bot in a feedback channel and let Mosaic convert the request into the right GitHub artifact.
+- Repo maintainers can let simple GitHub issues become PRs while keeping larger requests staged for explicit review.
+- Agencies and multi-tenant teams can route each customer, workspace, channel, mailbox, or website to its own repo using server-side mappings.
+
+## How It Works
+
+1. **Collect feedback anywhere.** Mosaic accepts messages from forms, embeds, email, GitHub, Discord, and Slack.
+2. **Route and normalize it.** Each intake source is converted into one feedback shape and mapped to the correct repo using trusted server-side config.
+3. **Triage the request.** Mosaic classifies the feedback, estimates complexity, finds likely relevant files, and decides whether it should become a PR, a staged issue, or a quarantine record.
+4. **Generate only when appropriate.** Low-risk, well-scoped feedback can become code; broader or uncertain feedback is saved as an issue for review.
+5. **Validate before shipping.** Generated changes must pass policy checks, safety filters, and project verification before Mosaic opens a PR.
+
+Staged issues can later be promoted by commenting `@mosaic fix this`, `@mosaic implement this`, or `@mosaic open PR`. Promotion is restricted to the issue author or a repo collaborator with triage access or higher.
+
+## What Makes Mosaic Different
+
+- **It understands conversational feedback.** Users can describe a problem in plain language from Slack, Discord, email, or a website form. Mosaic turns that non-technical feedback into an implementation-oriented summary, category, complexity estimate, and relevant-file search.
+- **It triages before it codes.** Mosaic does not assume every request deserves a PR. It separates quick fixes from broad product requests, low-confidence reports, risky changes, and work that needs human review.
+- **It stages unclear work instead of forcing automation.** Moderate and complex feedback becomes a GitHub issue with context and a promotion path, so maintainers can decide when to ask Mosaic for a PR.
+- **It filters bad input early.** Duplicate submissions, sender floods, obvious spam, and prompt-injection-style content are rejected before the pipeline spends tokens or touches GitHub.
+- **It validates generated work aggressively.** Mosaic checks unsafe code patterns, file-count limits, line-count limits, plan completion, verification commands, and repo policy before opening a PR.
+- **It doesn't ship junk.** If generation is empty, too broad, unsafe, failing validation, or failing project checks, Mosaic falls back to an issue instead of publishing a low-quality PR.
 
 ## Packages
 
 - `@mosaic/core`: shared types, configuration, logging, and typed errors.
 - `@mosaic/llm`: Anthropic-backed completion client, token tracking, and rate limiting.
-- `@mosaic/intake`: Fastify intake server, adapters, normalization, and BullMQ enqueueing.
+- `@mosaic/intake`: Fastify intake server, adapters, normalization, abuse protection, and BullMQ enqueueing.
 - `@mosaic/pipeline`: classifier, repo indexing, code generation, validation, issue creation, and PR creation.
 - `@mosaic/github-app`: Probot wrapper and GitHub App authentication helpers.
-- `@mosaic/slack-bot`: Slack Socket Mode bot that forwards mentions into intake.
+- `@mosaic/discord-bot`: Discord bot that forwards direct mentions into intake.
+- `@mosaic/slack-bot`: Slack Socket Mode bot that forwards app mentions into intake.
 
 ## Quick Start
 
@@ -41,7 +89,19 @@ Example JSON body:
 }
 ```
 
-## Embeddable Web Forms
+## Intake Methods
+
+Mosaic intake methods all converge on the same queue and pipeline. The right intake method depends on where feedback naturally starts.
+
+| Intake method | Best for | Routing model |
+| --- | --- | --- |
+| Embeddable web forms | Websites, SaaS apps, customer-facing pages | Public `embedKey` resolves to a configured repo |
+| Email | Support mailboxes, forwarded customer notes | Dedicated mailbox routes to one repo |
+| GitHub issues/comments | Maintainer workflows, staged issue promotion | Trigger phrase or repo config |
+| Discord | Communities, support servers, product channels | Guild/channel mappings |
+| Slack | Internal teams, customer success, product feedback channels | Workspace/channel mappings |
+
+### Embeddable Web Forms
 
 Production website embeds use server-side routing so the browser never chooses the target repo. Configure one entry per customer, project, or website in `MOSAIC_FORM_EMBEDS`:
 
@@ -79,7 +139,7 @@ By default the script adds a small bottom-right feedback button and panel. To re
 
 The embed submits to `POST /webhook/form/embed` with the public `embedKey`. Mosaic looks up the repo server-side, enforces the configured allowed origin, applies a hidden honeypot field and minimum dwell time, and then runs the same normalization, rate limiting, duplicate detection, and feedback queueing as other intake sources. Keep `allowedOrigins` specific in production; use `"*"` only for local experiments.
 
-## Email Intake
+### Email
 
 Email intake uses IMAP to read dedicated support mailboxes. An IMAP host is the mail server address, such as `imap.gmail.com`; it is different from the support email address itself.
 
@@ -117,7 +177,24 @@ For production, configure one mailbox per repo with `EMAIL_MAILBOXES` as a deplo
 
 Every unread message in a configured mailbox is routed to that mailbox's `repoFullName`; senders do not need to include a repo tag in the subject.
 
-## Discord Intake
+### GitHub Issues and Comments
+
+GitHub intake is handled by the Mosaic GitHub App. It forwards opened issues and new issue comments when either condition is true:
+
+- The body contains the configured trigger phrase, defaulting to `@mosaic`.
+- The repository has Mosaic config that allows `github_issue` or `github_comment` intake.
+
+GitHub comments are also how staged issues are promoted. Comment one of these phrases on a Mosaic-staged issue:
+
+```text
+@mosaic fix this
+@mosaic implement this
+@mosaic open PR
+```
+
+Mosaic ignores its own bot-authored GitHub events to avoid feedback loops.
+
+### Discord
 
 Discord intake uses a bot that watches for direct mentions and forwards the message to `POST /webhook/discord`.
 
@@ -165,7 +242,7 @@ For production, configure channel/server routing with `DISCORD_REPO_MAPPINGS` as
 
 Channel-specific mappings win over guild-level mappings. `DISCORD_DEFAULT_REPO` is useful locally, but production installs should use explicit mappings created during onboarding.
 
-## Slack Intake
+### Slack
 
 Slack intake uses a Socket Mode bot that watches for direct app mentions and forwards the message to `POST /webhook/slack`.
 
