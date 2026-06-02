@@ -78,6 +78,54 @@ For production, configure one mailbox per repo with `EMAIL_MAILBOXES` as a deplo
 
 Every unread message in a configured mailbox is routed to that mailbox's `repoFullName`; senders do not need to include a repo tag in the subject.
 
+## Discord Intake
+
+Discord intake uses a bot that watches for direct mentions and forwards the message to `POST /webhook/discord`.
+
+For local development with one repo, set:
+
+```bash
+DISCORD_BOT_TOKEN=your-bot-token
+DISCORD_DEFAULT_REPO=owner/project-a
+DISCORD_INTAKE_URL=http://127.0.0.1:3000/webhook/discord
+```
+
+Create a Discord application, add a bot, invite it to your server with `bot` scope and these permissions:
+
+- View Channels
+- Send Messages
+- Read Message History
+
+Then run:
+
+```bash
+pnpm dev
+```
+
+In Discord, mention the bot with feedback:
+
+```text
+@mosaic Fix the dashboard empty state copy.
+```
+
+For production, configure channel/server routing with `DISCORD_REPO_MAPPINGS` as a deployment secret:
+
+```json
+[
+  {
+    "guildId": "1234567890",
+    "channelId": "2345678901",
+    "repoFullName": "owner/project-a"
+  },
+  {
+    "guildId": "1234567890",
+    "repoFullName": "owner/default-repo"
+  }
+]
+```
+
+Channel-specific mappings win over guild-level mappings. `DISCORD_DEFAULT_REPO` is useful locally, but production installs should use explicit mappings created during onboarding.
+
 ## Safety
 
 - Generated code is always validated before any PR is created.

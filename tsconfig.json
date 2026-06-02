@@ -11,6 +11,9 @@
       "path": "./packages/intake"
     },
     {
+      "path": "./packages/discord-bot"
+    },
+    {
       "path": "./packages/github-app"
     },
     {

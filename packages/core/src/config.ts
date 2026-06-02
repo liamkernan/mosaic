@@ -71,6 +71,10 @@ const envSchema = z.object({
   EMAIL_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
   DISCORD_BOT_TOKEN: optionalNonEmptyString(),
   DISCORD_PUBLIC_KEY: optionalNonEmptyString(),
+  DISCORD_DEFAULT_REPO: optionalNonEmptyString(),
+  DISCORD_REPO_MAPPINGS: optionalNonEmptyString(),
+  DISCORD_INTAKE_URL: z.string().url().optional(),
+  DISCORD_ENABLE_MESSAGE_CONTENT_INTENT: optionalBoolean(),
   PORT: z.coerce.number().int().positive().default(3000),
   GITHUB_APP_PORT: z.coerce.number().int().positive().default(3001),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
@@ -133,6 +137,7 @@ export function getEnv(): AppEnv {
   cachedEnv = {
     ...parsed.data,
     MOSAIC_TRIGGER_PHRASE: parsed.data.MOSAIC_TRIGGER_PHRASE ?? "@mosaic",
+    DISCORD_ENABLE_MESSAGE_CONTENT_INTENT: parsed.data.DISCORD_ENABLE_MESSAGE_CONTENT_INTENT ?? false,
     VERIFICATION_REQUIRE_SANDBOX: parsed.data.VERIFICATION_REQUIRE_SANDBOX ?? (parsed.data.NODE_ENV === "production"),
     GITHUB_PRIVATE_KEY_PATH: resolveConfigPath(parsed.data.GITHUB_PRIVATE_KEY_PATH),
     REPO_CACHE_DIR: expandHome(parsed.data.REPO_CACHE_DIR)

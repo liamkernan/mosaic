@@ -4,8 +4,8 @@
   "type": "module",
   "packageManager": "pnpm@10.0.0",
   "scripts": {
-    "dev": "pnpm build && concurrently \"docker compose up redis\" \"pnpm webhooks:dev\" \"pnpm --filter @mosaic/github-app dev\" \"pnpm --filter @mosaic/intake dev\" \"pnpm --filter @mosaic/pipeline dev\"",
-    "start": "concurrently \"pnpm --filter @mosaic/github-app start\" \"pnpm --filter @mosaic/intake start\" \"pnpm --filter @mosaic/pipeline start\"",
+    "dev": "pnpm build && concurrently \"docker compose up redis\" \"pnpm webhooks:dev\" \"pnpm --filter @mosaic/github-app dev\" \"pnpm --filter @mosaic/intake dev\" \"pnpm --filter @mosaic/pipeline dev\" \"pnpm --filter @mosaic/discord-bot dev\"",
+    "start": "concurrently \"pnpm --filter @mosaic/github-app start\" \"pnpm --filter @mosaic/intake start\" \"pnpm --filter @mosaic/pipeline start\" \"pnpm --filter @mosaic/discord-bot start\"",
     "build": "pnpm -r build",
     "verify:image": "docker build -f Dockerfile.verify -t mosaic-verify:local .",
     "lint": "eslint .",
