@@ -1,6 +1,6 @@
 // === FEEDBACK TYPES ===
 
-export type FeedbackSource = "web_form" | "email" | "github_issue" | "github_comment" | "discord" | "api";
+export type FeedbackSource = "web_form" | "email" | "github_issue" | "github_comment" | "discord" | "slack" | "api";
 
 export type FeedbackCategory = "bug_report" | "feature_request" | "copy_change" | "ui_tweak" | "question" | "other";
 

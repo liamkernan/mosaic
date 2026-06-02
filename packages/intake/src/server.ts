@@ -5,6 +5,7 @@ import { AbuseDetectedError, getEnv, logger, RateLimitError, ValidationError } f
 import { handleDiscordWebhook } from "./adapters/discord.adapter.js";
 import { EmailListener } from "./adapters/email.adapter.js";
 import { handleGithubWebhook } from "./adapters/github.adapter.js";
+import { handleSlackWebhook } from "./adapters/slack.adapter.js";
 import { handleEmbeddedFormWebhook, handleEmbedScript, handleFormWebhook } from "./adapters/webhook.adapter.js";
 
 const formBodySchema = {
@@ -56,6 +57,21 @@ const discordBodySchema = {
   }
 } as const;
 
+const slackBodySchema = {
+  type: "object",
+  required: ["message", "repoFullName"],
+  properties: {
+    message: { type: "string", minLength: 1 },
+    repoFullName: { type: "string", minLength: 3 },
+    username: { type: "string" },
+    userId: { type: "string" },
+    channelId: { type: "string" },
+    teamId: { type: "string" },
+    messageTs: { type: "string" },
+    threadTs: { type: "string" }
+  }
+} as const;
+
 export async function createIntakeServer() {
   const server = Fastify({
     logger: false
@@ -90,6 +106,7 @@ export async function createIntakeServer() {
   server.post("/webhook/form/embed", { schema: { body: embeddedFormBodySchema } }, handleEmbeddedFormWebhook);
   server.post("/webhook/github", { schema: { body: githubBodySchema } }, handleGithubWebhook);
   server.post("/webhook/discord", { schema: { body: discordBodySchema } }, handleDiscordWebhook);
+  server.post("/webhook/slack", { schema: { body: slackBodySchema } }, handleSlackWebhook);
 
   server.addHook("onClose", async () => {
     await emailListener.stop();

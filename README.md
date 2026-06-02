@@ -1,6 +1,6 @@
 # Mosaic
 
-Mosaic is a TypeScript repo for turning user feedback into either an automated pull request, a triaged GitHub issue, or a quarantined manual-review record. It ingests feedback from web forms, email, GitHub, and Discord, classifies intent and complexity, validates generated code, and uses a GitHub App to open issues or PRs safely.
+Mosaic is a TypeScript repo for turning user feedback into either an automated pull request, a triaged GitHub issue, or a quarantined manual-review record. It ingests feedback from web forms, email, GitHub, Discord, and Slack, classifies intent and complexity, validates generated code, and uses a GitHub App to open issues or PRs safely.
 
 ## Packages
 
@@ -9,6 +9,7 @@ Mosaic is a TypeScript repo for turning user feedback into either an automated p
 - `@mosaic/intake`: Fastify intake server, adapters, normalization, and BullMQ enqueueing.
 - `@mosaic/pipeline`: classifier, repo indexing, code generation, validation, issue creation, and PR creation.
 - `@mosaic/github-app`: Probot wrapper and GitHub App authentication helpers.
+- `@mosaic/slack-bot`: Slack Socket Mode bot that forwards mentions into intake.
 
 ## Quick Start
 
@@ -164,6 +165,54 @@ For production, configure channel/server routing with `DISCORD_REPO_MAPPINGS` as
 
 Channel-specific mappings win over guild-level mappings. `DISCORD_DEFAULT_REPO` is useful locally, but production installs should use explicit mappings created during onboarding.
 
+## Slack Intake
+
+Slack intake uses a Socket Mode bot that watches for direct app mentions and forwards the message to `POST /webhook/slack`.
+
+For local development with one repo, set:
+
+```bash
+SLACK_APP_TOKEN=xapp-your-app-level-token
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_DEFAULT_REPO=owner/project-a
+SLACK_INTAKE_URL=http://127.0.0.1:3000/webhook/slack
+```
+
+Create a Slack app from a manifest with a bot user, Socket Mode enabled, an app-level token with `connections:write`, and these bot scopes:
+
+- `app_mentions:read`
+- `chat:write`
+
+Install the app to the workspace, invite it to the channel, then run:
+
+```bash
+pnpm dev
+```
+
+In Slack, mention the bot with feedback:
+
+```text
+@Mosaic Fix the dashboard empty state copy.
+```
+
+For production, configure channel/workspace routing with `SLACK_REPO_MAPPINGS` as a deployment secret:
+
+```json
+[
+  {
+    "teamId": "T1234567890",
+    "channelId": "C2345678901",
+    "repoFullName": "owner/project-a"
+  },
+  {
+    "teamId": "T1234567890",
+    "repoFullName": "owner/default-repo"
+  }
+]
+```
+
+Channel-specific mappings win over team-level mappings. `SLACK_DEFAULT_REPO` is useful locally, but production installs should use explicit mappings created during onboarding.
+
 ## Safety
 
 - Generated code is always validated before any PR is created.
@@ -175,7 +224,7 @@ Channel-specific mappings win over guild-level mappings. `DISCORD_DEFAULT_REPO` 
 
 ## Scripts
 
-- `pnpm dev`: runs Redis, webhook forwarding via Smee, intake server, pipeline worker, and GitHub App.
+- `pnpm dev`: runs Redis, webhook forwarding via Smee, intake server, pipeline worker, GitHub App, Discord bot, and Slack bot.
 - `pnpm webhooks:dev`: forwards your GitHub App's `smee.io` channel to `http://127.0.0.1:3001/api/github/webhooks`.
 - `pnpm build`: compiles all packages.
 - `pnpm typecheck`: TypeScript project references build.

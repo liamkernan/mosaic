@@ -75,6 +75,11 @@ const envSchema = z.object({
   DISCORD_REPO_MAPPINGS: optionalNonEmptyString(),
   DISCORD_INTAKE_URL: z.string().url().optional(),
   DISCORD_ENABLE_MESSAGE_CONTENT_INTENT: optionalBoolean(),
+  SLACK_BOT_TOKEN: optionalNonEmptyString(),
+  SLACK_APP_TOKEN: optionalNonEmptyString(),
+  SLACK_DEFAULT_REPO: optionalNonEmptyString(),
+  SLACK_REPO_MAPPINGS: optionalNonEmptyString(),
+  SLACK_INTAKE_URL: z.string().url().optional(),
   PORT: z.coerce.number().int().positive().default(3000),
   GITHUB_APP_PORT: z.coerce.number().int().positive().default(3001),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
@@ -102,6 +107,7 @@ export const feedbackSourceSchema = z.enum([
   "github_issue",
   "github_comment",
   "discord",
+  "slack",
   "api"
 ]) satisfies z.ZodType<FeedbackSource>;
 
