@@ -40,6 +40,44 @@ Example JSON body:
 }
 ```
 
+## Embeddable Web Forms
+
+Production website embeds use server-side routing so the browser never chooses the target repo. Configure one entry per customer, project, or website in `MOSAIC_FORM_EMBEDS`:
+
+```bash
+MOSAIC_FORM_EMBEDS='[
+  {
+    "embedKey": "project-a-site",
+    "repoFullName": "owner/project-a",
+    "allowedOrigins": ["https://www.example.com"],
+    "displayName": "Send feedback",
+    "requireEmail": false,
+    "minSubmitMs": 1200
+  }
+]'
+```
+
+Then give the site owner this drop-in script tag:
+
+```html
+<script async src="https://mosaic.example.com/embed/project-a-site.js"></script>
+```
+
+By default the script adds a small bottom-right feedback button and panel. To render the form inside a contact page or footer container instead:
+
+```html
+<div id="mosaic-feedback"></div>
+<script
+  async
+  src="https://mosaic.example.com/embed/project-a-site.js"
+  data-mosaic-mount="#mosaic-feedback"
+  data-mosaic-mode="inline"
+  data-mosaic-accent="#2563eb"
+></script>
+```
+
+The embed submits to `POST /webhook/form/embed` with the public `embedKey`. Mosaic looks up the repo server-side, enforces the configured allowed origin, applies a hidden honeypot field and minimum dwell time, and then runs the same normalization, rate limiting, duplicate detection, and feedback queueing as other intake sources. Keep `allowedOrigins` specific in production; use `"*"` only for local experiments.
+
 ## Email Intake
 
 Email intake uses IMAP to read dedicated support mailboxes. An IMAP host is the mail server address, such as `imap.gmail.com`; it is different from the support email address itself.

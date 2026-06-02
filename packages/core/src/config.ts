@@ -86,6 +86,7 @@ const envSchema = z.object({
   LLM_CALLS_PER_HOUR: z.coerce.number().int().positive().default(50),
   PRS_PER_HOUR: z.coerce.number().int().positive().default(10),
   FEEDBACK_ITEMS_PER_HOUR: z.coerce.number().int().positive().default(100),
+  MOSAIC_FORM_EMBEDS: optionalNonEmptyString(),
   MOSAIC_TRIGGER_PHRASE: optionalNonEmptyString(),
   VERIFICATION_REQUIRE_SANDBOX: optionalBoolean(),
   MOSAIC_LLM_KEY: optionalNonEmptyString()

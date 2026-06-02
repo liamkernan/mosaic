@@ -5,7 +5,7 @@ import { AbuseDetectedError, getEnv, logger, RateLimitError, ValidationError } f
 import { handleDiscordWebhook } from "./adapters/discord.adapter.js";
 import { EmailListener } from "./adapters/email.adapter.js";
 import { handleGithubWebhook } from "./adapters/github.adapter.js";
-import { handleFormWebhook } from "./adapters/webhook.adapter.js";
+import { handleEmbeddedFormWebhook, handleEmbedScript, handleFormWebhook } from "./adapters/webhook.adapter.js";
 
 const formBodySchema = {
   type: "object",
@@ -14,6 +14,19 @@ const formBodySchema = {
     message: { type: "string", minLength: 1 },
     repoFullName: { type: "string", minLength: 3 },
     senderEmail: { type: "string" }
+  }
+} as const;
+
+const embeddedFormBodySchema = {
+  type: "object",
+  required: ["message", "embedKey", "loadedAt"],
+  properties: {
+    message: { type: "string", minLength: 1 },
+    embedKey: { type: "string", minLength: 3 },
+    senderEmail: { type: "string" },
+    honeypot: { type: "string" },
+    loadedAt: { type: "number" },
+    pageUrl: { type: "string" }
   }
 } as const;
 
@@ -72,7 +85,9 @@ export async function createIntakeServer() {
   });
 
   server.get("/health", async () => ({ ok: true }));
+  server.get("/embed/:embedKey.js", handleEmbedScript);
   server.post("/webhook/form", { schema: { body: formBodySchema } }, handleFormWebhook);
+  server.post("/webhook/form/embed", { schema: { body: embeddedFormBodySchema } }, handleEmbeddedFormWebhook);
   server.post("/webhook/github", { schema: { body: githubBodySchema } }, handleGithubWebhook);
   server.post("/webhook/discord", { schema: { body: discordBodySchema } }, handleDiscordWebhook);
 

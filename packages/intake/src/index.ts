@@ -7,6 +7,7 @@ export * from "./adapters/email.adapter.js";
 export * from "./adapters/github.adapter.js";
 export * from "./adapters/webhook.adapter.js";
 export * from "./abuse-protection.js";
+export * from "./form-embeds.js";
 export * from "./normalizer.js";
 export * from "./queue.js";
 export * from "./server.js";
