@@ -97,7 +97,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("API/HTTP endpoint requests");
   });
 
-  it("keeps implementation planning tree broad but bounded for large repos", () => {
+  it("keeps the full implementation planning tree for large repos", () => {
     const fileTree = Array.from({ length: 1_100 }, (_, index) => `packages/area-${index}/src/file-${index}.ts`);
     const prompt = buildImplementationPlanPrompt(
       {
@@ -119,7 +119,8 @@ describe("pipeline prompts", () => {
     );
 
     expect(prompt).toContain("packages/area-999/src/file-999.ts");
-    expect(prompt).toContain("lower-relevance repository path(s) omitted");
+    expect(prompt).toContain("packages/area-1099/src/file-1099.ts");
+    expect(prompt).not.toContain("lower-relevance repository path(s) omitted");
   });
 
   it("includes implementation plan checklists in generation prompt", () => {
