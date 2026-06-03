@@ -1,0 +1,40 @@
+[
+  {
+    "id": "storybook-32444-addon-vitest-non-browser",
+    "repoFullName": "storybookjs/storybook",
+    "repoDirName": "storybook",
+    "baseRef": "codex/mosaic-storybook-test",
+    "issueNumber": 32444,
+    "feedback": {
+      "source": "web_form",
+      "rawContent": "Storybook issue #32444: @storybook/addon-vitest v9 fails when Vitest browser mode is disabled and the environment is jsdom or happy-dom. The failure comes from code/addons/vitest/src/vitest-plugin/test-utils.ts importing `server` from `@vitest/browser/context` at module scope and immediately reading `server.commands`. In non-browser mode, `@vitest/browser/context` throws during import: \"@vitest/browser/context can be imported only inside the Browser Mode.\" A correct fix must remove the top-level `import { server } from '@vitest/browser/context'` and remove the top-level `const { getInitialGlobals } = server.commands`. Access browser context lazily with a guarded dynamic import and fallback, similar to viewports.ts, while preserving getInitialGlobals behavior in browser mode. Keep the change scoped to `code/addons/vitest/src/vitest-plugin/test-utils.ts` and, if useful, a colocated test file under `code/addons/vitest/src/vitest-plugin/`. Do not modify example storybooks, HTML files, or unrelated packages.",
+      "senderIdentifier": "eval@example.com",
+      "category": "bug_report",
+      "complexity": "moderate",
+      "summary": "Allow addon-vitest test utilities to load outside Vitest browser mode",
+      "relevantFiles": [
+        "code/addons/vitest/src/vitest-plugin/test-utils.ts",
+        "code/addons/vitest/src/vitest-plugin/viewports.ts",
+        "code/addons/vitest/src/vitest-plugin/setup-file.test.ts",
+        "code/addons/vitest/package.json"
+      ],
+      "confidence": 0.82
+    },
+    "expectedReferenceFiles": [
+      "code/addons/vitest/src/vitest-plugin/test-utils.ts",
+      "code/addons/vitest/src/vitest-plugin/viewports.ts"
+    ],
+    "requiredChangedFilePatterns": [
+      "code/addons/vitest/src/vitest-plugin/test-utils.ts"
+    ],
+    "requiredFileContains": [
+      {
+        "path": "code/addons/vitest/src/vitest-plugin/test-utils.ts",
+        "text": "import('@vitest/browser/context')"
+      }
+    ],
+    "verificationCommands": [
+      "node -e \"const fs=require('fs'); const path='code/addons/vitest/src/vitest-plugin/test-utils.ts'; const s=fs.readFileSync(path,'utf8'); if (/^import\\\\s*\\\\{\\\\s*server\\\\s*\\\\}\\\\s*from ['\\\"]@vitest\\\\/browser\\\\/context['\\\"]/m.test(s)) throw new Error('still imports server from @vitest/browser/context at module scope'); if (/const\\\\s*\\\\{\\\\s*getInitialGlobals\\\\s*\\\\}\\\\s*=\\\\s*server\\\\.commands/.test(s)) throw new Error('still reads server.commands at module scope'); if (!s.includes(\\\"import('@vitest/browser/context')\\\")) throw new Error('missing guarded dynamic browser context import'); if (!/catch\\\\s*\\\\(/.test(s)) throw new Error('dynamic import needs a fallback catch for non-browser mode'); const ember='test-storybooks/ember-cli/app/index.html'; if (fs.existsSync(ember) && fs.readFileSync(ember,'utf8').includes('test-utils.test.ts')) throw new Error('unrelated ember example HTML was modified');\""
+    ]
+  }
+]

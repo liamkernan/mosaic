@@ -1,3 +1,19 @@
+import { formatPromptFileTree } from "./context-budget.js";
+
+const CURRENT_CHANGE_PROMPT_BYTES = 24_000;
+
+function compactCurrentChangeContent(filePath: string, content: string): string {
+  if (Buffer.byteLength(content) <= CURRENT_CHANGE_PROMPT_BYTES) {
+    return content;
+  }
+
+  const lines = content.split("\n");
+  const head = lines.slice(0, 180).join("\n");
+  const tail = lines.slice(-120).join("\n");
+
+  return `${head}\n\n<!-- MOSAIC CONTEXT NOTE: ${Math.max(0, lines.length - 300)} middle line(s) of invalid generated ${filePath} omitted from repair prompt. Preserve the intended behavior, but prefer compact localized edits. -->\n\n${tail}`;
+}
+
 export function buildGenerationRepairPrompt(rawResponse: string): string {
   return `You repair malformed structured file-change output produced by another model.
 
@@ -30,6 +46,14 @@ export function buildValidationRepairPrompt(
     verificationCommands: string[];
   }
 ): string {
+  const promptFileTree = formatPromptFileTree(fileTree, {
+    maxPaths: 300,
+    summary,
+    relevantPaths: relevantFiles.map((file) => file.path),
+    changedPaths: currentChanges.map((change) => change.filePath),
+    planPaths: implementationPlan?.requiredFiles.map((file) => file.path),
+    validationErrors
+  });
   const planSection = implementationPlan
     ? `\nIMPLEMENTATION PLAN:\nRequired files:\n${implementationPlan.requiredFiles.map((file) => `- ${file.path}: ${file.reason}`).join("\n")}\n\nAcceptance criteria:\n${implementationPlan.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}\n\nCompletion checklist:\n${implementationPlan.implementationChecklist.map((item) => `- ${item}`).join("\n")}\n\nVerification checklist:\n${implementationPlan.verificationChecklist.map((item) => `- ${item}`).join("\n")}\n\nVerification commands:\n${implementationPlan.verificationCommands.map((item) => `- ${item}`).join("\n")}\n`
     : "";
@@ -52,7 +76,7 @@ VALIDATION ERRORS:
 ${validationErrors.map((error) => `- ${error}`).join("\n")}
 
 REPOSITORY FILE TREE:
-${fileTree.join("\n")}
+${promptFileTree}
 ${planSection}
 ${largeStaticFrontendSection}
 ${oversizedPatchSection}
@@ -61,7 +85,7 @@ ORIGINAL RELEVANT FILES:
 ${relevantFiles.map((file) => `--- ${file.path} ---\n${file.content}\n--- END ${file.path} ---`).join("\n\n")}
 
 CURRENT INVALID CHANGES:
-${currentChanges.map((change) => `--- ${change.filePath} ---\n${change.modifiedContent}\n--- END ${change.filePath} ---\nExplanation: ${change.explanation}`).join("\n\n")}
+${currentChanges.map((change) => `--- ${change.filePath} ---\n${compactCurrentChangeContent(change.filePath, change.modifiedContent)}\n--- END ${change.filePath} ---\nExplanation: ${change.explanation}`).join("\n\n")}
 
 INSTRUCTIONS:
 - Return a corrected complete change set that satisfies every validation error.

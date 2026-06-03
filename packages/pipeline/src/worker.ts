@@ -7,7 +7,7 @@ import { Redis } from "ioredis";
 import { FeedbackClassifier } from "./classifier.js";
 import { ArtifactStore } from "./artifact-store.js";
 import { mergeGeneratedChanges } from "./change-set.js";
-import { CodeGenerator } from "./code-generator.js";
+import { CodeGenerator, scopeValidationPattern } from "./code-generator.js";
 import { decideFeedbackDisposition } from "./disposition.js";
 import { ImplementationPlanner, type ImplementationPlan } from "./implementation-planner.js";
 import { IssueCreator } from "./issue-creator.js";
@@ -23,7 +23,7 @@ import {
   type StagedIssueMode
 } from "./staged-issues.js";
 import { selectGenerationModelTier, shouldEscalateClassification } from "./model-routing.js";
-import { validatePlanCompletion } from "./plan-completion-validator.js";
+import { pruneChangesToPlanScope, validatePlanCompletion } from "./plan-completion-validator.js";
 import { buildLlmRetryFeedbackItem, canRetryLlmOverload, getLlmRetryDelayMs, isRetryableLlmOverload } from "./transient-llm.js";
 import { validate } from "./validator.js";
 import { applyValidationFallbacks } from "./validation-repair.js";
@@ -248,6 +248,17 @@ export class FeedbackPipelineWorker {
     let validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan, feedbackText);
 
     for (let attempt = 0; !validation.valid && attempt < VALIDATION_RECOVERY_ATTEMPTS; attempt += 1) {
+      if (validation.errors.some((error) => scopeValidationPattern.test(error))) {
+        const scopedChanges = pruneChangesToPlanScope(changes, implementationPlan, feedbackText);
+        if (scopedChanges.length > 0 && scopedChanges.length < changes.length) {
+          changes = scopedChanges;
+          validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan, feedbackText);
+          if (validation.valid) {
+            break;
+          }
+        }
+      }
+
       let madeProgress = false;
       try {
         const repairedChanges = await codeGenerator.repairValidationFailure(
@@ -262,7 +273,7 @@ export class FeedbackPipelineWorker {
           }
         );
 
-        const candidateChanges = validation.errors.some((error) => oversizedPatchPattern.test(error))
+        const candidateChanges = validation.errors.some((error) => oversizedPatchPattern.test(error) || scopeValidationPattern.test(error))
           ? repairedChanges
           : mergeGeneratedChanges(changes, repairedChanges);
         if (repairedChanges.length > 0 && candidateChanges.length <= repoConfig.security.max_files_changed) {

@@ -5,11 +5,11 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { JSDOM, VirtualConsole } from "jsdom";
 
-import { CodeGenerator } from "../packages/pipeline/src/code-generator.js";
+import { CodeGenerator, scopeValidationPattern } from "../packages/pipeline/src/code-generator.js";
 import { mergeGeneratedChanges } from "../packages/pipeline/src/change-set.js";
 import { FeedbackClassifier } from "../packages/pipeline/src/classifier.js";
 import { ImplementationPlanner, type ImplementationPlan } from "../packages/pipeline/src/implementation-planner.js";
-import { validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
+import { pruneChangesToPlanScope, validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
 import { RepoIndexer } from "../packages/pipeline/src/repo-indexer.js";
 import { validate } from "../packages/pipeline/src/validator.js";
 import { applyValidationFallbacks } from "../packages/pipeline/src/validation-repair.js";
@@ -687,6 +687,25 @@ async function generateValidatedChanges(
   }
 
   for (let attempt = 0; !validation.valid && attempt < validationRecoveryAttempts; attempt += 1) {
+    if (validation.errors.some((error) => scopeValidationPattern.test(error))) {
+      const scopedChanges = pruneChangesToPlanScope(changes, implementationPlan, feedbackText);
+      if (scopedChanges.length > 0 && scopedChanges.length < changes.length) {
+        changes = scopedChanges;
+        validation = await validate(changes, repoContext);
+        const scopedPlanErrors = validatePlanCompletion(changes, implementationPlan, feedbackText);
+        if (scopedPlanErrors.length > 0) {
+          validation = {
+            valid: false,
+            errors: [...validation.errors, ...scopedPlanErrors]
+          };
+        }
+
+        if (validation.valid) {
+          break;
+        }
+      }
+    }
+
     let madeProgress = false;
     try {
       const repairedChanges = await generator.repairValidationFailure(
@@ -701,7 +720,7 @@ async function generateValidatedChanges(
         }
       );
       if (repairedChanges.length > 0) {
-        changes = validation.errors.some((error) => oversizedPatchPattern.test(error))
+        changes = validation.errors.some((error) => oversizedPatchPattern.test(error) || scopeValidationPattern.test(error))
           ? repairedChanges
           : mergeGeneratedChanges(changes, repairedChanges);
         madeProgress = true;

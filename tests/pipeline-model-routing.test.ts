@@ -121,17 +121,30 @@ describe("model routing", () => {
     ).toBe(false);
   });
 
-  it("routes simple ui tweaks and bug reports to sonnet for generation", () => {
+  it("keeps simple ui tweaks and obvious bug reports on haiku for generation", () => {
     expect(
       selectGenerationModelTier({
         ...baseFeedback,
         category: "ui_tweak"
       })
-    ).toBe("sonnet");
+    ).toBe("haiku");
     expect(
       selectGenerationModelTier({
         ...baseFeedback,
-        category: "bug_report"
+        category: "bug_report",
+        rawContent: "The living room tile is misaligned with the others.",
+        summary: "Living room tile is misaligned"
+      })
+    ).toBe("haiku");
+  });
+
+  it("routes non-obvious simple bug reports to sonnet for generation", () => {
+    expect(
+      selectGenerationModelTier({
+        ...baseFeedback,
+        category: "bug_report",
+        rawContent: "The checkout flow feels broken sometimes after adding items to the cart.",
+        summary: "Checkout flow breaks after cart interaction"
       })
     ).toBe("sonnet");
   });

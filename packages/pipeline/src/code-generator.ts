@@ -13,9 +13,12 @@ const LARGE_STATIC_FRONTEND_BYTES = 25_000;
 const STATIC_FRONTEND_RETRY_BYTES = 15_000;
 const COMPACT_STATIC_ASSET_BYTES = 8_000;
 const RETRY_COMPACT_STATIC_ASSET_BYTES = 4_000;
+const COMPACT_SOURCE_FILE_BYTES = 24_000;
+const COMPACT_CONTEXT_TOTAL_BYTES = 80_000;
 const STATIC_FRONTEND_RETRY_MAX_TOKENS = 8_192;
 const VALIDATION_REPAIR_TIMEOUT_MS = 120_000;
 const VALIDATION_REPAIR_MAX_TOKENS = 12_288;
+export const scopeValidationPattern = /outside the implementation plan scope/i;
 
 interface GenerationOptions {
   completeSolution?: boolean;
@@ -69,6 +72,27 @@ function extractKeywords(text: string): string[] {
     .slice(0, 12);
 }
 
+function promptKeywordText(feedback: ClassifiedFeedback, implementationPlan?: ImplementationPlan, validationErrors: string[] = []): string {
+  return [
+    feedback.summary,
+    feedback.rawContent,
+    implementationPlan?.requiredFiles.map((file) => `${file.path} ${file.reason}`).join("\n"),
+    implementationPlan?.acceptanceCriteria.join("\n"),
+    implementationPlan?.implementationChecklist.join("\n"),
+    validationErrors.join("\n")
+  ].filter(Boolean).join("\n");
+}
+
+function totalPromptFileBytes(relevantFiles: RelevantFile[]): number {
+  return relevantFiles.reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
+}
+
+function shouldCompactPromptContext(relevantFiles: RelevantFile[]): boolean {
+  return shouldCompactStaticFrontendContext(relevantFiles) ||
+    totalPromptFileBytes(relevantFiles) > COMPACT_CONTEXT_TOTAL_BYTES ||
+    relevantFiles.some((file) => Buffer.byteLength(file.content) > COMPACT_SOURCE_FILE_BYTES);
+}
+
 function compactHtmlContent(file: RelevantFile, options: PromptFileOptions): RelevantFile {
   if (!options.compactHtml || !/\.html?$/i.test(file.path) || Buffer.byteLength(file.content) <= options.compactAssetBytes) {
     return file;
@@ -117,6 +141,76 @@ function compactHtmlContent(file: RelevantFile, options: PromptFileOptions): Rel
   };
 }
 
+function lineCommentForPath(filePath: string): string {
+  if (/\.(?:html?|mdx?|xml|svg)$/i.test(filePath)) {
+    return "<!--";
+  }
+
+  if (/\.(?:py|rb|sh|ya?ml|toml)$/i.test(filePath)) {
+    return "#";
+  }
+
+  return "//";
+}
+
+function formatOmittedLineNote(filePath: string, omittedLineCount: number): string {
+  const commentStart = lineCommentForPath(filePath);
+  if (commentStart === "<!--") {
+    return `<!-- MOSAIC CONTEXT NOTE: ${omittedLineCount} middle line(s) of ${filePath} omitted from prompt context. -->`;
+  }
+
+  return `${commentStart} MOSAIC CONTEXT NOTE: ${omittedLineCount} middle line(s) of ${filePath} omitted from prompt context.`;
+}
+
+function compactLargeSourceContent(file: RelevantFile, options: PromptFileOptions): RelevantFile {
+  const byteLength = Buffer.byteLength(file.content);
+  if (byteLength <= COMPACT_SOURCE_FILE_BYTES || /\.(?:css|html?|[cm]?js)$/i.test(file.path)) {
+    return file;
+  }
+
+  const lines = file.content.split("\n");
+  const headLines = 120;
+  const tailLines = 80;
+  const keywords = options.keywords ?? [];
+  const matchedIndexes = lines
+    .map((line, index) => ({ line: line.toLowerCase(), index }))
+    .filter(({ line }) => keywords.some((keyword) => line.includes(keyword)))
+    .map(({ index }) => index)
+    .slice(0, 10);
+  const includedIndexes = new Set<number>();
+
+  for (let index = 0; index < Math.min(headLines, lines.length); index += 1) {
+    includedIndexes.add(index);
+  }
+
+  for (const matchIndex of matchedIndexes) {
+    for (let index = Math.max(0, matchIndex - 12); index <= Math.min(lines.length - 1, matchIndex + 18); index += 1) {
+      includedIndexes.add(index);
+    }
+  }
+
+  for (let index = Math.max(0, lines.length - tailLines); index < lines.length; index += 1) {
+    includedIndexes.add(index);
+  }
+
+  const excerpt = [...includedIndexes]
+    .sort((a, b) => a - b)
+    .map((index, position, indexes) => {
+      const previous = indexes[position - 1];
+      const prefix = previous !== undefined && index > previous + 1
+        ? `\n${formatOmittedLineNote(file.path, index - previous - 1)}\n`
+        : "";
+      return `${prefix}${lines[index]}`;
+    })
+    .join("\n");
+
+  return {
+    ...file,
+    content: `${excerpt}\n\n${formatOmittedLineNote(file.path, Math.max(0, lines.length - includedIndexes.size))}`,
+    reason: `${file.reason}; compacted oversized source context`
+  };
+}
+
 function compactFileContent(file: RelevantFile, options: PromptFileOptions): RelevantFile {
   const htmlCompacted = compactHtmlContent(file, options);
   if (htmlCompacted !== file) {
@@ -140,11 +234,11 @@ function compactFileContent(file: RelevantFile, options: PromptFileOptions): Rel
 }
 
 function promptRelevantFiles(relevantFiles: RelevantFile[], options: PromptFileOptions = { compactAssetBytes: COMPACT_STATIC_ASSET_BYTES }): RelevantFile[] {
-  if (!shouldCompactStaticFrontendContext(relevantFiles)) {
+  if (!shouldCompactPromptContext(relevantFiles)) {
     return relevantFiles;
   }
 
-  return relevantFiles.map((file) => compactFileContent(file, options));
+  return relevantFiles.map((file) => compactLargeSourceContent(compactFileContent(file, options), options));
 }
 
 function retryPromptRelevantFiles(relevantFiles: RelevantFile[], keywords: string[]): RelevantFile[] {
@@ -208,6 +302,10 @@ function hasMissingRuntimeChangeError(validationErrors: string[]): boolean {
   return validationErrors.some((error) => /requires runtime\/source changes|only modifies tests or documentation/i.test(error));
 }
 
+function hasScopeValidationError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) => scopeValidationPattern.test(error));
+}
+
 function hasFrontendVerificationFailure(validationErrors: string[]): boolean {
   return validationErrors.some((error) =>
     /Verification failed:/i.test(error) &&
@@ -238,6 +336,12 @@ function focusedValidationRepairMaxTokens(promptFiles: RelevantFile[]): number {
 }
 
 const VALIDATION_REPAIR_ROUTES: ValidationRepairRoute[] = [
+  {
+    match: hasScopeValidationError,
+    instruction: "Return only a corrected <changes> payload that removes every file outside the implementation plan scope. Keep the necessary implementation and focused companion test/config/asset edits, but do not include unrelated files from other packages, examples, docs, or apps unless they are explicitly listed in the implementation plan.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
   {
     match: hasOversizedPatchValidationError,
     instruction: "Return only a compact repaired <changes> payload. The previous patch exceeded validation limits, so remove repeated markup/data and use one reusable data-driven implementation with matching JS/CSS.",
@@ -378,7 +482,10 @@ export class CodeGenerator {
       feedbackId: feedback.id
     });
 
-    const promptFiles = promptRelevantFiles(relevantFiles);
+    const promptFiles = promptRelevantFiles(relevantFiles, {
+      compactAssetBytes: COMPACT_STATIC_ASSET_BYTES,
+      keywords: extractKeywords(promptKeywordText(feedback, implementationPlan))
+    });
     const maxTokens = estimateGenerationMaxTokens(promptFiles, options);
     const generationTimeoutMs = shouldCompactStaticFrontendContext(relevantFiles)
       ? STATIC_FRONTEND_GENERATION_TIMEOUT_MS
@@ -400,7 +507,7 @@ export class CodeGenerator {
         throw error;
       }
 
-      const retryFiles = retryPromptRelevantFiles(relevantFiles, extractKeywords(`${feedback.summary} ${feedback.rawContent}`));
+      const retryFiles = retryPromptRelevantFiles(relevantFiles, extractKeywords(promptKeywordText(feedback, implementationPlan)));
       response = await this.llmClient.complete(
         buildGenerationPrompt(feedback.summary, retryFiles, fileTree, implementationPlan, options),
         "The previous static frontend generation timed out. Return only a small localized <changes> payload: prefer exact <edit> blocks or new scoped supplemental JS/CSS files linked from HTML. Do not rewrite full existing HTML/CSS/JS files. Implement one reusable data-driven modal/dialog and matching behavior/styles.",
@@ -450,7 +557,10 @@ export class CodeGenerator {
       feedbackId: feedback.id
     });
 
-    const promptFiles = promptRelevantFiles(relevantFiles);
+    const promptFiles = promptRelevantFiles(relevantFiles, {
+      compactAssetBytes: COMPACT_STATIC_ASSET_BYTES,
+      keywords: extractKeywords(promptKeywordText(feedback, implementationPlan, validationErrors))
+    });
     const repairRoute = VALIDATION_REPAIR_ROUTES.find((route) => route.match(validationErrors));
     const maxTokens = repairRoute?.maxTokens(promptFiles) ?? estimateGenerationMaxTokens(promptFiles, options);
     const userMessage = repairRoute?.instruction ?? "Return only the repaired <changes> payload with complete file contents in CDATA blocks.";

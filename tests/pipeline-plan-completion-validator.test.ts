@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
+import { pruneChangesToPlanScope, validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
 
 const basePlan = {
   requiredFiles: [],
@@ -106,6 +106,96 @@ describe("validatePlanCompletion", () => {
     );
 
     expect(errors.join("\n")).toContain("requires runtime/source changes");
+  });
+
+  it("rejects generated changes outside the planned file scope", () => {
+    const changes = [
+      {
+        filePath: "packages/addon/src/test-utils.ts",
+        originalContent: "export const getGlobals = server.commands.getInitialGlobals;\n",
+        modifiedContent: "export async function getGlobals() {\n  return (await import('@vitest/browser/context').catch(() => ({ server: null }))).server?.commands?.getInitialGlobals?.() ?? {};\n}\n",
+        explanation: "guard browser context import"
+      },
+      {
+        filePath: "examples/ember/app/index.html",
+        originalContent: "<body></body>\n",
+        modifiedContent: "<body><script src=\"../packages/addon/src/test-utils.test.ts\"></script></body>\n",
+        explanation: "load the generated test"
+      }
+    ];
+    const plan = {
+      ...basePlan,
+      requiredFiles: [{ path: "packages/addon/src/test-utils.ts", reason: "fix browser context fallback" }],
+      acceptanceCriteria: ["Non-browser vitest runs should not import browser-only context at module scope."]
+    };
+    const errors = validatePlanCompletion(
+      changes,
+      plan
+    );
+    const scopedChanges = pruneChangesToPlanScope(
+      changes,
+      plan
+    );
+
+    expect(errors.join("\n")).toContain("examples/ember/app/index.html");
+    expect(errors.join("\n")).toContain("outside the implementation plan scope");
+    expect(scopedChanges.map((change) => change.filePath)).toEqual(["packages/addon/src/test-utils.ts"]);
+  });
+
+  it("allows adjacent generated test companions for planned behavioral source changes", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "packages/addon/src/test-utils.ts",
+          originalContent: "export const getGlobals = server.commands.getInitialGlobals;\n",
+          modifiedContent: "export async function getGlobals() {\n  return (await import('@vitest/browser/context').catch(() => ({ server: null }))).server?.commands?.getInitialGlobals?.() ?? {};\n}\n",
+          explanation: "guard browser context import"
+        },
+        {
+          filePath: "packages/addon/src/test-utils.test.ts",
+          originalContent: "",
+          modifiedContent: "import { expect, it } from 'vitest';\nit('falls back without browser context', async () => expect(await getGlobals()).toEqual({}));\n",
+          explanation: "cover the fallback"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "packages/addon/src/test-utils.ts", reason: "fix browser context fallback" },
+          { path: "packages/addon/src/test-utils.test.ts", reason: "add behavioral regression coverage" }
+        ],
+        acceptanceCriteria: ["Non-browser vitest runs should not import browser-only context at module scope."],
+        verificationChecklist: ["Add a vitest regression test for the fallback."]
+      }
+    );
+
+    expect(errors).toEqual([]);
+  });
+
+  it("allows package config companions above planned source files", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "packages/addon/src/runner.ts",
+          originalContent: "export function run() {}\n",
+          modifiedContent: "import { helper } from './helper';\nexport function run() { return helper(); }\n",
+          explanation: "use helper"
+        },
+        {
+          filePath: "packages/addon/package.json",
+          originalContent: "{\"dependencies\":{}}\n",
+          modifiedContent: "{\"dependencies\":{\"left-pad\":\"1.3.0\"}}\n",
+          explanation: "add dependency"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [{ path: "packages/addon/src/runner.ts", reason: "fix runner behavior" }],
+        acceptanceCriteria: ["Runner should use the helper behavior."]
+      }
+    );
+
+    expect(errors).toEqual([]);
   });
 
   it("does not let documentation-only changes satisfy requested endpoint routing", () => {

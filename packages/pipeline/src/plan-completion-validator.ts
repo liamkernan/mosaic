@@ -5,6 +5,9 @@ import type { ImplementationPlan } from "./implementation-planner.js";
 const behavioralKeywords = /\b(?:sort|order|ordering|rank|ranking|filter|tie-?breaker|fallback|dedupe|idempotent|permission|validation|api|endpoint|status|state)\b/i;
 const testPathPattern = /(?:^|\/)(?:test|tests|spec|specs|__tests__|reported)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/i;
 const documentationPathPattern = /(?:^|\/)(?:readme|changelog|docs?|documentation)(?:\/|\.|$)|\.(?:md|mdx|rst|txt)$/i;
+const sourcePathPattern = /\.(?:[cm]?[jt]sx?|tsx?|py|rb|go|rs|java|kt|php|cs|swift|vue|svelte)$/i;
+const staticAssetPathPattern = /\.(?:html?|css|[cm]?js)$/i;
+const companionConfigPathPattern = /(?:^|\/)(?:package\.json|pnpm-workspace\.ya?ml|tsconfig(?:\.[^.]+)?\.json|jsconfig(?:\.[^.]+)?\.json|vitest\.config\.[cm]?[jt]s|vite\.config\.[cm]?[jt]s|jest\.config\.[cm]?[jt]s|pyproject\.toml|setup\.py|setup\.cfg|requirements(?:-[^.]+)?\.txt|go\.mod|go\.sum|Cargo\.toml|Cargo\.lock)$/i;
 const orderedClausePattern = /`([^`]*(?:ASC|DESC|ORDER BY)[^`]*)`/gi;
 const idempotencyPlanPattern = /\b(?:dedupe|duplicate|idempotent|idempotency|retry|same source|external[_\s-]?ref(?:erence)?)\b/i;
 const endpointPathPattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+(`?)(\/[a-zA-Z0-9_./:-]+)\1/g;
@@ -27,6 +30,176 @@ function changedRuntimeFiles(changes: GeneratedChange[]): GeneratedChange[] {
     !testPathPattern.test(change.filePath) &&
     !documentationPathPattern.test(change.filePath)
   );
+}
+
+function normalizeRepoPath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\.?\//, "").trim();
+}
+
+function dirname(path: string): string {
+  const normalized = normalizeRepoPath(path);
+  const index = normalized.lastIndexOf("/");
+  return index >= 0 ? normalized.slice(0, index) : "";
+}
+
+function basename(path: string): string {
+  const normalized = normalizeRepoPath(path);
+  return normalized.slice(normalized.lastIndexOf("/") + 1);
+}
+
+function extension(path: string): string {
+  const name = basename(path).toLowerCase();
+  const match = name.match(/(\.[a-z0-9]+)$/);
+  return match?.[1] ?? "";
+}
+
+function stem(path: string): string {
+  return basename(path)
+    .replace(/\.(?:test|spec)\.[cm]?[jt]sx?$/i, "")
+    .replace(/\.[^.]+$/i, "")
+    .toLowerCase();
+}
+
+function isChildPath(parentDir: string, path: string): boolean {
+  const normalizedParent = normalizeRepoPath(parentDir);
+  const normalizedPath = normalizeRepoPath(path);
+  return normalizedParent.length === 0
+    ? !normalizedPath.includes("/")
+    : normalizedPath.startsWith(`${normalizedParent}/`);
+}
+
+function isAncestorPath(ancestorDir: string, childPath: string): boolean {
+  const normalizedAncestor = normalizeRepoPath(ancestorDir);
+  const normalizedChild = normalizeRepoPath(childPath);
+  if (normalizedAncestor.length === 0) {
+    return true;
+  }
+
+  return normalizedChild === normalizedAncestor || normalizedChild.startsWith(`${normalizedAncestor}/`);
+}
+
+function tokensForPath(path: string): Set<string> {
+  return new Set(
+    normalizeRepoPath(path)
+      .toLowerCase()
+      .replace(/\.(?:test|spec)\b/g, " ")
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length >= 3 && !["src", "lib", "app", "test", "tests", "spec", "specs"].includes(token))
+  );
+}
+
+function sharesMeaningfulToken(leftPath: string, rightPath: string): boolean {
+  const leftTokens = tokensForPath(leftPath);
+  const rightTokens = tokensForPath(rightPath);
+
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isStaticAssetCompanion(changedPath: string, requiredPath: string): boolean {
+  const requiredExtension = extension(requiredPath);
+  const changedExtension = extension(changedPath);
+  if (!staticAssetPathPattern.test(requiredPath) || !staticAssetPathPattern.test(changedPath)) {
+    return false;
+  }
+
+  const requiredDir = dirname(requiredPath);
+  const changedDir = dirname(changedPath);
+  if (requiredExtension === ".html" || requiredExtension === ".htm") {
+    return changedDir === requiredDir || isChildPath(requiredDir, changedPath);
+  }
+
+  if (changedExtension === ".html" || changedExtension === ".htm") {
+    return requiredDir === changedDir || isChildPath(changedDir, requiredPath);
+  }
+
+  return requiredDir === changedDir && sharesMeaningfulToken(changedPath, requiredPath);
+}
+
+function isTestCompanion(changedPath: string, requiredPath: string): boolean {
+  if (!testPathPattern.test(changedPath)) {
+    return false;
+  }
+
+  const changedStem = stem(changedPath);
+  const requiredStem = stem(requiredPath);
+  return changedStem.includes(requiredStem) ||
+    requiredStem.includes(changedStem) ||
+    sharesMeaningfulToken(changedPath, requiredPath);
+}
+
+function isCompanionConfigForRequiredFile(changedPath: string, requiredPath: string): boolean {
+  if (!companionConfigPathPattern.test(changedPath)) {
+    return false;
+  }
+
+  return isAncestorPath(dirname(changedPath), requiredPath);
+}
+
+function isAllowedPlannedCompanionChange(change: GeneratedChange, requiredPath: string, plan: ImplementationPlan, sourceText: string): boolean {
+  const changedPath = normalizeRepoPath(change.filePath);
+  const normalizedRequiredPath = normalizeRepoPath(requiredPath);
+  const sameDir = dirname(changedPath) === dirname(normalizedRequiredPath);
+
+  if (sameDir && change.originalContent.length === 0 && (sourcePathPattern.test(changedPath) || testPathPattern.test(changedPath))) {
+    return true;
+  }
+
+  if (isStaticAssetCompanion(changedPath, normalizedRequiredPath)) {
+    return true;
+  }
+
+  if (isCompanionConfigForRequiredFile(changedPath, normalizedRequiredPath)) {
+    return true;
+  }
+
+  if ((planRequiresBehavioralTests(plan, sourceText) || testPathPattern.test(normalizedRequiredPath)) && isTestCompanion(changedPath, normalizedRequiredPath)) {
+    return true;
+  }
+
+  return false;
+}
+
+function validatePlannedChangeScope(changes: GeneratedChange[], plan: ImplementationPlan, sourceText = ""): string[] {
+  const requiredPaths = [...new Set(plan.requiredFiles.map((file) => normalizeRepoPath(file.path)).filter(Boolean))];
+  if (requiredPaths.length === 0) {
+    return [];
+  }
+
+  if (!requiredPaths.some((path) => !testPathPattern.test(path) && !documentationPathPattern.test(path))) {
+    return [];
+  }
+
+  const requiredPathSet = new Set(requiredPaths);
+  const errors: string[] = [];
+
+  for (const change of changes) {
+    const changedPath = normalizeRepoPath(change.filePath);
+    if (requiredPathSet.has(changedPath)) {
+      continue;
+    }
+
+    if (requiredPaths.some((requiredPath) => isAllowedPlannedCompanionChange(change, requiredPath, plan, sourceText))) {
+      continue;
+    }
+
+    errors.push(`Change for ${change.filePath} is outside the implementation plan scope. Planned files: ${requiredPaths.join(", ")}`);
+  }
+
+  return errors;
+}
+
+export function pruneChangesToPlanScope(changes: GeneratedChange[], plan: ImplementationPlan | undefined, sourceText = ""): GeneratedChange[] {
+  if (!plan) {
+    return changes;
+  }
+
+  return changes.filter((change) => validatePlannedChangeScope([change], plan, sourceText).length === 0);
 }
 
 function extractPythonListFunctionFields(content: string): Map<string, Set<string>> {
@@ -219,6 +392,7 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
 
   const errors: string[] = [];
   errors.push(...generatedTestListFieldErrors(changes));
+  errors.push(...validatePlannedChangeScope(changes, plan, sourceText));
 
   if (planRequiresBehavioralTests(plan, sourceText) && changedTestFiles(changes).length === 0) {
     errors.push("Implementation plan requires behavioral test coverage, but the generated change does not modify any test/spec file");

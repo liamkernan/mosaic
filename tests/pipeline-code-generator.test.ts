@@ -70,6 +70,62 @@ const generated = true;
     expect(generatedChanges[0]?.originalContent).toBe(hugeScript);
   });
 
+  it("compacts oversized source file prompt copies while preserving original diff inputs", async () => {
+    let capturedPrompt = "";
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete: async (systemPrompt: string) => {
+        capturedPrompt = systemPrompt;
+        return `<changes>
+  <edit>
+    <filePath>src/service.ts</filePath>
+    <search><![CDATA[
+export const target = "old";
+]]></search>
+    <replace><![CDATA[
+export const target = "new";
+]]></replace>
+    <explanation>Update the target value.</explanation>
+  </edit>
+</changes>`;
+      }
+    } as unknown as LLMClient;
+    const hugeSource = [
+      "export const first = true;",
+      ...Array.from({ length: 2_000 }, (_, index) => `export const filler${index} = ${index};`),
+      "export const target = \"old\";",
+      ...Array.from({ length: 2_000 }, (_, index) => `export const moreFiller${index} = ${index};`),
+      "export const last = true;"
+    ].join("\n");
+
+    const changes = await new CodeGenerator(fakeClient).generate(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Update target behavior",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Update target behavior",
+        relevantFiles: ["src/service.ts"],
+        confidence: 0.8
+      },
+      [{ path: "src/service.ts", content: hugeSource, reason: "implementation" }],
+      ["src/service.ts"]
+    );
+
+    expect(capturedPrompt).toContain("middle line(s) of src/service.ts omitted from prompt context");
+    expect(capturedPrompt).toContain("export const first = true;");
+    expect(capturedPrompt).toContain("export const target = \"old\";");
+    expect(capturedPrompt).toContain("export const last = true;");
+    expect(capturedPrompt).not.toContain("export const filler1000 = 1000;");
+    expect(changes[0]?.originalContent).toBe(hugeSource);
+    expect(changes[0]?.modifiedContent).toContain('export const target = "new";');
+  });
+
   it("applies exact search replace edits to original files", async () => {
     const fakeClient = {
       setUsageContext: () => {},

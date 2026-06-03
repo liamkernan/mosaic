@@ -15,8 +15,12 @@ function isNonObviousBugReport(classifiedFeedback: ClassifiedFeedback): boolean 
     return false;
   }
 
+  return !isObviousFix(classifiedFeedback);
+}
+
+function isObviousFix(classifiedFeedback: ClassifiedFeedback): boolean {
   const combinedText = `${classifiedFeedback.summary}\n${classifiedFeedback.rawContent}`;
-  return !obviousFixPattern.test(combinedText);
+  return obviousFixPattern.test(combinedText);
 }
 
 export function shouldEscalateClassification(classifiedFeedback: ClassifiedFeedback): boolean {
@@ -48,7 +52,7 @@ export function selectGenerationModelTier(classifiedFeedback: ClassifiedFeedback
     return "sonnet";
   }
 
-  if (classifiedFeedback.category === "ui_tweak" || classifiedFeedback.category === "bug_report") {
+  if (classifiedFeedback.category === "bug_report" && !isObviousFix(classifiedFeedback)) {
     return "sonnet";
   }
 

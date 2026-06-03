@@ -23,6 +23,23 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("export const title = 'Old';");
   });
 
+  it("compacts large generation file trees while keeping relevant paths", () => {
+    const fileTree = [
+      "src/header.ts",
+      ...Array.from({ length: 900 }, (_, index) => `examples/demo-${index}/fixture-${index}.json`),
+      "packages/billing/src/invoice-service.ts"
+    ];
+    const prompt = buildGenerationPrompt(
+      "Fix invoice totals",
+      [{ path: "packages/billing/src/invoice-service.ts", content: "export function total() {}", reason: "billing logic" }],
+      fileTree
+    );
+
+    expect(prompt).toContain("packages/billing/src/invoice-service.ts");
+    expect(prompt).toContain("lower-relevance repository path(s) omitted");
+    expect(prompt).not.toContain("examples/demo-899/fixture-899.json");
+  });
+
   it("instructs generation to include styles for modal UI hooks", () => {
     const prompt = buildGenerationPrompt("Add article modals", [], ["index.html", "styles.css"]);
 
@@ -78,6 +95,31 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("verificationCommands");
     expect(prompt).toContain("dedupe/idempotency/retry bugs");
     expect(prompt).toContain("API/HTTP endpoint requests");
+  });
+
+  it("keeps implementation planning tree broad but bounded for large repos", () => {
+    const fileTree = Array.from({ length: 1_100 }, (_, index) => `packages/area-${index}/src/file-${index}.ts`);
+    const prompt = buildImplementationPlanPrompt(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Fix billing invoice ordering",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "bug_report",
+        complexity: "complex",
+        summary: "Fix billing invoice ordering",
+        relevantFiles: ["packages/area-999/src/file-999.ts"],
+        confidence: 0.7
+      },
+      [{ path: "packages/area-999/src/file-999.ts", content: "export const invoice = true;", reason: "classifier" }],
+      fileTree
+    );
+
+    expect(prompt).toContain("packages/area-999/src/file-999.ts");
+    expect(prompt).toContain("lower-relevance repository path(s) omitted");
   });
 
   it("includes implementation plan checklists in generation prompt", () => {
@@ -169,5 +211,25 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("implementation-only and validation reports missing behavioral coverage");
     expect(prompt).toContain("dedupe/idempotency/retry validation failures");
     expect(prompt).toContain("missing endpoint route validation failures");
+  });
+
+  it("compacts large invalid change bodies in validation repair prompts", () => {
+    const prompt = buildValidationRepairPrompt(
+      "Add compact cards",
+      [{ path: "index.html", content: "<main></main>" }],
+      [
+        {
+          filePath: "index.html",
+          modifiedContent: ["<main>", ...Array.from({ length: 2_000 }, (_, index) => `<article>${index}</article>`), "</main>"].join("\n"),
+          explanation: "add many cards"
+        }
+      ],
+      ["Total new code added exceeds limit: 900 lines"],
+      ["index.html"]
+    );
+
+    expect(prompt).toContain("invalid generated index.html omitted from repair prompt");
+    expect(prompt).toContain("<article>1999</article>");
+    expect(prompt).not.toContain("<article>1000</article>");
   });
 });
