@@ -34,7 +34,12 @@ const VALIDATION_RECOVERY_ATTEMPTS = 3;
 const oversizedPatchPattern = /too large|exceeds limit|total new code added/i;
 
 type RepoContext = Awaited<ReturnType<RepoIndexer["getContext"]>>;
-type PromotionResult = { handled: boolean; artifactType?: "issue" | "pr"; artifactValue?: string };
+type PromotionResult = { handled: boolean; reason?: string; artifactType?: "issue" | "pr"; artifactValue?: string };
+
+export interface FeedbackJobResult {
+  outcome: "succeeded" | "requeued";
+  reason: string;
+}
 
 function shouldUseImplementationPlanning(issueMode: StagedIssueMode | undefined): boolean {
   return issueMode === "moderate-review-needed" || issueMode === "complex-review-needed";
@@ -154,7 +159,7 @@ export class FeedbackPipelineWorker {
     repoContext: RepoContext,
     reason: string,
     stagedIssueNumber?: number
-  ): Promise<{ artifactType: "issue"; artifactValue: string }> {
+  ): Promise<{ artifactType: "issue"; artifactValue: string; reason: string }> {
     if (stagedIssueNumber) {
       await this.postIssueComment(
         classifiedFeedback.repoFullName,
@@ -164,14 +169,16 @@ export class FeedbackPipelineWorker {
       );
       return {
         artifactType: "issue",
-        artifactValue: String(stagedIssueNumber)
+        artifactValue: String(stagedIssueNumber),
+        reason: `Kept staged issue #${stagedIssueNumber} because ${reason}`
       };
     }
 
     const issueNumber = await this.issueCreator.createIssue(classifiedFeedback, repoContext, { reason });
     return {
       artifactType: "issue",
-      artifactValue: String(issueNumber)
+      artifactValue: String(issueNumber),
+      reason: `Created issue #${issueNumber} because ${reason}`
     };
   }
 
@@ -183,7 +190,7 @@ export class FeedbackPipelineWorker {
       stagedIssueNumber?: number;
       issueMode?: StagedIssueMode;
     } = {}
-  ): Promise<{ artifactType: "issue" | "pr"; artifactValue: string }> {
+  ): Promise<{ artifactType: "issue" | "pr"; artifactValue: string; reason: string }> {
     let relevantFiles = await this.repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
     const fileTree = this.repoIndexer.fileTreeToPaths(repoContext);
     const referenceFiles = await this.repoIndexer.findRepositoryReferenceFiles(repoContext, classifiedFeedback, {
@@ -385,7 +392,8 @@ export class FeedbackPipelineWorker {
 
     return {
       artifactType: "pr",
-      artifactValue: prUrl
+      artifactValue: prUrl,
+      reason: `Created pull request ${prUrl}`
     };
   }
 
@@ -413,7 +421,7 @@ export class FeedbackPipelineWorker {
 
     const issueNumber = this.resolveIssueNumber(feedbackItem.metadata);
     if (!issueNumber) {
-      return { handled: true };
+      return { handled: true, reason: "Ignored staged issue promotion because the issue number was missing or invalid" };
     }
 
     const octokit = await getOctokit(repoContext.installationId);
@@ -428,7 +436,12 @@ export class FeedbackPipelineWorker {
     const stagedMetadata = parseStagedIssueMetadata(issue.body ?? "");
 
     if (!labels.includes(STAGED_ISSUE_LABEL) || !stagedMetadata) {
-      return { handled: true, artifactType: "issue", artifactValue: String(issueNumber) };
+      return {
+        handled: true,
+        reason: `Ignored promotion because issue #${issueNumber} is not a valid staged issue`,
+        artifactType: "issue",
+        artifactValue: String(issueNumber)
+      };
     }
 
     if (labels.includes(STAGED_ISSUE_PROMOTED_LABEL)) {
@@ -438,7 +451,12 @@ export class FeedbackPipelineWorker {
         issueNumber,
         "Mosaic already opened a PR for this issue."
       );
-      return { handled: true, artifactType: "issue", artifactValue: String(issueNumber) };
+      return {
+        handled: true,
+        reason: `Issue #${issueNumber} was already promoted`,
+        artifactType: "issue",
+        artifactValue: String(issueNumber)
+      };
     }
 
     const sender = feedbackItem.senderIdentifier.trim();
@@ -453,7 +471,12 @@ export class FeedbackPipelineWorker {
         issueNumber,
         "Mosaic ignored this promotion request because it must come from the issue author or a repo collaborator with triage access or higher."
       );
-      return { handled: true, artifactType: "issue", artifactValue: String(issueNumber) };
+      return {
+        handled: true,
+        reason: `Ignored unauthorized promotion request for issue #${issueNumber}`,
+        artifactType: "issue",
+        artifactValue: String(issueNumber)
+      };
     }
 
     const stagedFeedback: ClassifiedFeedback = {
@@ -482,12 +505,13 @@ export class FeedbackPipelineWorker {
 
     return {
       handled: true,
+      reason: result.reason,
       artifactType: result.artifactType,
       artifactValue: result.artifactValue
     };
   }
 
-  async process(feedbackItem: FeedbackItem): Promise<void> {
+  async process(feedbackItem: FeedbackItem): Promise<FeedbackJobResult> {
     feedbackItem = this.normalizeFeedbackItem(feedbackItem);
 
     const existingArtifact = await this.artifactStore.get(feedbackItem.id);
@@ -496,7 +520,10 @@ export class FeedbackPipelineWorker {
         { feedbackId: feedbackItem.id, artifactType: existingArtifact.artifactType, artifactValue: existingArtifact.artifactValue },
         "Feedback already produced an artifact, skipping duplicate processing"
       );
-      return;
+      return {
+        outcome: "succeeded",
+        reason: `Skipped duplicate feedback; existing ${existingArtifact.artifactType} artifact is ${existingArtifact.artifactValue}`
+      };
     }
 
     const repoContext = await this.repoIndexer.getContext(feedbackItem.repoFullName);
@@ -512,7 +539,10 @@ export class FeedbackPipelineWorker {
           createdAt: new Date().toISOString()
         });
       }
-      return;
+      return {
+        outcome: "succeeded",
+        reason: stagedIssuePromotion.reason ?? "Handled staged issue promotion request"
+      };
     }
 
     const haikuClient = this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.haiku);
@@ -534,7 +564,10 @@ export class FeedbackPipelineWorker {
         artifactValue: decision.reason,
         createdAt: new Date().toISOString()
       });
-      return;
+      return {
+        outcome: "succeeded",
+        reason: `Quarantined feedback because ${decision.reason}`
+      };
     }
 
     if (decision.disposition === "issue") {
@@ -549,7 +582,10 @@ export class FeedbackPipelineWorker {
         artifactValue: String(issueNumber),
         createdAt: new Date().toISOString()
       });
-      return;
+      return {
+        outcome: "succeeded",
+        reason: `Created issue #${issueNumber} because ${decision.reason}`
+      };
     }
 
     const result = await this.automatePullRequest(classifiedFeedback, repoContext, repoConfig);
@@ -560,14 +596,18 @@ export class FeedbackPipelineWorker {
       artifactValue: result.artifactValue,
       createdAt: new Date().toISOString()
     });
+    return {
+      outcome: "succeeded",
+      reason: result.reason
+    };
   }
 
-  createWorker(): Worker<FeedbackItem> {
-    return new Worker<FeedbackItem>(
+  createWorker(): Worker<FeedbackItem, FeedbackJobResult> {
+    return new Worker<FeedbackItem, FeedbackJobResult>(
       FEEDBACK_QUEUE_NAME,
       async (job) => {
         try {
-          await this.process(job.data);
+          return await this.process(job.data);
         } catch (error) {
           if (error instanceof RateLimitError) {
             await this.retryQueue.add("feedback-item", job.data, {
@@ -579,7 +619,10 @@ export class FeedbackPipelineWorker {
               }
             });
             logger.warn({ repo: job.data.repoFullName }, "Rate limit hit, re-queued feedback job");
-            return;
+            return {
+              outcome: "requeued",
+              reason: "Rate limit hit; feedback job was queued for another attempt"
+            };
           }
 
           if (isRetryableLlmOverload(error) && canRetryLlmOverload(job.data)) {
@@ -594,7 +637,10 @@ export class FeedbackPipelineWorker {
               { repo: job.data.repoFullName, feedbackId: job.data.id, retryCount: retriedJob.metadata.__llmRetryCount, delay },
               "Transient LLM overload, re-queued feedback job"
             );
-            return;
+            return {
+              outcome: "requeued",
+              reason: `Transient LLM overload; feedback job was queued to retry in ${delay}ms`
+            };
           }
 
           throw error;

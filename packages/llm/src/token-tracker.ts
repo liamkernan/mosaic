@@ -22,6 +22,20 @@ function usageKey(repoFullName: string, timestamp: number): string {
   return `tokens:${repoFullName}:${month}`;
 }
 
+function usageKeysBetween(repoFullName: string, startedAt: number, finishedAt: number): string[] {
+  const keys: string[] = [];
+  const cursor = new Date(startedAt);
+  cursor.setUTCDate(1);
+  cursor.setUTCHours(0, 0, 0, 0);
+
+  while (cursor.getTime() <= finishedAt) {
+    keys.push(usageKey(repoFullName, cursor.getTime()));
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+
+  return keys;
+}
+
 export async function trackUsage(event: TokenUsageEvent): Promise<void> {
   const member = JSON.stringify(event);
   await getRedis().zadd(usageKey(event.repoFullName, event.timestamp), event.timestamp, member);
@@ -40,6 +54,32 @@ export async function getUsage(
       const parsed = JSON.parse(record) as TokenUsageEvent;
       accumulator.inputTokens += parsed.inputTokens;
       accumulator.outputTokens += parsed.outputTokens;
+      return accumulator;
+    },
+    { inputTokens: 0, outputTokens: 0 }
+  );
+}
+
+export async function getFeedbackUsage(
+  repoFullName: string,
+  feedbackId: string,
+  startedAt: number,
+  finishedAt: number
+): Promise<{ inputTokens: number; outputTokens: number }> {
+  const records = (
+    await Promise.all(
+      usageKeysBetween(repoFullName, startedAt, finishedAt)
+        .map((key) => getRedis().zrangebyscore(key, startedAt, finishedAt))
+    )
+  ).flat();
+
+  return records.reduce(
+    (accumulator: { inputTokens: number; outputTokens: number }, record: string) => {
+      const parsed = JSON.parse(record) as TokenUsageEvent;
+      if (parsed.feedbackId === feedbackId) {
+        accumulator.inputTokens += parsed.inputTokens;
+        accumulator.outputTokens += parsed.outputTokens;
+      }
       return accumulator;
     },
     { inputTokens: 0, outputTokens: 0 }

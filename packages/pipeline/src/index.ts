@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { logger } from "@mosaic/core";
 
 import { FeedbackPipelineWorker } from "./worker.js";
+import { logCompletedWorkerStatus, logFailedWorkerStatus } from "./worker-status.js";
 
 export * from "./classifier.js";
 export * from "./code-generator.js";
@@ -21,6 +22,7 @@ export * from "./transient-llm.js";
 export * from "./validator.js";
 export * from "./verification-runner.js";
 export * from "./worker.js";
+export * from "./worker-status.js";
 export * from "./prompts/classify.prompt.js";
 export * from "./prompts/generate.prompt.js";
 export * from "./prompts/implementation-plan.prompt.js";
@@ -29,8 +31,11 @@ export * from "./prompts/summarize.prompt.js";
 
 async function startWorker(): Promise<void> {
   const worker = new FeedbackPipelineWorker().createWorker();
+  worker.on("completed", (job, result) => {
+    void logCompletedWorkerStatus(job, result);
+  });
   worker.on("failed", (job, error) => {
-    logger.error({ jobId: job?.id, err: error }, "Feedback job failed");
+    void logFailedWorkerStatus(job, error);
   });
   logger.info("Feedback pipeline worker started");
 }
