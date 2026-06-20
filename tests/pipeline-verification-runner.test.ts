@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -360,6 +360,42 @@ describe("runVerificationCommands", () => {
 
     expect(result.valid).toBe(true);
     expect(result.commands).toEqual(['python3 -m unittest "tests.reported.test_example"']);
+  });
+
+  it("rejects generated change paths that escape the verification repo", async () => {
+    const localPath = await createPythonRepo();
+    const escapePath = join(tmpdir(), `mosaic-verification-escape-${Date.now()}.txt`);
+    await rm(escapePath, { force: true });
+
+    const result = await runVerificationCommands(
+      [
+        {
+          filePath: `../../${basename(escapePath)}`,
+          originalContent: "",
+          modifiedContent: "escaped",
+          explanation: "unsafe path"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      {
+        requiredFiles: [],
+        acceptanceCriteria: [],
+        implementationChecklist: [],
+        verificationChecklist: [],
+        verificationCommands: ["python3 -m unittest tests.reported.test_example"]
+      },
+      fallbackOptions
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("Unsafe generated change path rejected");
+    await expect(access(escapePath)).rejects.toThrow();
   });
 
   it("runs frontend smoke verification for static site changes without test commands", async () => {

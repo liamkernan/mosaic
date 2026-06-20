@@ -5,6 +5,8 @@ import { getEnv, logger, type ClassifiedFeedback, type FileNode, type RelevantFi
 import { getInstallationToken, getOctokit, resolveInstallationId } from "@mosaic/github-app";
 import { simpleGit } from "simple-git";
 
+import { resolveExistingRepoPath } from "./repo-paths.js";
+
 const ignoredNames = new Set(["node_modules", ".git", "dist", "build", "__pycache__", ".next", "vendor"]);
 const referenceFilePattern = /\.(?:md|mdx|rst|txt|ya?ml|json|py|[cm]?[jt]sx?|html|css)$/i;
 const repoReferenceNames = new Set([
@@ -215,6 +217,35 @@ function referenceReason(path: string, issueNumber?: number): string {
   return "Repository reference matched the feedback terms";
 }
 
+async function readContainedRepoFile(
+  context: RepoContext,
+  filePath: string,
+  missingMessage: string
+): Promise<{ path: string; content: string; sizeBytes: number } | null> {
+  try {
+    const resolvedPath = await resolveExistingRepoPath(context.localPath, filePath);
+    if (!resolvedPath) {
+      logger.warn({ repo: context.fullName, filePath }, "Rejected repository file path outside the repo root");
+      return null;
+    }
+
+    const fileStat = await stat(resolvedPath.absolutePath);
+    let content = await readFile(resolvedPath.absolutePath, "utf8");
+    if (fileStat.size > 100 * 1024) {
+      content = truncateLargeFile(content);
+    }
+
+    return {
+      path: resolvedPath.repoPath,
+      content,
+      sizeBytes: fileStat.size
+    };
+  } catch {
+    logger.warn({ repo: context.fullName, filePath }, missingMessage);
+    return null;
+  }
+}
+
 export class RepoIndexer {
   async getContext(repoFullName: string): Promise<RepoContext> {
     const installationId = await resolveInstallationId(repoFullName);
@@ -248,22 +279,18 @@ export class RepoIndexer {
     const files: RelevantFile[] = [];
 
     for (const [index, filePath] of classified.relevantFiles.entries()) {
-      const absolutePath = join(context.localPath, filePath);
+      const loadedFile = await readContainedRepoFile(
+        context,
+        filePath,
+        "Classifier suggested a file that does not exist"
+      );
 
-      try {
-        const fileStat = await stat(absolutePath);
-        let content = await readFile(absolutePath, "utf8");
-        if (fileStat.size > 100 * 1024) {
-          content = truncateLargeFile(content);
-        }
-
+      if (loadedFile) {
         files.push({
-          path: filePath,
-          content,
+          path: loadedFile.path,
+          content: loadedFile.content,
           reason: `Classifier ranked this file as #${index + 1} relevant`
         });
-      } catch {
-        logger.warn({ repo: context.fullName, filePath }, "Classifier suggested a file that does not exist");
       }
     }
 
@@ -280,22 +307,18 @@ export class RepoIndexer {
     const files: RelevantFile[] = [];
 
     for (const requestedFile of requestedFiles) {
-      const absolutePath = join(context.localPath, requestedFile.path);
+      const loadedFile = await readContainedRepoFile(
+        context,
+        requestedFile.path,
+        "Implementation plan requested a file that does not exist"
+      );
 
-      try {
-        const fileStat = await stat(absolutePath);
-        let content = await readFile(absolutePath, "utf8");
-        if (fileStat.size > 100 * 1024) {
-          content = truncateLargeFile(content);
-        }
-
+      if (loadedFile) {
         files.push({
-          path: requestedFile.path,
-          content,
+          path: loadedFile.path,
+          content: loadedFile.content,
           reason: requestedFile.reason
         });
-      } catch {
-        logger.warn({ repo: context.fullName, filePath: requestedFile.path }, "Implementation plan requested a file that does not exist");
       }
     }
 
@@ -328,16 +351,14 @@ export class RepoIndexer {
         break;
       }
 
-      const absolutePath = join(context.localPath, candidate.path);
+      const loadedFile = await readContainedRepoFile(
+        context,
+        candidate.path,
+        "Repository reference file could not be read"
+      );
 
-      try {
-        const fileStat = await stat(absolutePath);
-        let content = await readFile(absolutePath, "utf8");
-        if (fileStat.size > 100 * 1024) {
-          content = truncateLargeFile(content);
-        }
-
-        const contentMatches = terms.filter((term) => content.toLowerCase().includes(term)).length;
+      if (loadedFile) {
+        const contentMatches = terms.filter((term) => loadedFile.content.toLowerCase().includes(term)).length;
         const exactIssueMatch = options.issueNumber
           ? issueNumberPattern(options.issueNumber).test(basename(candidate.path.toLowerCase()))
           : false;
@@ -345,14 +366,12 @@ export class RepoIndexer {
           continue;
         }
 
-        totalBytes += Buffer.byteLength(content);
+        totalBytes += Buffer.byteLength(loadedFile.content);
         references.push({
-          path: candidate.path,
-          content,
+          path: loadedFile.path,
+          content: loadedFile.content,
           reason: referenceReason(candidate.path, options.issueNumber)
         });
-      } catch {
-        logger.warn({ repo: context.fullName, filePath: candidate.path }, "Repository reference file could not be read");
       }
     }
 

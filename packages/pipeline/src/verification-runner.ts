@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { getEnv, logger, type GeneratedChange, type RepoContext } from "@mosaic/core";
 
 import type { ImplementationPlan } from "./implementation-planner.js";
+import { resolveRepoWritePath } from "./repo-paths.js";
 
 const ignoredCopyNames = new Set([
   ".env",
@@ -170,12 +171,22 @@ function unsupportedPlannedVerificationCommands(implementationPlan?: Implementat
     .filter((command) => command.length > 0 && !isAllowedVerificationCommand(command));
 }
 
-async function writeChanges(repoPath: string, changes: GeneratedChange[]): Promise<void> {
+async function writeChanges(repoPath: string, changes: GeneratedChange[]): Promise<string[]> {
+  const errors: string[] = [];
+
   for (const change of changes) {
-    const absolutePath = join(repoPath, change.filePath);
+    const resolvedPath = await resolveRepoWritePath(repoPath, change.filePath);
+    if (!resolvedPath) {
+      errors.push(`Unsafe generated change path rejected: ${change.filePath}`);
+      continue;
+    }
+
+    const absolutePath = resolvedPath.absolutePath;
     await mkdir(dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, change.modifiedContent, "utf8");
   }
+
+  return errors;
 }
 
 function shouldCopyPath(sourcePath: string, rootPath: string): boolean {
@@ -566,7 +577,15 @@ export async function runVerificationCommands(
       recursive: true,
       filter: (sourcePath) => shouldCopyPath(sourcePath, repoContext.localPath)
     });
-    await writeChanges(tempRepo, changes);
+    const writeErrors = await writeChanges(tempRepo, changes);
+    errors.push(...writeErrors);
+    if (writeErrors.length > 0) {
+      return {
+        valid: false,
+        commands,
+        errors
+      };
+    }
 
     errors.push(...await runFrontendSmoke(tempRepo, changes, executor, smokeExecutable, smokePackageJson, smokeRepoPath));
 

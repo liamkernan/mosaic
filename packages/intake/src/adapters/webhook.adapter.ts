@@ -8,6 +8,7 @@ import {
   findFormEmbedConfig,
   renderEmbedScript
 } from "../form-embeds.js";
+import { assertTrustedIntakeRequest } from "../intake-auth.js";
 import { normalize } from "../normalizer.js";
 import { enqueueFeedback } from "../queue.js";
 
@@ -30,6 +31,8 @@ export async function handleFormWebhook(
   request: FastifyRequest<{ Body: FormWebhookBody }>,
   reply: FastifyReply
 ): Promise<void> {
+  assertTrustedIntakeRequest(request);
+
   const feedback = normalize(
     {
       message: request.body.message,

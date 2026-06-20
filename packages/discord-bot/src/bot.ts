@@ -40,10 +40,12 @@ function buildFeedbackMessage(message: Message, botUserId: string): string {
 }
 
 async function forwardToIntake(body: DiscordIntakeBody): Promise<string> {
+  const env = getEnv();
   const response = await fetch(buildIntakeUrl(), {
     method: "POST",
     headers: {
-      "content-type": "application/json"
+      "content-type": "application/json",
+      "x-mosaic-intake-secret": env.MOSAIC_INTAKE_SHARED_SECRET!
     },
     body: JSON.stringify(body)
   });
@@ -58,7 +60,7 @@ async function forwardToIntake(body: DiscordIntakeBody): Promise<string> {
 }
 
 export async function startDiscordBot(): Promise<Client> {
-  assertRequiredEnv("DISCORD_BOT_TOKEN");
+  assertRequiredEnv("DISCORD_BOT_TOKEN", "MOSAIC_INTAKE_SHARED_SECRET");
 
   const env = getEnv();
   const mappings = parseDiscordRepoMappings(env.DISCORD_REPO_MAPPINGS);

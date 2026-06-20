@@ -444,6 +444,15 @@ export class FeedbackPipelineWorker {
       };
     }
 
+    if (stagedMetadata.repoFullName !== feedbackItem.repoFullName) {
+      return {
+        handled: true,
+        reason: `Ignored promotion because staged issue #${issueNumber} metadata does not match ${feedbackItem.repoFullName}`,
+        artifactType: "issue",
+        artifactValue: String(issueNumber)
+      };
+    }
+
     if (labels.includes(STAGED_ISSUE_PROMOTED_LABEL)) {
       await this.postIssueComment(
         feedbackItem.repoFullName,
@@ -484,7 +493,7 @@ export class FeedbackPipelineWorker {
       source: stagedMetadata.source,
       rawContent: `${stagedMetadata.rawContent}\n\nLinked GitHub issue #${issueNumber}:\n${stripMosaicMetadataComments(issue.body ?? "")}`,
       senderIdentifier: stagedMetadata.senderIdentifier,
-      repoFullName: stagedMetadata.repoFullName,
+      repoFullName: feedbackItem.repoFullName,
       receivedAt: new Date(stagedMetadata.receivedAt),
       metadata: {
         ...feedbackItem.metadata,

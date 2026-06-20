@@ -41,10 +41,12 @@ function buildFeedbackMessage(event: SlackAppMentionEvent, botUserId: string): s
 }
 
 async function forwardToIntake(body: SlackIntakeBody): Promise<string> {
+  const env = getEnv();
   const response = await fetch(buildIntakeUrl(), {
     method: "POST",
     headers: {
-      "content-type": "application/json"
+      "content-type": "application/json",
+      "x-mosaic-intake-secret": env.MOSAIC_INTAKE_SHARED_SECRET!
     },
     body: JSON.stringify(body)
   });
@@ -59,7 +61,7 @@ async function forwardToIntake(body: SlackIntakeBody): Promise<string> {
 }
 
 export async function startSlackBot(): Promise<App> {
-  assertRequiredEnv("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN");
+  assertRequiredEnv("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "MOSAIC_INTAKE_SHARED_SECRET");
 
   const env = getEnv();
   const app = new App({

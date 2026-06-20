@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -79,5 +79,50 @@ describe("RepoIndexer repository references", () => {
     expect(references.map((file) => file.path)).toContain("issues/001-sla-queue-ordering.md");
     expect(references.map((file) => file.path)).toContain("tests/reported/test_001_sla_sort.py");
     expect(references.find((file) => file.path === "issues/001-sla-queue-ordering.md")?.reason).toContain("issue #1");
+  });
+
+  it("does not read classifier or requested files outside the repository root", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
+    const outsidePath = await mkdtemp(join(tmpdir(), "mosaic-repo-outside-"));
+    tempDirs.push(localPath, outsidePath);
+    await mkdir(join(localPath, "src"));
+    await writeFile(join(localPath, "src", "service.ts"), "export const safe = true;\n", "utf8");
+    await writeFile(join(outsidePath, "secret.txt"), "host secret\n", "utf8");
+    await symlink(join(outsidePath, "secret.txt"), join(localPath, "src", "secret-link.txt"));
+
+    const context = {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath,
+      installationId: 1,
+      fileTree: [{ path: "src/service.ts", type: "file" as const }]
+    };
+    const indexer = new RepoIndexer();
+
+    const relevantFiles = await indexer.findRelevantFiles(context, {
+      id: "01TEST",
+      source: "web_form",
+      rawContent: "Please inspect the files",
+      senderIdentifier: "user@example.com",
+      repoFullName: "owner/repo",
+      receivedAt: new Date(),
+      metadata: {},
+      category: "bug_report",
+      complexity: "simple",
+      summary: "Inspect files",
+      relevantFiles: ["src/service.ts", "../secret.txt", "src/secret-link.txt"],
+      confidence: 0.9
+    });
+
+    expect(relevantFiles.map((file) => file.path)).toEqual(["src/service.ts"]);
+    expect(relevantFiles[0]?.content).toContain("safe = true");
+
+    const requestedFiles = await indexer.readFiles(context, [
+      { path: "src/service.ts", reason: "safe" },
+      { path: "../secret.txt", reason: "traversal" },
+      { path: "src/secret-link.txt", reason: "symlink" }
+    ]);
+
+    expect(requestedFiles.map((file) => file.path)).toEqual(["src/service.ts"]);
   });
 });

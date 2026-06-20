@@ -1,7 +1,9 @@
 import { Redis } from "ioredis";
 
-import { getEnv, logger, RateLimitError, type PRPayload, type RepoContext, type RepoConfig } from "@mosaic/core";
+import { getEnv, logger, RateLimitError, ValidationError, type PRPayload, type RepoContext, type RepoConfig } from "@mosaic/core";
 import { getOctokit } from "@mosaic/github-app";
+
+import { validateRepoRelativePath } from "./repo-paths.js";
 
 interface PRCreationOptions {
   draft?: boolean;
@@ -35,6 +37,23 @@ function truncateAtWordBoundary(value: string, maxLength: number): string {
 
 function buildPrTitle(summary: string): string {
   return truncateAtWordBoundary(`[Mosaic] ${summary}`, 120);
+}
+
+function withValidatedChangePaths(payload: PRPayload): PRPayload {
+  return {
+    ...payload,
+    changes: payload.changes.map((change) => {
+      const filePath = validateRepoRelativePath(change.filePath);
+      if (!filePath) {
+        throw new ValidationError(`Unsafe generated change path rejected: ${change.filePath}`);
+      }
+
+      return {
+        ...change,
+        filePath
+      };
+    })
+  };
 }
 
 export function createPrBody(payload: PRPayload, options: PRCreationOptions): string {
@@ -99,13 +118,14 @@ export class PRCreator {
 
   async createPR(payload: PRPayload, repoContext: RepoContext, repoConfig: RepoConfig, options: PRCreationOptions = {}): Promise<string> {
     await enforcePrRateLimit(payload.repoFullName);
+    const safePayload = withValidatedChangePaths(payload);
 
     const octokit = await getOctokit(repoContext.installationId);
-    const [owner, repo] = payload.repoFullName.split("/");
+    const [owner, repo] = safePayload.repoFullName.split("/");
     const branchName = buildBranchName(
-      payload.feedbackItem.category,
-      payload.feedbackItem.summary,
-      payload.feedbackItem.id,
+      safePayload.feedbackItem.category,
+      safePayload.feedbackItem.summary,
+      safePayload.feedbackItem.id,
       repoConfig.branchPrefix
     );
 
@@ -121,7 +141,7 @@ export class PRCreator {
     });
 
     const blobs = await Promise.all(
-      payload.changes.map((change) =>
+      safePayload.changes.map((change) =>
         octokit.rest.git.createBlob({
           owner,
           repo,
@@ -135,7 +155,7 @@ export class PRCreator {
       owner,
       repo,
       base_tree: baseCommit.data.tree.sha,
-      tree: payload.changes.map((change, index) => ({
+      tree: safePayload.changes.map((change, index) => ({
         path: change.filePath,
         mode: "100644",
         type: "blob",
@@ -146,7 +166,7 @@ export class PRCreator {
     const commit = await octokit.rest.git.createCommit({
       owner,
       repo,
-      message: buildPrTitle(payload.feedbackItem.summary),
+      message: buildPrTitle(safePayload.feedbackItem.summary),
       tree: tree.data.sha,
       parents: [refResponse.data.object.sha]
     });
@@ -171,7 +191,7 @@ export class PRCreator {
       if (status === 422 && /Reference already exists/i.test(message)) {
         const existingPrUrl = await this.findExistingPrForBranch(owner, repo, branchName, repoContext.installationId);
         if (existingPrUrl) {
-          logger.info({ repo: payload.repoFullName, branchName, prUrl: existingPrUrl }, "Reused existing PR for duplicate branch");
+          logger.info({ repo: safePayload.repoFullName, branchName, prUrl: existingPrUrl }, "Reused existing PR for duplicate branch");
           return existingPrUrl;
         }
       }
@@ -182,12 +202,12 @@ export class PRCreator {
     const pr = await octokit.rest.pulls.create({
       owner,
       repo,
-      title: buildPrTitle(payload.feedbackItem.summary),
+      title: buildPrTitle(safePayload.feedbackItem.summary),
       body: createPrBody(
         {
-          ...payload,
+          ...safePayload,
           branchName,
-          title: buildPrTitle(payload.feedbackItem.summary)
+          title: buildPrTitle(safePayload.feedbackItem.summary)
         },
         options
       ),
@@ -205,7 +225,7 @@ export class PRCreator {
           reviewers: repoConfig.reviewers
         });
       } catch (error) {
-        logger.warn({ err: error, repo: payload.repoFullName, pullNumber: pr.data.number }, "Failed to request reviewers");
+        logger.warn({ err: error, repo: safePayload.repoFullName, pullNumber: pr.data.number }, "Failed to request reviewers");
       }
     }
 
@@ -214,10 +234,10 @@ export class PRCreator {
         owner,
         repo,
         issue_number: pr.data.number,
-        labels: ["mosaic", "automated", payload.feedbackItem.category]
+        labels: ["mosaic", "automated", safePayload.feedbackItem.category]
       });
     } catch (error) {
-      logger.warn({ err: error, repo: payload.repoFullName, pullNumber: pr.data.number }, "Failed to add PR labels");
+      logger.warn({ err: error, repo: safePayload.repoFullName, pullNumber: pr.data.number }, "Failed to add PR labels");
     }
 
     return pr.data.html_url;

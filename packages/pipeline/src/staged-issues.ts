@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { getEnv, type ClassifiedFeedback } from "@mosaic/core";
+import { ConfigError, getEnv, type ClassifiedFeedback } from "@mosaic/core";
 
 export const STAGED_ISSUE_LABEL = "mosaic:staged";
 export const STAGED_ISSUE_PROMOTED_LABEL = "mosaic:pr-opened";
@@ -9,6 +10,7 @@ export const MODERATE_REVIEW_NEEDED_LABEL = "mosaic:moderate-review-needed";
 export const COMPLEX_REVIEW_NEEDED_LABEL = "mosaic:complex-review-needed";
 
 const STAGED_ISSUE_METADATA_PREFIX = "mosaic:staged-issue";
+const stagedIssueMetadataPattern = /<!--\s*mosaic:staged-issue\s+v1\s+([A-Za-z0-9_-]+)\s+([a-f0-9]{64})\s*-->/g;
 const safeModeratePattern =
   /\b(typo|copy|text|label|headline|button text|cta|link|spacing|padding|margin|alignment|css|color|placeholder|helper text|empty state)\b/i;
 
@@ -66,28 +68,81 @@ export function buildStagedIssueMetadata(classifiedFeedback: ClassifiedFeedback,
   };
 }
 
-export function buildStagedIssueMetadataComment(metadata: StagedIssueMetadata): string {
-  const encoded = Buffer.from(JSON.stringify(metadata), "utf8").toString("base64");
-  return `<!-- ${STAGED_ISSUE_METADATA_PREFIX} ${encoded} -->`;
+function resolveStagedIssueSecret(): string {
+  const env = getEnv();
+  const secret = env.MOSAIC_STAGED_ISSUE_SECRET ?? env.MOSAIC_INTAKE_SHARED_SECRET ?? env.GITHUB_WEBHOOK_SECRET;
+  if (!secret) {
+    throw new ConfigError("MOSAIC_STAGED_ISSUE_SECRET, MOSAIC_INTAKE_SHARED_SECRET, or GITHUB_WEBHOOK_SECRET is required for staged issue metadata");
+  }
+
+  return secret;
 }
 
-export function parseStagedIssueMetadata(body: string): StagedIssueMetadata | null {
-  const match = body.match(new RegExp(`<!--\\s*${STAGED_ISSUE_METADATA_PREFIX}\\s+([^\\s]+)\\s*-->`));
-  if (!match) {
+function signEncodedMetadata(encoded: string, secret: string): string {
+  return createHmac("sha256", secret).update(encoded).digest("hex");
+}
+
+function constantTimeEquals(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function isStagedIssueMetadata(value: unknown): value is StagedIssueMetadata {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const metadata = value as Partial<StagedIssueMetadata>;
+  return metadata.version === 1 &&
+    typeof metadata.feedbackId === "string" &&
+    typeof metadata.repoFullName === "string" &&
+    typeof metadata.source === "string" &&
+    typeof metadata.senderIdentifier === "string" &&
+    typeof metadata.receivedAt === "string" &&
+    typeof metadata.category === "string" &&
+    ["moderate", "complex"].includes(metadata.complexity ?? "") &&
+    typeof metadata.summary === "string" &&
+    Array.isArray(metadata.relevantFiles) &&
+    metadata.relevantFiles.every((filePath) => typeof filePath === "string") &&
+    typeof metadata.confidence === "number" &&
+    typeof metadata.rawContent === "string" &&
+    ["moderate-safe", "moderate-review-needed", "complex-review-needed"].includes(metadata.issueMode ?? "");
+}
+
+export function buildStagedIssueMetadataComment(metadata: StagedIssueMetadata, secret = resolveStagedIssueSecret()): string {
+  const encoded = Buffer.from(JSON.stringify(metadata), "utf8").toString("base64url");
+  const signature = signEncodedMetadata(encoded, secret);
+  return `<!-- ${STAGED_ISSUE_METADATA_PREFIX} v1 ${encoded} ${signature} -->`;
+}
+
+export function parseStagedIssueMetadata(body: string, secret?: string): StagedIssueMetadata | null {
+  const matches = [...body.matchAll(stagedIssueMetadataPattern)];
+  if (matches.length === 0) {
     return null;
   }
 
-  try {
-    const decoded = Buffer.from(match[1], "base64").toString("utf8");
-    const parsed = JSON.parse(decoded) as StagedIssueMetadata;
-    if (parsed.version !== 1 || !["moderate", "complex"].includes(parsed.complexity)) {
-      return null;
+  const signingSecret = secret ?? resolveStagedIssueSecret();
+  let parsedMetadata: StagedIssueMetadata | null = null;
+  for (const match of matches) {
+    const [, encoded, signature] = match;
+    const expectedSignature = signEncodedMetadata(encoded, signingSecret);
+    if (!constantTimeEquals(signature, expectedSignature)) {
+      continue;
     }
 
-    return parsed;
-  } catch {
-    return null;
+    try {
+      const decoded = Buffer.from(encoded, "base64url").toString("utf8");
+      const parsed = JSON.parse(decoded) as unknown;
+      if (isStagedIssueMetadata(parsed)) {
+        parsedMetadata = parsed;
+      }
+    } catch {
+      continue;
+    }
   }
+
+  return parsedMetadata;
 }
 
 function getTriggerPhrases(): string[] {

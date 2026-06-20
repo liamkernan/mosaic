@@ -184,6 +184,8 @@ GitHub intake is handled by the Mosaic GitHub App. It forwards opened issues and
 - The body contains the configured trigger phrase, defaulting to `@mosaic`.
 - The repository has Mosaic config that allows `github_issue` or `github_comment` intake.
 
+Set `MOSAIC_INTAKE_SHARED_SECRET` on both the GitHub App process and the intake process so the internal forward to `POST /webhook/github` is accepted.
+
 GitHub comments are also how staged issues are promoted. Comment one of these phrases on a Mosaic-staged issue:
 
 ```text
@@ -204,6 +206,7 @@ For local development with one repo, set:
 DISCORD_BOT_TOKEN=your-bot-token
 DISCORD_DEFAULT_REPO=owner/project-a
 DISCORD_INTAKE_URL=http://127.0.0.1:3000/webhook/discord
+MOSAIC_INTAKE_SHARED_SECRET=local-random-secret
 ```
 
 Create a Discord application, add a bot, invite it to your server with `bot` scope and these permissions:
@@ -253,6 +256,7 @@ SLACK_APP_TOKEN=xapp-your-app-level-token
 SLACK_BOT_TOKEN=xoxb-your-bot-token
 SLACK_DEFAULT_REPO=owner/project-a
 SLACK_INTAKE_URL=http://127.0.0.1:3000/webhook/slack
+MOSAIC_INTAKE_SHARED_SECRET=local-random-secret
 ```
 
 Create a Slack app from a manifest with a bot user, Socket Mode enabled, an app-level token with `connections:write`, and these bot scopes:
@@ -289,6 +293,10 @@ For production, configure channel/workspace routing with `SLACK_REPO_MAPPINGS` a
 ```
 
 Channel-specific mappings win over team-level mappings. `SLACK_DEFAULT_REPO` is useful locally, but production installs should use explicit mappings created during onboarding.
+
+### Trusted Intake Webhooks
+
+`POST /webhook/github`, `POST /webhook/slack`, `POST /webhook/discord`, and `POST /webhook/form` are trusted server-to-server intake routes. Set `MOSAIC_INTAKE_SHARED_SECRET` on the intake service and any internal forwarder, then send it with `x-mosaic-intake-secret` or `Authorization: Bearer <secret>`.
 
 ## Safety
 

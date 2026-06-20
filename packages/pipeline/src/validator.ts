@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { defaultSecurityConfig, type FileNode, type GeneratedChange, type RepoContext } from "@mosaic/core";
 import ts from "typescript";
 
+import { validateRepoRelativePath } from "./repo-paths.js";
+
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
@@ -630,7 +632,13 @@ export async function validate(
   const blockedPatterns = limits.blockPatterns ?? defaultSecurityConfig.block_patterns;
 
   for (const change of changes) {
-    const absolutePath = join(repoContext.localPath, change.filePath);
+    const safePath = validateRepoRelativePath(change.filePath);
+    if (!safePath) {
+      errors.push(`Unsafe generated change path rejected: ${change.filePath}`);
+      continue;
+    }
+
+    const absolutePath = join(repoContext.localPath, safePath);
     const fileExists = await access(absolutePath).then(
       () => true,
       () => false

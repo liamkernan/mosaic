@@ -1,4 +1,4 @@
-import { getEnv, logger } from "@mosaic/core";
+import { assertRequiredEnv, getEnv, logger } from "@mosaic/core";
 import type { Context, Probot } from "probot";
 
 const GITHUB_FORWARD_URL = `http://127.0.0.1:${getEnv().PORT}/webhook/github`;
@@ -32,10 +32,13 @@ async function repoAllowsGithubIntake(context: Context<"issues.opened" | "issue_
 }
 
 async function forwardWebhookPayload(payload: unknown): Promise<void> {
+  assertRequiredEnv("MOSAIC_INTAKE_SHARED_SECRET");
+  const env = getEnv();
   const response = await fetch(GITHUB_FORWARD_URL, {
     method: "POST",
     headers: {
-      "content-type": "application/json"
+      "content-type": "application/json",
+      "x-mosaic-intake-secret": env.MOSAIC_INTAKE_SHARED_SECRET!
     },
     body: JSON.stringify(payload)
   });

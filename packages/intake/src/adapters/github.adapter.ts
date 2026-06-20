@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ValidationError, type FeedbackSource } from "@mosaic/core";
 
+import { assertTrustedIntakeRequest } from "../intake-auth.js";
 import { normalize } from "../normalizer.js";
 import { enqueueFeedback } from "../queue.js";
 
@@ -89,6 +90,8 @@ export async function handleGithubWebhook(
   request: FastifyRequest<{ Body: GithubWebhookBody }>,
   reply: FastifyReply
 ): Promise<void> {
+  assertTrustedIntakeRequest(request);
+
   if (isMosaicAuthoredPayload(request.body)) {
     reply.code(202).send({ accepted: false, ignored: true, reason: "mosaic-authored-event" });
     return;

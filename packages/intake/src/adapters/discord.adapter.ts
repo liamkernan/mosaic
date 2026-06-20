@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 
+import { assertTrustedIntakeRequest } from "../intake-auth.js";
 import { normalize } from "../normalizer.js";
 import { enqueueFeedback } from "../queue.js";
 
@@ -16,6 +17,8 @@ export async function handleDiscordWebhook(
   request: FastifyRequest<{ Body: DiscordWebhookBody }>,
   reply: FastifyReply
 ): Promise<void> {
+  assertTrustedIntakeRequest(request);
+
   const feedback = normalize(
     {
       message: request.body.message,

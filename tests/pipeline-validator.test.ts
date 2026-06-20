@@ -58,6 +58,29 @@ describe("validate", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("rejects generated change paths outside the repository", async () => {
+    const result = await validate(
+      [
+        {
+          filePath: "../outside.txt",
+          originalContent: "",
+          modifiedContent: "outside",
+          explanation: "unsafe path"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath: process.cwd(),
+        fileTree: [],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("Unsafe generated change path rejected");
+  });
+
   it("rejects Python syntax errors before verification", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
     tempDirs.push(localPath);
