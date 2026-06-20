@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   streamMock,
+  betaStreamMock,
   finalMessageMock,
   enforceRepoRateLimitMock,
   trackUsageMock
 } = vi.hoisted(() => ({
   streamMock: vi.fn(),
+  betaStreamMock: vi.fn(),
   finalMessageMock: vi.fn(),
   enforceRepoRateLimitMock: vi.fn(async () => {}),
   trackUsageMock: vi.fn(async () => {})
@@ -16,6 +18,11 @@ vi.mock("../packages/llm/src/anthropic.js", () => ({
   createAnthropicClient: vi.fn(() => ({
     messages: {
       stream: streamMock
+    },
+    beta: {
+      messages: {
+        stream: betaStreamMock
+      }
     }
   }))
 }));
@@ -28,11 +35,12 @@ vi.mock("../packages/llm/src/token-tracker.js", () => ({
   trackUsage: trackUsageMock
 }));
 
-import { LLMClient } from "../packages/llm/src/client.js";
+import { ANTHROPIC_ADVISOR_MODEL_ID, ANTHROPIC_ADVISOR_TOOL_BETA, LLMClient } from "../packages/llm/src/client.js";
 
 describe("LLMClient", () => {
   beforeEach(() => {
     streamMock.mockReset();
+    betaStreamMock.mockReset();
     finalMessageMock.mockReset();
     enforceRepoRateLimitMock.mockClear();
     trackUsageMock.mockClear();
@@ -44,6 +52,9 @@ describe("LLMClient", () => {
       }
     });
     streamMock.mockReturnValue({
+      finalMessage: finalMessageMock
+    });
+    betaStreamMock.mockReturnValue({
       finalMessage: finalMessageMock
     });
   });
@@ -77,6 +88,37 @@ describe("LLMClient", () => {
         system: "system"
       }),
       { timeout: 1234 }
+    );
+  });
+
+  it("uses beta messages with the advisor tool when configured", async () => {
+    const client = new LLMClient({
+      mode: "platform",
+      platformApiKey: "test-key",
+      advisorTool: {
+        model: ANTHROPIC_ADVISOR_MODEL_ID,
+        maxUses: 1
+      }
+    });
+
+    await client.complete("system", "user");
+
+    expect(streamMock).not.toHaveBeenCalled();
+    expect(betaStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "claude-sonnet-4-6",
+        system: "system",
+        betas: [ANTHROPIC_ADVISOR_TOOL_BETA],
+        tools: [
+          {
+            type: "advisor_20260301",
+            name: "advisor",
+            model: "claude-opus-4-8",
+            max_uses: 1
+          }
+        ]
+      }),
+      undefined
     );
   });
 

@@ -10,11 +10,24 @@ export const ANTHROPIC_MODEL_IDS = {
   haiku: "claude-haiku-4-5-20251001"
 } as const;
 
+export const ANTHROPIC_ADVISOR_MODEL_ID = "claude-opus-4-8";
+export const ANTHROPIC_ADVISOR_TOOL_BETA = "advisor-tool-2026-03-01";
+
+const ANTHROPIC_ADVISOR_TOOL_TYPE = "advisor_20260301";
+const ANTHROPIC_ADVISOR_TOOL_NAME = "advisor";
+
+export interface AdvisorToolOptions {
+  model: string;
+  maxUses?: number;
+  maxTokens?: number;
+}
+
 export interface LLMClientOptions {
   mode: LLMKeyMode;
   apiKey?: string;
   platformApiKey?: string;
   model?: string;
+  advisorTool?: AdvisorToolOptions;
   disableUsageTracking?: boolean;
 }
 
@@ -28,6 +41,21 @@ export interface UsageContext {
   repoFullName: string;
   feedbackId: string;
 }
+
+type TextContentBlock = {
+  type: "text";
+  text: string;
+};
+
+type AdvisorToolDefinition = {
+  type: typeof ANTHROPIC_ADVISOR_TOOL_TYPE;
+  name: typeof ANTHROPIC_ADVISOR_TOOL_NAME;
+  model: string;
+  max_uses?: number;
+  max_tokens?: number;
+};
+
+type BetaMessageStreamParams = Parameters<Anthropic["beta"]["messages"]["stream"]>[0];
 
 function withHardTimeout<T>(promise: Promise<T>, timeoutMs: number | undefined): Promise<T> {
   if (timeoutMs === undefined) {
@@ -48,13 +76,33 @@ function withHardTimeout<T>(promise: Promise<T>, timeoutMs: number | undefined):
   });
 }
 
+function buildAdvisorToolDefinition(options: AdvisorToolOptions): AdvisorToolDefinition {
+  return {
+    type: ANTHROPIC_ADVISOR_TOOL_TYPE,
+    name: ANTHROPIC_ADVISOR_TOOL_NAME,
+    model: options.model,
+    ...(options.maxUses === undefined ? {} : { max_uses: options.maxUses }),
+    ...(options.maxTokens === undefined ? {} : { max_tokens: options.maxTokens })
+  };
+}
+
+function isTextContentBlock(item: unknown): item is TextContentBlock {
+  return typeof item === "object" &&
+    item !== null &&
+    "type" in item &&
+    item.type === "text" &&
+    "text" in item &&
+    typeof item.text === "string";
+}
+
 export class LLMClient {
   private readonly client: Anthropic;
   private readonly defaultModel: string;
+  private readonly advisorTool?: AdvisorToolOptions;
   private readonly disableUsageTracking: boolean;
   private usageContext?: UsageContext;
 
-  constructor({ mode, apiKey, platformApiKey, model, disableUsageTracking = false }: LLMClientOptions) {
+  constructor({ mode, apiKey, platformApiKey, model, advisorTool, disableUsageTracking = false }: LLMClientOptions) {
     const resolvedApiKey = mode === "byok" ? apiKey : platformApiKey;
     if (!resolvedApiKey) {
       throw new LLMError(`Missing API key for LLM mode: ${mode}`);
@@ -62,6 +110,7 @@ export class LLMClient {
 
     this.client = createAnthropicClient(resolvedApiKey);
     this.defaultModel = model ?? ANTHROPIC_MODEL_IDS.sonnet;
+    this.advisorTool = advisorTool;
     this.disableUsageTracking = disableUsageTracking;
   }
 
@@ -80,21 +129,28 @@ export class LLMClient {
           await enforceRepoRateLimit(this.usageContext.repoFullName);
         }
 
-        const stream = this.client.messages.stream(
-          {
-            model,
-            system: systemPrompt,
-            max_tokens: options.maxTokens ?? 4096,
-            temperature: options.temperature ?? 0.2,
-            messages: [{ role: "user", content: userMessage }]
-          },
-          options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : undefined
-        );
+        const request = {
+          model,
+          system: systemPrompt,
+          max_tokens: options.maxTokens ?? 4096,
+          temperature: options.temperature ?? 0.2,
+          messages: [{ role: "user" as const, content: userMessage }]
+        };
+        const requestOptions = options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : undefined;
+        const stream = this.advisorTool
+          ? this.client.beta.messages.stream(
+              {
+                ...request,
+                betas: [ANTHROPIC_ADVISOR_TOOL_BETA],
+                tools: [buildAdvisorToolDefinition(this.advisorTool)]
+              } as unknown as BetaMessageStreamParams,
+              requestOptions
+            )
+          : this.client.messages.stream(request, requestOptions);
         const response = await withHardTimeout(stream.finalMessage(), options.timeoutMs);
 
         const text = response.content
-          .filter((item): item is Anthropic.TextBlock => item.type === "text")
-          .map((item) => item.text)
+          .flatMap((item) => isTextContentBlock(item) ? [item.text] : [])
           .join("\n");
 
         if (this.usageContext && response.usage && !this.disableUsageTracking) {

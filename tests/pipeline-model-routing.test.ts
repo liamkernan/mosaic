@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { selectGenerationModelTier, shouldEscalateClassification } from "../packages/pipeline/src/model-routing.js";
+import { selectGenerationModelTier, shouldEscalateClassification, shouldUseAdvisorTool } from "../packages/pipeline/src/model-routing.js";
 
 const baseFeedback = {
   id: "01TEST",
@@ -62,6 +62,7 @@ describe("model routing", () => {
     expect(
       shouldEscalateClassification(complexFeedback)
     ).toBe(true);
+    expect(shouldUseAdvisorTool(complexFeedback)).toBe(true);
   });
 
   it("routes moderate feature work to sonnet", () => {
@@ -79,6 +80,7 @@ describe("model routing", () => {
       })
     ).toBe("sonnet");
     expect(shouldEscalateClassification(moderateFeedback)).toBe(true);
+    expect(shouldUseAdvisorTool(moderateFeedback)).toBe(false);
   });
 
   it("escalates low-confidence classifications", () => {

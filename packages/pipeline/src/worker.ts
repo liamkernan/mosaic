@@ -1,6 +1,6 @@
 import { getEnv, LLMError, logger, RateLimitError, type ClassifiedFeedback, type FeedbackItem, type GeneratedChange } from "@mosaic/core";
 import { getOctokit } from "@mosaic/github-app";
-import { ANTHROPIC_MODEL_IDS, LLMClient } from "@mosaic/llm";
+import { ANTHROPIC_ADVISOR_MODEL_ID, ANTHROPIC_MODEL_IDS, LLMClient, type AdvisorToolOptions } from "@mosaic/llm";
 import { Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
 
@@ -22,7 +22,7 @@ import {
   STAGED_ISSUE_PROMOTED_LABEL,
   type StagedIssueMode
 } from "./staged-issues.js";
-import { selectGenerationModelTier, shouldEscalateClassification } from "./model-routing.js";
+import { selectGenerationModelTier, shouldEscalateClassification, shouldUseAdvisorTool } from "./model-routing.js";
 import { pruneChangesToPlanScope, validatePlanCompletion } from "./plan-completion-validator.js";
 import { buildLlmRetryFeedbackItem, canRetryLlmOverload, getLlmRetryDelayMs, isRetryableLlmOverload } from "./transient-llm.js";
 import { validate } from "./validator.js";
@@ -98,12 +98,18 @@ export class FeedbackPipelineWorker {
     };
   }
 
-  private createLlmClient(mode: "byok" | "platform", apiKey: string | undefined, model: string): LLMClient {
+  private createLlmClient(
+    mode: "byok" | "platform",
+    apiKey: string | undefined,
+    model: string,
+    advisorTool?: AdvisorToolOptions
+  ): LLMClient {
     return new LLMClient({
       mode,
       apiKey,
       platformApiKey: process.env.ANTHROPIC_API_KEY,
-      model
+      model,
+      advisorTool
     });
   }
 
@@ -200,13 +206,19 @@ export class FeedbackPipelineWorker {
     const generationModel = selectGenerationModelTier(classifiedFeedback) === "sonnet"
       ? ANTHROPIC_MODEL_IDS.sonnet
       : ANTHROPIC_MODEL_IDS.haiku;
-    const codeGenerator = new CodeGenerator(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, generationModel));
+    const advisorTool = shouldUseAdvisorTool(classifiedFeedback)
+      ? {
+          model: ANTHROPIC_ADVISOR_MODEL_ID,
+          maxUses: 1
+        }
+      : undefined;
+    const codeGenerator = new CodeGenerator(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, generationModel, advisorTool));
     const completeSolution = shouldUseImplementationPlanning(options.issueMode);
     let implementationPlan: ImplementationPlan | undefined;
     const feedbackText = `${classifiedFeedback.summary}\n${classifiedFeedback.rawContent}`;
 
     if (completeSolution) {
-      const planner = new ImplementationPlanner(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.sonnet));
+      const planner = new ImplementationPlanner(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.sonnet, advisorTool));
       implementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
       const loadedPaths = new Set(relevantFiles.map((file) => file.path));
       const plannedFiles = await this.repoIndexer.readFiles(

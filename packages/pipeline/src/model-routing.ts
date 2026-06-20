@@ -58,3 +58,7 @@ export function selectGenerationModelTier(classifiedFeedback: ClassifiedFeedback
 
   return "haiku";
 }
+
+export function shouldUseAdvisorTool(classifiedFeedback: ClassifiedFeedback): boolean {
+  return classifiedFeedback.complexity === "complex";
+}
