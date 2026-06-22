@@ -37,8 +37,8 @@ describe("core config helpers", () => {
   });
 
   it("exposes frontend-facing model preset toggle options", () => {
-    expect(llmModelPresetOptions.map((option) => option.value)).toEqual(["fast", "balanced", "quality"]);
-    expect(llmModelPresetOptions.map((option) => option.label)).toEqual(["Fast", "Balanced", "Quality"]);
+    expect(llmModelPresetOptions.map((option) => option.value)).toEqual(["quality", "balanced"]);
+    expect(llmModelPresetOptions.map((option) => option.label)).toEqual(["Quality (Recommended)", "Balanced"]);
   });
 
   it("defaults the Mosaic trigger phrase when unset", () => {

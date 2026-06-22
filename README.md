@@ -314,16 +314,15 @@ Production repo config supports a simple frontend-facing LLM preset at `llm.mode
 ```yaml
 llm:
   mode: platform
-  model_preset: quality # fast | balanced | quality
+  model_preset: quality # quality | balanced
 ```
 
 Use these values for a segmented control or select:
 
 | Value | Label | Behavior |
 | --- | --- | --- |
-| `fast` | Fast | Lowest latency and cost. Uses Haiku for implementation and planning, with no advisor. |
+| `quality` | Quality (Recommended) | Default. Uses automatic Haiku/Sonnet routing and enables the Opus advisor for complex work. |
 | `balanced` | Balanced | Uses automatic Haiku/Sonnet routing and disables the advisor. |
-| `quality` | Quality | Uses automatic Haiku/Sonnet routing and enables the Opus advisor for complex work. |
 
 ## Scripts
 

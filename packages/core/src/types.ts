@@ -70,7 +70,7 @@ export interface PRPayload {
 
 export type LLMKeyMode = "platform" | "byok";
 
-export type LLMModelPreset = "fast" | "balanced" | "quality";
+export type LLMModelPreset = "quality" | "balanced";
 
 export interface RepoConfig {
   repoFullName: string;

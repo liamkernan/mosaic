@@ -47,10 +47,6 @@ export function selectGenerationModelTier(
   classifiedFeedback: ClassifiedFeedback,
   modelPreset: LLMModelPreset = "quality"
 ): ModelTier {
-  if (modelPreset === "fast") {
-    return "haiku";
-  }
-
   if (classifiedFeedback.complexity === "complex") {
     return "sonnet";
   }
@@ -66,8 +62,8 @@ export function selectGenerationModelTier(
   return "haiku";
 }
 
-export function selectPlanningModelTier(modelPreset: LLMModelPreset = "quality"): ModelTier {
-  return modelPreset === "fast" ? "haiku" : "sonnet";
+export function selectPlanningModelTier(): ModelTier {
+  return "sonnet";
 }
 
 export function shouldUseAdvisorTool(

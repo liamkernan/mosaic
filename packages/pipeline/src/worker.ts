@@ -218,7 +218,7 @@ export class FeedbackPipelineWorker {
     const feedbackText = `${classifiedFeedback.summary}\n${classifiedFeedback.rawContent}`;
 
     if (completeSolution) {
-      const planningModel = selectPlanningModelTier(repoConfig.llmModelPreset) === "sonnet"
+      const planningModel = selectPlanningModelTier() === "sonnet"
         ? ANTHROPIC_MODEL_IDS.sonnet
         : ANTHROPIC_MODEL_IDS.haiku;
       const planner = new ImplementationPlanner(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, planningModel, advisorTool));

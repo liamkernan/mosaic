@@ -43,4 +43,14 @@ llm:
       llmModelPreset: "balanced"
     });
   });
+
+  it("rejects removed model preset values", async () => {
+    const repoRoot = await makeRepoConfig(`
+version: 1
+llm:
+  model_preset: fast
+`);
+
+    await expect(loadRepoRuntimeConfig(repoRoot, "owner/repo")).rejects.toThrow();
+  });
 });

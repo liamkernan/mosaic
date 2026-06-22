@@ -158,16 +158,12 @@ describe("model routing", () => {
       complexity: "complex"
     } as const;
 
-    expect(selectGenerationModelTier(complexFeedback, "fast")).toBe("haiku");
-    expect(selectPlanningModelTier("fast")).toBe("haiku");
-    expect(shouldUseAdvisorTool(complexFeedback, "fast")).toBe(false);
-
     expect(selectGenerationModelTier(complexFeedback, "balanced")).toBe("sonnet");
-    expect(selectPlanningModelTier("balanced")).toBe("sonnet");
+    expect(selectPlanningModelTier()).toBe("sonnet");
     expect(shouldUseAdvisorTool(complexFeedback, "balanced")).toBe(false);
 
     expect(selectGenerationModelTier(complexFeedback, "quality")).toBe("sonnet");
-    expect(selectPlanningModelTier("quality")).toBe("sonnet");
+    expect(selectPlanningModelTier()).toBe("sonnet");
     expect(shouldUseAdvisorTool(complexFeedback, "quality")).toBe(true);
   });
 });
