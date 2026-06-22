@@ -307,6 +307,24 @@ Channel-specific mappings win over team-level mappings. `SLACK_DEFAULT_REPO` is 
 - Quarantine is reserved for suspicious input, policy-unsafe generated changes, or cases the automation cannot safely process.
 - Abuse protection rejects duplicate submissions, sender floods, prompt-injection patterns, and obvious spam before queueing.
 
+## Model Preset
+
+Production repo config supports a simple frontend-facing LLM preset at `llm.model_preset`:
+
+```yaml
+llm:
+  mode: platform
+  model_preset: quality # fast | balanced | quality
+```
+
+Use these values for a segmented control or select:
+
+| Value | Label | Behavior |
+| --- | --- | --- |
+| `fast` | Fast | Lowest latency and cost. Uses Haiku for implementation and planning, with no advisor. |
+| `balanced` | Balanced | Uses automatic Haiku/Sonnet routing and disables the advisor. |
+| `quality` | Quality | Uses automatic Haiku/Sonnet routing and enables the Opus advisor for complex work. |
+
 ## Scripts
 
 - `pnpm dev`: runs Redis, webhook forwarding via Smee, intake server, pipeline worker, GitHub App, Discord bot, and Slack bot.

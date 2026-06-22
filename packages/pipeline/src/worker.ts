@@ -22,7 +22,7 @@ import {
   STAGED_ISSUE_PROMOTED_LABEL,
   type StagedIssueMode
 } from "./staged-issues.js";
-import { selectGenerationModelTier, shouldEscalateClassification, shouldUseAdvisorTool } from "./model-routing.js";
+import { selectGenerationModelTier, selectPlanningModelTier, shouldEscalateClassification, shouldUseAdvisorTool } from "./model-routing.js";
 import { pruneChangesToPlanScope, validatePlanCompletion } from "./plan-completion-validator.js";
 import { buildLlmRetryFeedbackItem, canRetryLlmOverload, getLlmRetryDelayMs, isRetryableLlmOverload } from "./transient-llm.js";
 import { validate } from "./validator.js";
@@ -203,10 +203,10 @@ export class FeedbackPipelineWorker {
       issueNumber: options.stagedIssueNumber
     });
     relevantFiles = mergeRelevantFiles(relevantFiles, referenceFiles);
-    const generationModel = selectGenerationModelTier(classifiedFeedback) === "sonnet"
+    const generationModel = selectGenerationModelTier(classifiedFeedback, repoConfig.llmModelPreset) === "sonnet"
       ? ANTHROPIC_MODEL_IDS.sonnet
       : ANTHROPIC_MODEL_IDS.haiku;
-    const advisorTool = shouldUseAdvisorTool(classifiedFeedback)
+    const advisorTool = shouldUseAdvisorTool(classifiedFeedback, repoConfig.llmModelPreset)
       ? {
           model: ANTHROPIC_ADVISOR_MODEL_ID,
           maxUses: 1
@@ -218,7 +218,10 @@ export class FeedbackPipelineWorker {
     const feedbackText = `${classifiedFeedback.summary}\n${classifiedFeedback.rawContent}`;
 
     if (completeSolution) {
-      const planner = new ImplementationPlanner(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.sonnet, advisorTool));
+      const planningModel = selectPlanningModelTier(repoConfig.llmModelPreset) === "sonnet"
+        ? ANTHROPIC_MODEL_IDS.sonnet
+        : ANTHROPIC_MODEL_IDS.haiku;
+      const planner = new ImplementationPlanner(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, planningModel, advisorTool));
       implementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
       const loadedPaths = new Set(relevantFiles.map((file) => file.path));
       const plannedFiles = await this.repoIndexer.readFiles(

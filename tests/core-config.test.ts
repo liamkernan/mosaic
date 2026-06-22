@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { expandHome, repoFullNamePattern, resetEnvForTests } from "../packages/core/src/config.js";
+import { expandHome, llmModelPresetOptions, repoFullNamePattern, resetEnvForTests } from "../packages/core/src/config.js";
 import { getEnv } from "../packages/core/src/index.js";
 
 describe("core config helpers", () => {
@@ -34,6 +34,11 @@ describe("core config helpers", () => {
   it("validates owner/repo names", () => {
     expect(repoFullNamePattern.test("openai/mosaic")).toBe(true);
     expect(repoFullNamePattern.test("not a repo")).toBe(false);
+  });
+
+  it("exposes frontend-facing model preset toggle options", () => {
+    expect(llmModelPresetOptions.map((option) => option.value)).toEqual(["fast", "balanced", "quality"]);
+    expect(llmModelPresetOptions.map((option) => option.label)).toEqual(["Fast", "Balanced", "Quality"]);
   });
 
   it("defaults the Mosaic trigger phrase when unset", () => {

@@ -14,6 +14,7 @@ rules:
     - "repo-owner-username"
 llm:
   mode: byok
+  model_preset: quality
 security:
   max_files_changed: 5
   max_lines_added: 350

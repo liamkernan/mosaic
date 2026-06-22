@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { complexitySchema, defaultSecurityConfig, feedbackCategorySchema, feedbackSourceSchema } from "../packages/core/src/config.js";
+import { complexitySchema, defaultSecurityConfig, feedbackCategorySchema, feedbackSourceSchema, llmModelPresetSchema } from "../packages/core/src/config.js";
 import { z } from "zod";
 import YAML from "yaml";
 
@@ -15,7 +15,8 @@ export const mosaicConfigSchema = z.object({
     reviewers: z.array(z.string().min(1)).default([])
   }).default({}),
   llm: z.object({
-    mode: z.enum(["byok", "platform"]).default("byok")
+    mode: z.enum(["byok", "platform"]).default("byok"),
+    model_preset: llmModelPresetSchema.default("quality")
   }).default({}),
   security: z.object({
     max_files_changed: z.number().int().positive().default(defaultSecurityConfig.max_files_changed),

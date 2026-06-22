@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import { z } from "zod";
 
 import { ConfigError } from "./errors.js";
-import type { ComplexityLevel, FeedbackCategory, FeedbackSource } from "./types.js";
+import type { ComplexityLevel, FeedbackCategory, FeedbackSource, LLMModelPreset } from "./types.js";
 
 const packageDir = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = resolve(packageDir, "../../..");
@@ -123,6 +123,30 @@ export const feedbackCategorySchema = z.enum([
 ]) satisfies z.ZodType<FeedbackCategory>;
 
 export const complexitySchema = z.enum(["trivial", "simple", "moderate", "complex"]) satisfies z.ZodType<ComplexityLevel>;
+
+export const llmModelPresetSchema = z.enum(["fast", "balanced", "quality"]) satisfies z.ZodType<LLMModelPreset>;
+
+export const llmModelPresetOptions = [
+  {
+    value: "fast",
+    label: "Fast",
+    description: "Lowest latency and cost. Uses Haiku for implementation and planning, with no advisor."
+  },
+  {
+    value: "balanced",
+    label: "Balanced",
+    description: "Uses automatic Haiku/Sonnet routing and disables the advisor."
+  },
+  {
+    value: "quality",
+    label: "Quality",
+    description: "Uses automatic Haiku/Sonnet routing and enables the Opus advisor for complex work."
+  }
+] as const satisfies ReadonlyArray<{
+  value: LLMModelPreset;
+  label: string;
+  description: string;
+}>;
 
 // Canonical repo security defaults. Keep config/default.config.yml, repo-config.ts,
 // and config/mosaic.config.ts aligned to this object.

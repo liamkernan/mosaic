@@ -6,6 +6,7 @@ import {
   defaultSecurityConfig,
   feedbackCategorySchema,
   feedbackSourceSchema,
+  llmModelPresetSchema,
   type FeedbackCategory,
   type RepoConfig
 } from "@mosaic/core";
@@ -29,7 +30,8 @@ const repoConfigFileSchema = z.object({
     reviewers: z.array(z.string().min(1)).optional()
   }).default({}),
   llm: z.object({
-    mode: z.enum(["byok", "platform"]).default("platform")
+    mode: z.enum(["byok", "platform"]).default("platform"),
+    model_preset: llmModelPresetSchema.default("quality")
   }).default({}),
   security: securityConfigSchema.default({})
 });
@@ -45,6 +47,7 @@ export const defaultRuntimeConfig: Omit<RepoRuntimeConfig, "repoFullName"> = {
   allowedCategories: ["bug_report", "copy_change", "ui_tweak"],
   maxComplexity: "simple",
   llmKeyMode: "platform",
+  llmModelPreset: "quality",
   branchPrefix: "mosaic/",
   reviewers: [],
   security: {
@@ -87,6 +90,7 @@ export async function loadRepoRuntimeConfig(repoRoot: string, repoFullName: stri
     allowedCategories: parsed.rules.allowed_categories as FeedbackCategory[],
     maxComplexity: parsed.rules.max_complexity,
     llmKeyMode: parsed.llm.mode,
+    llmModelPreset: parsed.llm.model_preset,
     llmApiKey: parsed.llm.mode === "byok" ? process.env.MOSAIC_LLM_KEY : undefined,
     reviewers: parsed.rules.reviewers ?? [],
     branchPrefix: parsed.rules.branch_prefix,

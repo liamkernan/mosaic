@@ -1,4 +1,4 @@
-import type { ClassifiedFeedback } from "@mosaic/core";
+import type { ClassifiedFeedback, LLMModelPreset } from "@mosaic/core";
 
 export type ModelTier = "haiku" | "sonnet";
 
@@ -43,7 +43,14 @@ export function shouldEscalateClassification(classifiedFeedback: ClassifiedFeedb
   return isNonObviousBugReport(classifiedFeedback);
 }
 
-export function selectGenerationModelTier(classifiedFeedback: ClassifiedFeedback): ModelTier {
+export function selectGenerationModelTier(
+  classifiedFeedback: ClassifiedFeedback,
+  modelPreset: LLMModelPreset = "quality"
+): ModelTier {
+  if (modelPreset === "fast") {
+    return "haiku";
+  }
+
   if (classifiedFeedback.complexity === "complex") {
     return "sonnet";
   }
@@ -59,6 +66,13 @@ export function selectGenerationModelTier(classifiedFeedback: ClassifiedFeedback
   return "haiku";
 }
 
-export function shouldUseAdvisorTool(classifiedFeedback: ClassifiedFeedback): boolean {
-  return classifiedFeedback.complexity === "complex";
+export function selectPlanningModelTier(modelPreset: LLMModelPreset = "quality"): ModelTier {
+  return modelPreset === "fast" ? "haiku" : "sonnet";
+}
+
+export function shouldUseAdvisorTool(
+  classifiedFeedback: ClassifiedFeedback,
+  modelPreset: LLMModelPreset = "quality"
+): boolean {
+  return modelPreset === "quality" && classifiedFeedback.complexity === "complex";
 }

@@ -70,12 +70,15 @@ export interface PRPayload {
 
 export type LLMKeyMode = "platform" | "byok";
 
+export type LLMModelPreset = "fast" | "balanced" | "quality";
+
 export interface RepoConfig {
   repoFullName: string;
   intakeSources: FeedbackSource[];
   allowedCategories: FeedbackCategory[];
   maxComplexity: ComplexityLevel;
   llmKeyMode: LLMKeyMode;
+  llmModelPreset: LLMModelPreset;
   llmApiKey?: string;
   reviewers?: string[];
   branchPrefix: string;

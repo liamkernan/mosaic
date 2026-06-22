@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { selectGenerationModelTier, shouldEscalateClassification, shouldUseAdvisorTool } from "../packages/pipeline/src/model-routing.js";
+import { selectGenerationModelTier, selectPlanningModelTier, shouldEscalateClassification, shouldUseAdvisorTool } from "../packages/pipeline/src/model-routing.js";
 
 const baseFeedback = {
   id: "01TEST",
@@ -149,5 +149,25 @@ describe("model routing", () => {
         summary: "Checkout flow breaks after cart interaction"
       })
     ).toBe("sonnet");
+  });
+
+  it("supports frontend model presets for generation and advisor routing", () => {
+    const complexFeedback = {
+      ...baseFeedback,
+      category: "feature_request",
+      complexity: "complex"
+    } as const;
+
+    expect(selectGenerationModelTier(complexFeedback, "fast")).toBe("haiku");
+    expect(selectPlanningModelTier("fast")).toBe("haiku");
+    expect(shouldUseAdvisorTool(complexFeedback, "fast")).toBe(false);
+
+    expect(selectGenerationModelTier(complexFeedback, "balanced")).toBe("sonnet");
+    expect(selectPlanningModelTier("balanced")).toBe("sonnet");
+    expect(shouldUseAdvisorTool(complexFeedback, "balanced")).toBe(false);
+
+    expect(selectGenerationModelTier(complexFeedback, "quality")).toBe("sonnet");
+    expect(selectPlanningModelTier("quality")).toBe("sonnet");
+    expect(shouldUseAdvisorTool(complexFeedback, "quality")).toBe(true);
   });
 });
