@@ -18,6 +18,8 @@ export interface ValidationLimits {
   blockPatterns?: string[];
 }
 
+type RepoFileReader = (filePath: string) => Promise<string>;
+
 const urlPattern = /\bhttps?:\/\/[^\s"'`]+/g;
 const ipPattern = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
 const modalTokenPattern = /\b[a-z0-9-]*(?:modal|overlay|dialog)(?:-[a-z0-9]+)*\b/gi;
@@ -263,6 +265,20 @@ function findRepoFile(repoContext: RepoContext, fileName: string): string | unde
   return findFileInTree(repoContext.fileTree, fileName);
 }
 
+function createRepoFileReader(repoContext: RepoContext): RepoFileReader {
+  const cache = new Map<string, Promise<string>>();
+
+  return (filePath: string) => {
+    let cached = cache.get(filePath);
+    if (!cached) {
+      cached = readFile(join(repoContext.localPath, filePath), "utf8").catch(() => "");
+      cache.set(filePath, cached);
+    }
+
+    return cached;
+  };
+}
+
 function isStylesheet(filePath: string): boolean {
   return /\.css$/i.test(filePath);
 }
@@ -440,14 +456,14 @@ function selectorExistsInHtml(html: string, selector: string): boolean {
   return true;
 }
 
-async function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
+async function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], repoContext: RepoContext, readRepoFile: RepoFileReader, errors: string[]): Promise<void> {
   const htmlPath = findRepoFile(repoContext, "index.html");
   if (!htmlPath) {
     return;
   }
 
   const htmlChange = changes.find((change) => change.filePath === htmlPath);
-  const effectiveHtml = htmlChange?.modifiedContent ?? await readFile(join(repoContext.localPath, htmlPath), "utf8").catch(() => "");
+  const effectiveHtml = htmlChange?.modifiedContent ?? await readRepoFile(htmlPath);
   if (effectiveHtml.length === 0) {
     return;
   }
@@ -472,7 +488,7 @@ async function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], re
   }
 }
 
-async function validateAccessibleNonNativeControls(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
+async function validateAccessibleNonNativeControls(changes: GeneratedChange[], repoContext: RepoContext, readRepoFile: RepoFileReader, errors: string[]): Promise<void> {
   const addedControls: Array<{ filePath: string; tags: string[] }> = [];
 
   for (const change of changes.filter((candidate) => /\.(?:html?|[cm]?[jt]sx?)$/i.test(candidate.filePath))) {
@@ -493,7 +509,7 @@ async function validateAccessibleNonNativeControls(changes: GeneratedChange[], r
     .map((fileName) => findRepoFile(repoContext, fileName))
     .filter((filePath): filePath is string => Boolean(filePath))
     .filter((filePath) => !changes.some((change) => change.filePath === filePath))
-    .map((filePath) => readFile(join(repoContext.localPath, filePath), "utf8").catch(() => "")));
+    .map(readRepoFile));
   const effectiveScript = [...changedScripts, ...existingScripts].join("\n");
 
   if (hasNonNativeKeyboardHandler(effectiveScript)) {
@@ -507,7 +523,7 @@ async function validateAccessibleNonNativeControls(changes: GeneratedChange[], r
   }
 }
 
-async function validateStaticAssetLinks(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
+async function validateStaticAssetLinks(changes: GeneratedChange[], repoContext: RepoContext, readRepoFile: RepoFileReader, errors: string[]): Promise<void> {
   const htmlPath = findRepoFile(repoContext, "index.html");
   if (!htmlPath) {
     return;
@@ -516,7 +532,7 @@ async function validateStaticAssetLinks(changes: GeneratedChange[], repoContext:
   const htmlChange = changes.find((change) => change.filePath === htmlPath);
   const effectiveHtml = htmlChange
     ? htmlChange.modifiedContent
-    : await readFile(join(repoContext.localPath, htmlPath), "utf8").catch(() => "");
+    : await readRepoFile(htmlPath);
 
   for (const change of changes) {
     if (change.originalContent.length > 0 || (!isScript(change.filePath) && !isStylesheet(change.filePath))) {
@@ -529,7 +545,7 @@ async function validateStaticAssetLinks(changes: GeneratedChange[], repoContext:
   }
 }
 
-async function validateModalStyling(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
+async function validateModalStyling(changes: GeneratedChange[], repoContext: RepoContext, readRepoFile: RepoFileReader, errors: string[]): Promise<void> {
   const changedPaths = collectChangedPaths(changes);
   const stylePath = findRepoFile(repoContext, "styles.css");
   if (!stylePath) {
@@ -539,7 +555,7 @@ async function validateModalStyling(changes: GeneratedChange[], repoContext: Rep
   const styleChange = changes.find((change) => change.filePath === stylePath);
   const existingStyles = styleChange
     ? styleChange.modifiedContent
-    : await readFile(join(repoContext.localPath, stylePath), "utf8").catch(() => "");
+    : await readRepoFile(stylePath);
   const effectiveStyles = [
     existingStyles,
     ...changes
@@ -573,7 +589,7 @@ async function validateModalStyling(changes: GeneratedChange[], repoContext: Rep
   }
 }
 
-async function validateModalBehavior(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
+async function validateModalBehavior(changes: GeneratedChange[], repoContext: RepoContext, readRepoFile: RepoFileReader, errors: string[]): Promise<void> {
   const changedPaths = collectChangedPaths(changes);
   const scriptPath = findRepoFile(repoContext, "script.js");
   if (!scriptPath) {
@@ -583,7 +599,7 @@ async function validateModalBehavior(changes: GeneratedChange[], repoContext: Re
   const scriptChange = changes.find((change) => change.filePath === scriptPath);
   const existingScript = scriptChange
     ? scriptChange.modifiedContent
-    : await readFile(join(repoContext.localPath, scriptPath), "utf8").catch(() => "");
+    : await readRepoFile(scriptPath);
   const effectiveScript = [
     existingScript,
     ...changes
@@ -630,6 +646,7 @@ export async function validate(
   let totalLinesAdded = 0;
   const maxChangedLines = limits.maxChangedLines ?? defaultSecurityConfig.max_changed_lines;
   const blockedPatterns = limits.blockPatterns ?? defaultSecurityConfig.block_patterns;
+  const readRepoFile = createRepoFileReader(repoContext);
 
   for (const change of changes) {
     const safePath = validateRepoRelativePath(change.filePath);
@@ -709,11 +726,11 @@ export async function validate(
     errors.push(`Total new code added exceeds limit: ${totalLinesAdded} lines`);
   }
 
-  await validateModalStyling(changes, repoContext, errors);
-  await validateModalBehavior(changes, repoContext, errors);
-  await validateStaticAssetLinks(changes, repoContext, errors);
-  await validateScriptSelectorsAgainstHtml(changes, repoContext, errors);
-  await validateAccessibleNonNativeControls(changes, repoContext, errors);
+  await validateModalStyling(changes, repoContext, readRepoFile, errors);
+  await validateModalBehavior(changes, repoContext, readRepoFile, errors);
+  await validateStaticAssetLinks(changes, repoContext, readRepoFile, errors);
+  await validateScriptSelectorsAgainstHtml(changes, repoContext, readRepoFile, errors);
+  await validateAccessibleNonNativeControls(changes, repoContext, readRepoFile, errors);
   validatePythonCrossFileImports(changes, errors);
   validateTestIntegrity(changes, errors);
 

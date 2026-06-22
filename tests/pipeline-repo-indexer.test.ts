@@ -157,4 +157,34 @@ describe("RepoIndexer repository references", () => {
     expect(files[0]?.reason).toBe("large file");
     expect(files[0]?.content).toBe(content.split("\n").slice(0, 200).join("\n"));
   });
+
+  it("truncates large files when the file tree has no eager size metadata", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
+    tempDirs.push(localPath);
+    await mkdir(join(localPath, "src"));
+
+    const line = `export const lazyFixture = "${"x".repeat(600)}";\n`;
+    const content = line.repeat(250);
+    await writeFile(join(localPath, "src", "lazy-large.ts"), content, "utf8");
+
+    const files = await new RepoIndexer().readFiles(
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        installationId: 1,
+        fileTree: [
+          {
+            path: "src",
+            type: "directory",
+            children: [{ path: "src/lazy-large.ts", type: "file", language: "typescript" }]
+          }
+        ]
+      },
+      [{ path: "src/lazy-large.ts", reason: "large file without cached size" }]
+    );
+
+    expect(files).toHaveLength(1);
+    expect(files[0]?.content).toBe(content.split("\n").slice(0, 200).join("\n"));
+  });
 });
