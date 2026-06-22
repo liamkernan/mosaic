@@ -1,3 +1,4 @@
+import { createReadStream } from "node:fs";
 import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
@@ -8,6 +9,10 @@ import { simpleGit } from "simple-git";
 import { resolveExistingRepoPath } from "./repo-paths.js";
 
 const ignoredNames = new Set(["node_modules", ".git", "dist", "build", "__pycache__", ".next", "vendor"]);
+const flattenedFileTreeCache = new WeakMap<FileNode[], string[]>();
+const fileSizeCache = new WeakMap<FileNode[], Map<string, number>>();
+const largeFileTruncationBytes = 100 * 1024;
+const largeFileTruncationLines = 200;
 const referenceFilePattern = /\.(?:md|mdx|rst|txt|ya?ml|json|py|[cm]?[jt]sx?|html|css)$/i;
 const repoReferenceNames = new Set([
   "readme.md",
@@ -74,33 +79,27 @@ function isIgnoredName(name: string): boolean {
 async function buildFileTree(rootPath: string, currentPath = ""): Promise<FileNode[]> {
   const directoryPath = currentPath ? join(rootPath, currentPath) : rootPath;
   const entries = await readdir(directoryPath, { withFileTypes: true });
-  const nodes: FileNode[] = [];
 
-  for (const entry of entries) {
-    if (isIgnoredName(entry.name)) {
-      continue;
-    }
-
+  const nodes = await Promise.all(entries.filter((entry) => !isIgnoredName(entry.name)).map(async (entry): Promise<FileNode> => {
     const relativePath = currentPath ? join(currentPath, entry.name) : entry.name;
     const absolutePath = join(rootPath, relativePath);
 
     if (entry.isDirectory()) {
-      nodes.push({
+      return {
         path: relativePath,
         type: "directory",
         children: await buildFileTree(rootPath, relativePath)
-      });
-      continue;
+      };
     }
 
     const fileStat = await stat(absolutePath);
-    nodes.push({
+    return {
       path: relativePath,
       type: "file",
       language: detectLanguage(relativePath),
       sizeBytes: fileStat.size
-    });
-  }
+    };
+  }));
 
   return nodes.sort((left, right) => left.path.localeCompare(right.path));
 }
@@ -132,7 +131,60 @@ function flattenFileTree(nodes: FileNode[]): string[] {
 }
 
 function truncateLargeFile(content: string): string {
-  return content.split("\n").slice(0, 200).join("\n");
+  return content.split("\n").slice(0, largeFileTruncationLines).join("\n");
+}
+
+async function readLargeFilePrefix(filePath: string): Promise<string> {
+  let content = "";
+  let newlineCount = 0;
+  const stream = createReadStream(filePath, { encoding: "utf8" });
+
+  try {
+    for await (const chunk of stream) {
+      const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      content += text;
+
+      for (const character of text) {
+        if (character === "\n") {
+          newlineCount += 1;
+        }
+      }
+
+      if (newlineCount >= largeFileTruncationLines) {
+        stream.destroy();
+        return truncateLargeFile(content);
+      }
+    }
+  } finally {
+    stream.destroy();
+  }
+
+  return truncateLargeFile(content);
+}
+
+function buildFileSizeMap(nodes: FileNode[], sizes = new Map<string, number>()): Map<string, number> {
+  for (const node of nodes) {
+    if (node.type === "directory") {
+      buildFileSizeMap(node.children ?? [], sizes);
+      continue;
+    }
+
+    if (node.sizeBytes !== undefined) {
+      sizes.set(node.path, node.sizeBytes);
+    }
+  }
+
+  return sizes;
+}
+
+function knownFileSize(context: RepoContext, filePath: string): number | undefined {
+  let sizes = fileSizeCache.get(context.fileTree);
+  if (!sizes) {
+    sizes = buildFileSizeMap(context.fileTree);
+    fileSizeCache.set(context.fileTree, sizes);
+  }
+
+  return sizes.get(filePath);
 }
 
 function tokenizeForSearch(text: string): string[] {
@@ -141,6 +193,21 @@ function tokenizeForSearch(text: string): string[] {
     .match(/[a-z0-9_]{4,}/g) ?? [];
 
   return [...new Set(tokens)].filter((token) => !stopWords.has(token));
+}
+
+function cappedTermMatches(text: string, terms: string[], cap: number): number {
+  let matches = 0;
+
+  for (const term of terms) {
+    if (text.includes(term)) {
+      matches += 1;
+      if (matches >= cap) {
+        return cap;
+      }
+    }
+  }
+
+  return matches;
 }
 
 function issueNumberPattern(issueNumber: number): RegExp {
@@ -159,7 +226,7 @@ function isLikelyReferencePath(path: string): boolean {
     /(?:^|\/)(?:test|tests|spec|specs|__tests__|reported)(?:\/|$)/.test(lowerPath);
 }
 
-function scoreReferencePath(path: string, terms: string[], issueNumber?: number): number {
+function scoreReferencePath(path: string, terms: string[], issuePattern?: RegExp): number {
   if (!referenceFilePattern.test(path)) {
     return 0;
   }
@@ -184,21 +251,21 @@ function scoreReferencePath(path: string, terms: string[], issueNumber?: number)
     score += 4;
   }
 
-  if (issueNumber && issueNumberPattern(issueNumber).test(name)) {
+  if (issuePattern?.test(name)) {
     score += 24;
   }
 
-  const pathTermMatches = terms.filter((term) => lowerPath.includes(term)).length;
+  const pathTermMatches = cappedTermMatches(lowerPath, terms, 5);
   score += Math.min(10, pathTermMatches * 2);
 
   return score;
 }
 
-function referenceReason(path: string, issueNumber?: number): string {
+function referenceReason(path: string, issueNumber?: number, issuePattern?: RegExp): string {
   const lowerPath = path.toLowerCase();
   const name = basename(lowerPath);
 
-  if (issueNumber && issueNumberPattern(issueNumber).test(name)) {
+  if (issueNumber && issuePattern?.test(name)) {
     return `Repository issue/spec reference for promoted issue #${issueNumber}`;
   }
 
@@ -229,9 +296,23 @@ async function readContainedRepoFile(
       return null;
     }
 
-    const fileStat = await stat(resolvedPath.absolutePath);
-    let content = await readFile(resolvedPath.absolutePath, "utf8");
-    if (fileStat.size > 100 * 1024) {
+    const expectedSize = knownFileSize(context, resolvedPath.repoPath);
+    if (expectedSize !== undefined && expectedSize > largeFileTruncationBytes) {
+      const content = await readLargeFilePrefix(resolvedPath.absolutePath);
+
+      return {
+        path: resolvedPath.repoPath,
+        content,
+        sizeBytes: expectedSize
+      };
+    }
+
+    const [fileStat, fileContent] = await Promise.all([
+      stat(resolvedPath.absolutePath),
+      readFile(resolvedPath.absolutePath, "utf8")
+    ]);
+    let content = fileContent;
+    if (fileStat.size > largeFileTruncationBytes) {
       content = truncateLargeFile(content);
     }
 
@@ -276,9 +357,7 @@ export class RepoIndexer {
   }
 
   async findRelevantFiles(context: RepoContext, classified: ClassifiedFeedback): Promise<RelevantFile[]> {
-    const files: RelevantFile[] = [];
-
-    for (const [index, filePath] of classified.relevantFiles.entries()) {
+    const loadedFiles = await Promise.all(classified.relevantFiles.map(async (filePath, index) => {
       const loadedFile = await readContainedRepoFile(
         context,
         filePath,
@@ -286,13 +365,16 @@ export class RepoIndexer {
       );
 
       if (loadedFile) {
-        files.push({
+        return {
           path: loadedFile.path,
           content: loadedFile.content,
           reason: `Classifier ranked this file as #${index + 1} relevant`
-        });
+        };
       }
-    }
+
+      return null;
+    }));
+    const files = loadedFiles.filter((file): file is RelevantFile => Boolean(file));
 
     let totalBytes = files.reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
     while (totalBytes > 50 * 1024 && files.length > 1) {
@@ -304,9 +386,7 @@ export class RepoIndexer {
   }
 
   async readFiles(context: RepoContext, requestedFiles: Array<{ path: string; reason: string }>): Promise<RelevantFile[]> {
-    const files: RelevantFile[] = [];
-
-    for (const requestedFile of requestedFiles) {
+    const loadedFiles = await Promise.all(requestedFiles.map(async (requestedFile) => {
       const loadedFile = await readContainedRepoFile(
         context,
         requestedFile.path,
@@ -314,15 +394,17 @@ export class RepoIndexer {
       );
 
       if (loadedFile) {
-        files.push({
+        return {
           path: loadedFile.path,
           content: loadedFile.content,
           reason: requestedFile.reason
-        });
+        };
       }
-    }
 
-    return files;
+      return null;
+    }));
+
+    return loadedFiles.filter((file): file is RelevantFile => Boolean(file));
   }
 
   async findRepositoryReferenceFiles(
@@ -332,11 +414,12 @@ export class RepoIndexer {
   ): Promise<RelevantFile[]> {
     const fileTree = this.fileTreeToPaths(context);
     const terms = tokenizeForSearch(`${classified.rawContent}\n${classified.summary}`);
+    const issuePattern = options.issueNumber ? issueNumberPattern(options.issueNumber) : undefined;
     const rankedPaths = fileTree
       .filter(isLikelyReferencePath)
       .map((path) => ({
         path,
-        score: scoreReferencePath(path, terms, options.issueNumber)
+        score: scoreReferencePath(path, terms, issuePattern)
       }))
       .filter((candidate) => candidate.score > 0)
       .sort((left, right) => right.score - left.score || left.path.localeCompare(right.path));
@@ -358,11 +441,10 @@ export class RepoIndexer {
       );
 
       if (loadedFile) {
-        const contentMatches = terms.filter((term) => loadedFile.content.toLowerCase().includes(term)).length;
-        const exactIssueMatch = options.issueNumber
-          ? issueNumberPattern(options.issueNumber).test(basename(candidate.path.toLowerCase()))
-          : false;
-        if (!exactIssueMatch && !repoReferenceNames.has(basename(candidate.path.toLowerCase())) && contentMatches === 0 && candidate.score < 10) {
+        const lowerContent = loadedFile.content.toLowerCase();
+        const contentMatches = terms.some((term) => lowerContent.includes(term));
+        const exactIssueMatch = issuePattern?.test(basename(candidate.path.toLowerCase())) ?? false;
+        if (!exactIssueMatch && !repoReferenceNames.has(basename(candidate.path.toLowerCase())) && !contentMatches && candidate.score < 10) {
           continue;
         }
 
@@ -370,7 +452,7 @@ export class RepoIndexer {
         references.push({
           path: loadedFile.path,
           content: loadedFile.content,
-          reason: referenceReason(candidate.path, options.issueNumber)
+          reason: referenceReason(candidate.path, options.issueNumber, issuePattern)
         });
       }
     }
@@ -379,6 +461,13 @@ export class RepoIndexer {
   }
 
   fileTreeToPaths(context: RepoContext): string[] {
-    return flattenFileTree(context.fileTree);
+    const cachedPaths = flattenedFileTreeCache.get(context.fileTree);
+    if (cachedPaths) {
+      return [...cachedPaths];
+    }
+
+    const paths = flattenFileTree(context.fileTree);
+    flattenedFileTreeCache.set(context.fileTree, paths);
+    return [...paths];
   }
 }

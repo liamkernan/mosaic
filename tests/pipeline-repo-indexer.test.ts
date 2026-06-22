@@ -125,4 +125,36 @@ describe("RepoIndexer repository references", () => {
 
     expect(requestedFiles.map((file) => file.path)).toEqual(["src/service.ts"]);
   });
+
+  it("preserves first-200-line truncation for large files", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
+    tempDirs.push(localPath);
+    await mkdir(join(localPath, "src"));
+
+    const line = `export const fixture = "${"x".repeat(600)}";\n`;
+    const content = line.repeat(250);
+    await writeFile(join(localPath, "src", "large.ts"), content, "utf8");
+
+    const files = await new RepoIndexer().readFiles(
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        installationId: 1,
+        fileTree: [
+          {
+            path: "src",
+            type: "directory",
+            children: [{ path: "src/large.ts", type: "file", language: "typescript", sizeBytes: Buffer.byteLength(content) }]
+          }
+        ]
+      },
+      [{ path: "src/large.ts", reason: "large file" }]
+    );
+
+    expect(files).toHaveLength(1);
+    expect(files[0]?.path).toBe("src/large.ts");
+    expect(files[0]?.reason).toBe("large file");
+    expect(files[0]?.content).toBe(content.split("\n").slice(0, 200).join("\n"));
+  });
 });

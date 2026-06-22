@@ -1,10 +1,20 @@
 import type { ClassifiedFeedback, RelevantFile } from "@mosaic/core";
+import { formatPromptFileTree, promptFilePaths } from "./context-budget.js";
+
+const implementationPlanMaxFileTreePaths = 1_800;
 
 export function buildImplementationPlanPrompt(
   feedback: ClassifiedFeedback,
   relevantFiles: RelevantFile[],
   fileTree: string[]
 ): string {
+  const promptFileTree = formatPromptFileTree(fileTree, {
+    maxPaths: implementationPlanMaxFileTreePaths,
+    summary: feedback.summary,
+    rawContent: feedback.rawContent,
+    relevantPaths: promptFilePaths(relevantFiles)
+  });
+
   return `You are planning a complete implementation for a moderate/high-complexity software change.
 
 USER REQUEST:
@@ -16,7 +26,7 @@ CLASSIFICATION:
 - Summary: ${feedback.summary}
 
 REPOSITORY FILE TREE:
-${fileTree.join("\n")}
+${promptFileTree}
 
 CURRENTLY LOADED FILES:
 ${relevantFiles.map((file) => `--- ${file.path} ---\nReason: ${file.reason}\n${file.content}\n--- END ${file.path} ---`).join("\n\n")}

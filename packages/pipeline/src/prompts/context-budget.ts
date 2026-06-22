@@ -43,6 +43,14 @@ export interface PromptTree {
   omittedCount: number;
 }
 
+interface TreeScoreContext {
+  options: PromptTreeOptions;
+  terms: string[];
+  directPathSet: Set<string>;
+  directAncestorSet: Set<string>;
+  directDirectories: string[];
+}
+
 function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\.?\//, "").trim();
 }
@@ -78,25 +86,59 @@ function isSameOrChildPath(parentDir: string, candidatePath: string): boolean {
   return candidatePath === parentDir || candidatePath.startsWith(`${parentDir}/`);
 }
 
-function scoreTreePath(path: string, options: PromptTreeOptions, terms: string[]): number {
-  const normalized = normalizePath(path);
-  const lowerPath = normalized.toLowerCase();
+function cappedTermMatches(text: string, terms: string[], cap: number): number {
+  let matches = 0;
+
+  for (const term of terms) {
+    if (text.includes(term)) {
+      matches += 1;
+      if (matches >= cap) {
+        return cap;
+      }
+    }
+  }
+
+  return matches;
+}
+
+function buildTreeScoreContext(options: PromptTreeOptions, terms: string[]): TreeScoreContext {
   const directPaths = [
     ...(options.relevantPaths ?? []),
     ...(options.planPaths ?? []),
     ...(options.changedPaths ?? [])
   ].map(normalizePath);
+  const directAncestorSet = new Set<string>();
+
+  for (const directPath of directPaths) {
+    for (const ancestor of pathAncestors(directPath)) {
+      directAncestorSet.add(ancestor);
+    }
+  }
+
+  return {
+    options,
+    terms,
+    directPathSet: new Set(directPaths),
+    directAncestorSet,
+    directDirectories: directPaths.map(dirname)
+  };
+}
+
+function scoreTreePath(path: string, context: TreeScoreContext): number {
+  const { options, terms, directPathSet, directAncestorSet, directDirectories } = context;
+  const normalized = normalizePath(path);
+  const lowerPath = normalized.toLowerCase();
   let score = 0;
 
-  if (directPaths.includes(normalized)) {
+  if (directPathSet.has(normalized)) {
     score += 100;
   }
 
-  if (directPaths.some((directPath) => pathAncestors(directPath).includes(normalized))) {
+  if (directAncestorSet.has(normalized)) {
     score += 80;
   }
 
-  if (directPaths.some((directPath) => isSameOrChildPath(dirname(directPath), normalized))) {
+  if (directDirectories.some((directory) => isSameOrChildPath(directory, normalized))) {
     score += 35;
   }
 
@@ -112,7 +154,7 @@ function scoreTreePath(path: string, options: PromptTreeOptions, terms: string[]
     score += 8;
   }
 
-  const termMatches = terms.filter((term) => lowerPath.includes(term)).length;
+  const termMatches = cappedTermMatches(lowerPath, terms, 6);
   score += Math.min(30, termMatches * 5);
 
   if (lowValueTreePathPattern.test(normalized)) {
@@ -136,22 +178,24 @@ export function compactPromptFileTree(fileTree: string[], options: PromptTreeOpt
     ...(options.changedPaths ?? []),
     ...(options.validationErrors ?? [])
   ].filter(Boolean).join("\n"));
+  const scoreContext = buildTreeScoreContext(options, terms);
   const ranked = normalizedTree
-    .map((path, index) => ({ path, index, score: scoreTreePath(path, options, terms) }))
+    .map((path, index) => ({ path, index, score: scoreTreePath(path, scoreContext) }))
     .sort((left, right) => right.score - left.score || left.index - right.index);
   const selected = new Set(ranked.slice(0, options.maxPaths).map((item) => item.path));
+  const normalizedTreeSet = new Set(normalizedTree);
 
   for (const path of [
     ...(options.relevantPaths ?? []),
     ...(options.planPaths ?? []),
     ...(options.changedPaths ?? [])
   ].map(normalizePath)) {
-    if (normalizedTree.includes(path)) {
+    if (normalizedTreeSet.has(path)) {
       selected.add(path);
     }
 
     for (const ancestor of pathAncestors(path)) {
-      if (normalizedTree.includes(ancestor)) {
+      if (normalizedTreeSet.has(ancestor)) {
         selected.add(ancestor);
       }
     }

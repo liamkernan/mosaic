@@ -4,12 +4,40 @@ import { buildClassificationPrompt } from "../packages/pipeline/src/prompts/clas
 import { buildGenerationPrompt } from "../packages/pipeline/src/prompts/generate.prompt.js";
 import { buildImplementationPlanPrompt } from "../packages/pipeline/src/prompts/implementation-plan.prompt.js";
 import { buildValidationRepairPrompt } from "../packages/pipeline/src/prompts/repair-generate.prompt.js";
+import { compactPromptFileTree } from "../packages/pipeline/src/prompts/context-budget.js";
 
 describe("pipeline prompts", () => {
   it("includes feedback and file tree in the classification prompt", () => {
     const prompt = buildClassificationPrompt("Fix the copy", ["src/app.tsx", "README.md"]);
     expect(prompt).toContain("Fix the copy");
     expect(prompt).toContain("src/app.tsx");
+    expect(prompt).toContain("README.md");
+    expect(prompt).not.toContain("lower-relevance repository path(s) omitted");
+  });
+
+  it("compacts large classification file trees while keeping likely relevant paths", () => {
+    const fileTree = [
+      "README.md",
+      "packages/billing/src/invoice-service.ts",
+      ...Array.from({ length: 1_400 }, (_, index) => `fixtures/generated/demo-${index}/payload-${index}.json`),
+      "tests/reported/invoice-ordering.test.ts"
+    ];
+    const prompt = buildClassificationPrompt("Fix billing invoice ordering", fileTree);
+
+    expect(prompt).toContain("packages/billing/src/invoice-service.ts");
+    expect(prompt).toContain("tests/reported/invoice-ordering.test.ts");
+    expect(prompt).toContain("lower-relevance repository path(s) omitted");
+    expect(prompt).not.toContain("fixtures/generated/demo-1399/payload-1399.json");
+  });
+
+  it("keeps deterministic first-seen paths when compact tree scores tie", () => {
+    const compacted = compactPromptFileTree(
+      Array.from({ length: 10 }, (_, index) => `src/module-${index}.ts`),
+      { maxPaths: 3 }
+    );
+
+    expect(compacted.paths).toEqual(["src/module-0.ts", "src/module-1.ts", "src/module-2.ts"]);
+    expect(compacted.omittedCount).toBe(7);
   });
 
   it("includes relevant file contents in the generation prompt", () => {
@@ -97,8 +125,13 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("API/HTTP endpoint requests");
   });
 
-  it("keeps the full implementation planning tree for large repos", () => {
-    const fileTree = Array.from({ length: 1_100 }, (_, index) => `packages/area-${index}/src/file-${index}.ts`);
+  it("compacts large implementation planning file trees while keeping relevant paths", () => {
+    const fileTree = [
+      "README.md",
+      "packages/billing/src/invoice-service.ts",
+      ...Array.from({ length: 2_200 }, (_, index) => `fixtures/generated/demo-${index}/payload-${index}.json`),
+      "tests/reported/invoice-ordering.test.ts"
+    ];
     const prompt = buildImplementationPlanPrompt(
       {
         id: "01TEST",
@@ -111,16 +144,20 @@ describe("pipeline prompts", () => {
         category: "bug_report",
         complexity: "complex",
         summary: "Fix billing invoice ordering",
-        relevantFiles: ["packages/area-999/src/file-999.ts"],
+        relevantFiles: ["packages/billing/src/invoice-service.ts"],
         confidence: 0.7
       },
-      [{ path: "packages/area-999/src/file-999.ts", content: "export const invoice = true;", reason: "classifier" }],
+      [
+        { path: "packages/billing/src/invoice-service.ts", content: "export const invoice = true;", reason: "classifier" },
+        { path: "tests/reported/invoice-ordering.test.ts", content: "it('sorts invoices')", reason: "reported test" }
+      ],
       fileTree
     );
 
-    expect(prompt).toContain("packages/area-999/src/file-999.ts");
-    expect(prompt).toContain("packages/area-1099/src/file-1099.ts");
-    expect(prompt).not.toContain("lower-relevance repository path(s) omitted");
+    expect(prompt).toContain("packages/billing/src/invoice-service.ts");
+    expect(prompt).toContain("tests/reported/invoice-ordering.test.ts");
+    expect(prompt).toContain("lower-relevance repository path(s) omitted");
+    expect(prompt).not.toContain("fixtures/generated/demo-2199/payload-2199.json");
   });
 
   it("includes implementation plan checklists in generation prompt", () => {

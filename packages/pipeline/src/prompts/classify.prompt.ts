@@ -1,7 +1,25 @@
+import { compactPromptFileTree } from "./context-budget.js";
+
+const classificationMaxFileTreePaths = 1_200;
+
+function formatClassificationFileTree(rawContent: string, fileTree: string[]): string {
+  const compacted = compactPromptFileTree(fileTree, {
+    maxPaths: classificationMaxFileTreePaths,
+    rawContent
+  });
+  const note = compacted.omittedCount > 0
+    ? `\n[MOSAIC CONTEXT NOTE: ${compacted.omittedCount} lower-relevance repository path(s) omitted from this classification prompt.]`
+    : "";
+
+  return `${compacted.paths.join("\n")}${note}`;
+}
+
 export function buildClassificationPrompt(
   rawContent: string,
   fileTree: string[],
 ): string {
+  const promptFileTree = formatClassificationFileTree(rawContent, fileTree);
+
   return `You are a feedback classifier for a software repository. You will receive user feedback and a list of files in the repository.
 
 Your job:
@@ -27,7 +45,7 @@ Respond ONLY with a JSON object. No markdown, no explanation, no preamble.
 
 The repository contains these files:
 <FILE_TREE>
-${fileTree.join("\n")}
+${promptFileTree}
 </FILE_TREE>
 
 The user feedback is:

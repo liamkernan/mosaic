@@ -197,12 +197,14 @@ export class FeedbackPipelineWorker {
       issueMode?: StagedIssueMode;
     } = {}
   ): Promise<{ artifactType: "issue" | "pr"; artifactValue: string; reason: string }> {
-    let relevantFiles = await this.repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
     const fileTree = this.repoIndexer.fileTreeToPaths(repoContext);
-    const referenceFiles = await this.repoIndexer.findRepositoryReferenceFiles(repoContext, classifiedFeedback, {
-      issueNumber: options.stagedIssueNumber
-    });
-    relevantFiles = mergeRelevantFiles(relevantFiles, referenceFiles);
+    const [classifierFiles, referenceFiles] = await Promise.all([
+      this.repoIndexer.findRelevantFiles(repoContext, classifiedFeedback),
+      this.repoIndexer.findRepositoryReferenceFiles(repoContext, classifiedFeedback, {
+        issueNumber: options.stagedIssueNumber
+      })
+    ]);
+    let relevantFiles = mergeRelevantFiles(classifierFiles, referenceFiles);
     const generationModel = selectGenerationModelTier(classifiedFeedback, repoConfig.llmModelPreset) === "sonnet"
       ? ANTHROPIC_MODEL_IDS.sonnet
       : ANTHROPIC_MODEL_IDS.haiku;
