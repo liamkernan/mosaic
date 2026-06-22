@@ -122,6 +122,57 @@ describe("LLMClient", () => {
     );
   });
 
+  it("falls back to a normal messages request when the advisor model is unavailable", async () => {
+    finalMessageMock.mockRejectedValueOnce(
+      Object.assign(new Error("advisor model claude-opus-4-8 is unavailable"), {
+        status: 404,
+        name: "NotFoundError"
+      })
+    );
+    const client = new LLMClient({
+      mode: "platform",
+      platformApiKey: "test-key",
+      advisorTool: {
+        model: ANTHROPIC_ADVISOR_MODEL_ID,
+        maxUses: 1
+      }
+    });
+
+    await expect(client.complete("system", "user")).resolves.toBe("ok");
+
+    expect(betaStreamMock).toHaveBeenCalledTimes(1);
+    expect(streamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "claude-sonnet-4-6",
+        system: "system"
+      }),
+      undefined
+    );
+    expect(finalMessageMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not fall back for unrelated beta request failures", async () => {
+    finalMessageMock.mockRejectedValueOnce(
+      Object.assign(new Error("malformed request body"), {
+        status: 400,
+        name: "BadRequestError"
+      })
+    );
+    const client = new LLMClient({
+      mode: "platform",
+      platformApiKey: "test-key",
+      advisorTool: {
+        model: ANTHROPIC_ADVISOR_MODEL_ID,
+        maxUses: 1
+      }
+    });
+
+    await expect(client.complete("system", "user")).rejects.toThrow("malformed request body");
+
+    expect(betaStreamMock).toHaveBeenCalledTimes(1);
+    expect(streamMock).not.toHaveBeenCalled();
+  });
+
   it("can disable Redis-backed rate limits and usage tracking for local evals", async () => {
     const client = new LLMClient({
       mode: "platform",

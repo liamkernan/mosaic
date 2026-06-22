@@ -55,7 +55,16 @@ type AdvisorToolDefinition = {
   max_tokens?: number;
 };
 
+type AnthropicErrorDetails = {
+  status?: number;
+  name?: string;
+  message: string;
+};
+
 type BetaMessageStreamParams = Parameters<Anthropic["beta"]["messages"]["stream"]>[0];
+type AnthropicMessageResponse = Awaited<ReturnType<ReturnType<Anthropic["messages"]["stream"]>["finalMessage"]>>;
+type AnthropicBetaMessageResponse = Awaited<ReturnType<ReturnType<Anthropic["beta"]["messages"]["stream"]>["finalMessage"]>>;
+type AnthropicCompletionResponse = AnthropicMessageResponse | AnthropicBetaMessageResponse;
 
 function withHardTimeout<T>(promise: Promise<T>, timeoutMs: number | undefined): Promise<T> {
   if (timeoutMs === undefined) {
@@ -95,6 +104,38 @@ function isTextContentBlock(item: unknown): item is TextContentBlock {
     typeof item.text === "string";
 }
 
+function getAnthropicErrorDetails(error: unknown): AnthropicErrorDetails {
+  const statusValue = typeof error === "object" && error && "status" in error ? Number(error.status) : undefined;
+  const nestedError = typeof error === "object" && error && "error" in error && typeof error.error === "object"
+    ? error.error
+    : undefined;
+  const nestedMessage = nestedError && "message" in nestedError && typeof nestedError.message === "string"
+    ? nestedError.message
+    : undefined;
+  const message = error instanceof Error ? error.message : String(error);
+
+  return {
+    status: statusValue && Number.isFinite(statusValue) ? statusValue : undefined,
+    name: typeof error === "object" && error && "name" in error ? String(error.name) : undefined,
+    message: nestedMessage && !message.includes(nestedMessage)
+      ? `${message}: ${nestedMessage}`
+      : message
+  };
+}
+
+function shouldFallbackFromAdvisorError(error: unknown, advisorTool: AdvisorToolOptions): boolean {
+  const { status, message } = getAnthropicErrorDetails(error);
+  const normalized = message.toLowerCase();
+  const mentionsAdvisorFeature = normalized.includes("advisor") ||
+    normalized.includes("beta") ||
+    normalized.includes("tool") ||
+    normalized.includes(advisorTool.model.toLowerCase());
+  const availabilityStatus = status === 400 || status === 403 || status === 404 || status === 429 || status === 529;
+  const availabilityMessage = /\b(unavailable|not available|not found|permission|access|invalid|rate|overload|capacity)\b/i.test(message);
+
+  return mentionsAdvisorFeature && (availabilityStatus || availabilityMessage);
+}
+
 export class LLMClient {
   private readonly client: Anthropic;
   private readonly defaultModel: string;
@@ -122,6 +163,7 @@ export class LLMClient {
     const maxRetries = 3;
     let attempt = 0;
     const model = this.defaultModel;
+    let advisorUnavailable = false;
 
     while (attempt < maxRetries) {
       try {
@@ -137,17 +179,45 @@ export class LLMClient {
           messages: [{ role: "user" as const, content: userMessage }]
         };
         const requestOptions = options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : undefined;
-        const stream = this.advisorTool
-          ? this.client.beta.messages.stream(
+        const advisorTool = advisorUnavailable ? undefined : this.advisorTool;
+        let response: AnthropicCompletionResponse;
+
+        if (advisorTool) {
+          try {
+            const advisorStream = this.client.beta.messages.stream(
               {
                 ...request,
                 betas: [ANTHROPIC_ADVISOR_TOOL_BETA],
-                tools: [buildAdvisorToolDefinition(this.advisorTool)]
+                tools: [buildAdvisorToolDefinition(advisorTool)]
               } as unknown as BetaMessageStreamParams,
               requestOptions
-            )
-          : this.client.messages.stream(request, requestOptions);
-        const response = await withHardTimeout(stream.finalMessage(), options.timeoutMs);
+            );
+            response = await withHardTimeout(advisorStream.finalMessage(), options.timeoutMs);
+          } catch (error) {
+            if (!shouldFallbackFromAdvisorError(error, advisorTool)) {
+              throw error;
+            }
+
+            advisorUnavailable = true;
+            const { status, name, message } = getAnthropicErrorDetails(error);
+            logger.warn(
+              {
+                status,
+                name,
+                executorModel: model,
+                advisorModel: advisorTool.model,
+                errorMessage: message
+              },
+              "Advisor tool unavailable, retrying Anthropic completion without advisor"
+            );
+
+            const fallbackStream = this.client.messages.stream(request, requestOptions);
+            response = await withHardTimeout(fallbackStream.finalMessage(), options.timeoutMs);
+          }
+        } else {
+          const stream = this.client.messages.stream(request, requestOptions);
+          response = await withHardTimeout(stream.finalMessage(), options.timeoutMs);
+        }
 
         const text = response.content
           .flatMap((item) => isTextContentBlock(item) ? [item.text] : [])
@@ -166,9 +236,7 @@ export class LLMClient {
         return text.trim();
       } catch (error) {
         attempt += 1;
-        const status = typeof error === "object" && error && "status" in error ? Number(error.status) : undefined;
-        const errorName = typeof error === "object" && error && "name" in error ? String(error.name) : undefined;
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const { status, name: errorName, message: errorMessage } = getAnthropicErrorDetails(error);
         if (status === 429 && attempt < maxRetries) {
           const delayMs = 2 ** attempt * 1_000;
           logger.warn({ attempt, delayMs }, "Anthropic rate limit hit, retrying");
