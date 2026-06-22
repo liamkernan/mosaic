@@ -82,8 +82,6 @@ async function buildFileTree(rootPath: string, currentPath = ""): Promise<FileNo
 
   const nodes = await Promise.all(entries.filter((entry) => !isIgnoredName(entry.name)).map(async (entry): Promise<FileNode> => {
     const relativePath = currentPath ? join(currentPath, entry.name) : entry.name;
-    const absolutePath = join(rootPath, relativePath);
-
     if (entry.isDirectory()) {
       return {
         path: relativePath,
@@ -92,12 +90,10 @@ async function buildFileTree(rootPath: string, currentPath = ""): Promise<FileNo
       };
     }
 
-    const fileStat = await stat(absolutePath);
     return {
       path: relativePath,
       type: "file",
-      language: detectLanguage(relativePath),
-      sizeBytes: fileStat.size
+      language: detectLanguage(relativePath)
     };
   }));
 
@@ -307,18 +303,28 @@ async function readContainedRepoFile(
       };
     }
 
-    const [fileStat, fileContent] = await Promise.all([
-      stat(resolvedPath.absolutePath),
-      readFile(resolvedPath.absolutePath, "utf8")
-    ]);
-    let content = fileContent;
+    if (expectedSize !== undefined) {
+      return {
+        path: resolvedPath.repoPath,
+        content: await readFile(resolvedPath.absolutePath, "utf8"),
+        sizeBytes: expectedSize
+      };
+    }
+
+    const fileStat = await stat(resolvedPath.absolutePath);
     if (fileStat.size > largeFileTruncationBytes) {
-      content = truncateLargeFile(content);
+      const content = await readLargeFilePrefix(resolvedPath.absolutePath);
+
+      return {
+        path: resolvedPath.repoPath,
+        content,
+        sizeBytes: fileStat.size
+      };
     }
 
     return {
       path: resolvedPath.repoPath,
-      content,
+      content: await readFile(resolvedPath.absolutePath, "utf8"),
       sizeBytes: fileStat.size
     };
   } catch {
