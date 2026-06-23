@@ -93,6 +93,25 @@ function shouldCompactPromptContext(relevantFiles: RelevantFile[]): boolean {
     relevantFiles.some((file) => Buffer.byteLength(file.content) > COMPACT_SOURCE_FILE_BYTES);
 }
 
+function keywordLineIndexes(lines: string[], keywords: string[], limit: number): number[] {
+  if (keywords.length === 0) {
+    return [];
+  }
+
+  const indexes: number[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].toLowerCase();
+    if (keywords.some((keyword) => line.includes(keyword))) {
+      indexes.push(index);
+      if (indexes.length >= limit) {
+        break;
+      }
+    }
+  }
+
+  return indexes;
+}
+
 function compactHtmlContent(file: RelevantFile, options: PromptFileOptions): RelevantFile {
   if (!options.compactHtml || !/\.html?$/i.test(file.path) || Buffer.byteLength(file.content) <= options.compactAssetBytes) {
     return file;
@@ -102,11 +121,7 @@ function compactHtmlContent(file: RelevantFile, options: PromptFileOptions): Rel
   const headLines = options.compactAssetBytes <= RETRY_COMPACT_STATIC_ASSET_BYTES ? 40 : 80;
   const tailLines = options.compactAssetBytes <= RETRY_COMPACT_STATIC_ASSET_BYTES ? 30 : 60;
   const keywords = options.keywords ?? [];
-  const matchedIndexes = lines
-    .map((line, index) => ({ line: line.toLowerCase(), index }))
-    .filter(({ line }) => keywords.some((keyword) => line.includes(keyword)))
-    .map(({ index }) => index)
-    .slice(0, 8);
+  const matchedIndexes = keywordLineIndexes(lines, keywords, 8);
   const includedIndexes = new Set<number>();
 
   for (let index = 0; index < Math.min(headLines, lines.length); index += 1) {
@@ -172,11 +187,7 @@ function compactLargeSourceContent(file: RelevantFile, options: PromptFileOption
   const headLines = 120;
   const tailLines = 80;
   const keywords = options.keywords ?? [];
-  const matchedIndexes = lines
-    .map((line, index) => ({ line: line.toLowerCase(), index }))
-    .filter(({ line }) => keywords.some((keyword) => line.includes(keyword)))
-    .map(({ index }) => index)
-    .slice(0, 10);
+  const matchedIndexes = keywordLineIndexes(lines, keywords, 10);
   const includedIndexes = new Set<number>();
 
   for (let index = 0; index < Math.min(headLines, lines.length); index += 1) {

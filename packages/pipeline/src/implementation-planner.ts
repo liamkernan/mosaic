@@ -41,10 +41,6 @@ function normalizePath(path: string): string {
   return path.replace(/^\.?\//, "").trim();
 }
 
-function repoContainsPath(fileTree: string[], path: string): boolean {
-  return fileTree.includes(path);
-}
-
 export class ImplementationPlanner {
   constructor(private readonly llmClient: LLMClient) {}
 
@@ -70,12 +66,13 @@ export class ImplementationPlanner {
 
     const parsed = implementationPlanSchema.parse(JSON.parse(extractJsonObject(response)));
     const loadedPaths = new Set(relevantFiles.map((file) => file.path));
+    const repoPaths = new Set(fileTree);
     const requiredFiles = parsed.requiredFiles
       .map((file) => ({
         ...file,
         path: normalizePath(file.path)
       }))
-      .filter((file) => repoContainsPath(fileTree, file.path) || loadedPaths.has(file.path));
+      .filter((file) => repoPaths.has(file.path) || loadedPaths.has(file.path));
 
     return {
       ...parsed,

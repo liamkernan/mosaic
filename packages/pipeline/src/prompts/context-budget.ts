@@ -48,7 +48,13 @@ interface TreeScoreContext {
   terms: string[];
   directPathSet: Set<string>;
   directAncestorSet: Set<string>;
-  directDirectories: string[];
+  directDirectorySet: Set<string>;
+}
+
+interface RankedPath {
+  path: string;
+  index: number;
+  score: number;
 }
 
 function normalizePath(path: string): string {
@@ -78,12 +84,26 @@ function tokenize(text: string): string[] {
     .slice(0, 40);
 }
 
-function isSameOrChildPath(parentDir: string, candidatePath: string): boolean {
-  if (parentDir.length === 0) {
-    return !candidatePath.includes("/");
+function hasDirectDirectoryMatch(candidatePath: string, directDirectorySet: Set<string>): boolean {
+  if (directDirectorySet.has("") && !candidatePath.includes("/")) {
+    return true;
   }
 
-  return candidatePath === parentDir || candidatePath.startsWith(`${parentDir}/`);
+  let current = candidatePath;
+  while (current.length > 0) {
+    if (directDirectorySet.has(current)) {
+      return true;
+    }
+
+    const slashIndex = current.lastIndexOf("/");
+    if (slashIndex < 0) {
+      return false;
+    }
+
+    current = current.slice(0, slashIndex);
+  }
+
+  return false;
 }
 
 function cappedTermMatches(text: string, terms: string[], cap: number): number {
@@ -120,13 +140,13 @@ function buildTreeScoreContext(options: PromptTreeOptions, terms: string[]): Tre
     terms,
     directPathSet: new Set(directPaths),
     directAncestorSet,
-    directDirectories: directPaths.map(dirname)
+    directDirectorySet: new Set(directPaths.map(dirname))
   };
 }
 
 function scoreTreePath(path: string, context: TreeScoreContext): number {
-  const { options, terms, directPathSet, directAncestorSet, directDirectories } = context;
-  const normalized = normalizePath(path);
+  const { options, terms, directPathSet, directAncestorSet, directDirectorySet } = context;
+  const normalized = path;
   const lowerPath = normalized.toLowerCase();
   let score = 0;
 
@@ -138,7 +158,7 @@ function scoreTreePath(path: string, context: TreeScoreContext): number {
     score += 80;
   }
 
-  if (directDirectories.some((directory) => isSameOrChildPath(directory, normalized))) {
+  if (hasDirectDirectoryMatch(normalized, directDirectorySet)) {
     score += 35;
   }
 
@@ -164,6 +184,78 @@ function scoreTreePath(path: string, context: TreeScoreContext): number {
   return score;
 }
 
+function isBetterRank(left: RankedPath, right: RankedPath): boolean {
+  return left.score > right.score || (left.score === right.score && left.index < right.index);
+}
+
+function isWorseRank(left: RankedPath, right: RankedPath): boolean {
+  return left.score < right.score || (left.score === right.score && left.index > right.index);
+}
+
+function siftRankDown(heap: RankedPath[], startIndex: number): void {
+  let index = startIndex;
+
+  while (true) {
+    const left = index * 2 + 1;
+    const right = left + 1;
+    let worst = index;
+
+    if (left < heap.length && isWorseRank(heap[left], heap[worst])) {
+      worst = left;
+    }
+
+    if (right < heap.length && isWorseRank(heap[right], heap[worst])) {
+      worst = right;
+    }
+
+    if (worst === index) {
+      return;
+    }
+
+    [heap[index], heap[worst]] = [heap[worst], heap[index]];
+    index = worst;
+  }
+}
+
+function siftRankUp(heap: RankedPath[], startIndex: number): void {
+  let index = startIndex;
+
+  while (index > 0) {
+    const parent = Math.floor((index - 1) / 2);
+    if (!isWorseRank(heap[index], heap[parent])) {
+      return;
+    }
+
+    [heap[index], heap[parent]] = [heap[parent], heap[index]];
+    index = parent;
+  }
+}
+
+function selectTopRankedPaths(paths: string[], context: TreeScoreContext, limit: number): RankedPath[] {
+  const heap: RankedPath[] = [];
+
+  for (let index = 0; index < paths.length; index += 1) {
+    const candidate = {
+      path: paths[index],
+      index,
+      score: scoreTreePath(paths[index], context)
+    };
+
+    if (heap.length < limit) {
+      heap.push(candidate);
+      siftRankUp(heap, heap.length - 1);
+      continue;
+    }
+
+    if (isBetterRank(candidate, heap[0])) {
+      heap[0] = candidate;
+      siftRankDown(heap, 0);
+    }
+  }
+
+  return heap;
+}
+
 export function compactPromptFileTree(fileTree: string[], options: PromptTreeOptions): PromptTree {
   const normalizedTree = [...new Set(fileTree.map(normalizePath).filter(Boolean))];
   if (normalizedTree.length <= options.maxPaths) {
@@ -179,10 +271,7 @@ export function compactPromptFileTree(fileTree: string[], options: PromptTreeOpt
     ...(options.validationErrors ?? [])
   ].filter(Boolean).join("\n"));
   const scoreContext = buildTreeScoreContext(options, terms);
-  const ranked = normalizedTree
-    .map((path, index) => ({ path, index, score: scoreTreePath(path, scoreContext) }))
-    .sort((left, right) => right.score - left.score || left.index - right.index);
-  const selected = new Set(ranked.slice(0, options.maxPaths).map((item) => item.path));
+  const selected = new Set(selectTopRankedPaths(normalizedTree, scoreContext, options.maxPaths).map((item) => item.path));
   const normalizedTreeSet = new Set(normalizedTree);
 
   for (const path of [

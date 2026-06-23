@@ -40,6 +40,22 @@ describe("pipeline prompts", () => {
     expect(compacted.omittedCount).toBe(7);
   });
 
+  it("keeps nearby files from directly relevant directories", () => {
+    const compacted = compactPromptFileTree(
+      [
+        "src/target.ts",
+        "src/neighbor.ts",
+        ...Array.from({ length: 20 }, (_, index) => `unrelated/path-${index}.ts`)
+      ],
+      {
+        maxPaths: 2,
+        relevantPaths: ["src/target.ts"]
+      }
+    );
+
+    expect(compacted.paths).toEqual(["src/target.ts", "src/neighbor.ts"]);
+  });
+
   it("includes relevant file contents in the generation prompt", () => {
     const prompt = buildGenerationPrompt(
       "Update header",

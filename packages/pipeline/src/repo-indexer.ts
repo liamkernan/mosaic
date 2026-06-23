@@ -116,14 +116,19 @@ async function cloneOrUpdateRepo(repoFullName: string, localPath: string, defaul
   }
 }
 
-function flattenFileTree(nodes: FileNode[]): string[] {
-  return nodes.flatMap((node) => {
+function appendFileTreePaths(nodes: FileNode[], paths: string[]): void {
+  for (const node of nodes) {
+    paths.push(node.path);
     if (node.type === "directory") {
-      return [node.path, ...flattenFileTree(node.children ?? [])];
+      appendFileTreePaths(node.children ?? [], paths);
     }
+  }
+}
 
-    return [node.path];
-  });
+function flattenFileTree(nodes: FileNode[]): string[] {
+  const paths: string[] = [];
+  appendFileTreePaths(nodes, paths);
+  return paths;
 }
 
 function truncateLargeFile(content: string): string {
@@ -138,17 +143,24 @@ async function readLargeFilePrefix(filePath: string): Promise<string> {
   try {
     for await (const chunk of stream) {
       const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
-      content += text;
+      let chunkStart = 0;
 
-      for (const character of text) {
-        if (character === "\n") {
-          newlineCount += 1;
+      while (true) {
+        const newlineIndex = text.indexOf("\n", chunkStart);
+        if (newlineIndex === -1) {
+          content += text.slice(chunkStart);
+          break;
         }
-      }
 
-      if (newlineCount >= largeFileTruncationLines) {
-        stream.destroy();
-        return truncateLargeFile(content);
+        newlineCount += 1;
+        if (newlineCount >= largeFileTruncationLines) {
+          content += text.slice(chunkStart, newlineIndex);
+          stream.destroy();
+          return content;
+        }
+
+        content += text.slice(chunkStart, newlineIndex + 1);
+        chunkStart = newlineIndex + 1;
       }
     }
   } finally {

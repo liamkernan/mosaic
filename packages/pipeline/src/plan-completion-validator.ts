@@ -12,6 +12,27 @@ const orderedClausePattern = /`([^`]*(?:ASC|DESC|ORDER BY)[^`]*)`/gi;
 const idempotencyPlanPattern = /\b(?:dedupe|duplicate|idempotent|idempotency|retry|same source|external[_\s-]?ref(?:erence)?)\b/i;
 const endpointPathPattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+(`?)(\/[a-zA-Z0-9_./:-]+)\1/g;
 
+interface PlannedScope {
+  requiredPaths: PathFacts[];
+  requiredPathList: string[];
+  requiredPathSet: Set<string>;
+  requiredDirSet: Set<string>;
+  requiresBehavioralTests: boolean;
+}
+
+interface PathFacts {
+  path: string;
+  dir: string;
+  extension: string;
+  stem: string;
+  tokens?: Set<string>;
+  isTest: boolean;
+  isDocumentation: boolean;
+  isSource: boolean;
+  isStaticAsset: boolean;
+  isCompanionConfig: boolean;
+}
+
 function planText(plan: ImplementationPlan, sourceText = ""): string {
   return [
     sourceText,
@@ -60,6 +81,26 @@ function stem(path: string): string {
     .toLowerCase();
 }
 
+function pathFacts(path: string): PathFacts {
+  const normalized = normalizeRepoPath(path);
+  return {
+    path: normalized,
+    dir: dirname(normalized),
+    extension: extension(normalized),
+    stem: stem(normalized),
+    isTest: testPathPattern.test(normalized),
+    isDocumentation: documentationPathPattern.test(normalized),
+    isSource: sourcePathPattern.test(normalized),
+    isStaticAsset: staticAssetPathPattern.test(normalized),
+    isCompanionConfig: companionConfigPathPattern.test(normalized)
+  };
+}
+
+function pathTokens(facts: PathFacts): Set<string> {
+  facts.tokens ??= tokensForPath(facts.path);
+  return facts.tokens;
+}
+
 function isChildPath(parentDir: string, path: string): boolean {
   const normalizedParent = normalizeRepoPath(parentDir);
   const normalizedPath = normalizeRepoPath(path);
@@ -88,11 +129,9 @@ function tokensForPath(path: string): Set<string> {
   );
 }
 
-function sharesMeaningfulToken(leftPath: string, rightPath: string): boolean {
-  const leftTokens = tokensForPath(leftPath);
-  const rightTokens = tokensForPath(rightPath);
-
-  for (const token of leftTokens) {
+function sharesMeaningfulToken(left: PathFacts, right: PathFacts): boolean {
+  const rightTokens = pathTokens(right);
+  for (const token of pathTokens(left)) {
     if (rightTokens.has(token)) {
       return true;
     }
@@ -101,97 +140,114 @@ function sharesMeaningfulToken(leftPath: string, rightPath: string): boolean {
   return false;
 }
 
-function isStaticAssetCompanion(changedPath: string, requiredPath: string): boolean {
-  const requiredExtension = extension(requiredPath);
-  const changedExtension = extension(changedPath);
-  if (!staticAssetPathPattern.test(requiredPath) || !staticAssetPathPattern.test(changedPath)) {
+function isStaticAssetCompanion(changed: PathFacts, required: PathFacts): boolean {
+  if (!required.isStaticAsset || !changed.isStaticAsset) {
     return false;
   }
 
-  const requiredDir = dirname(requiredPath);
-  const changedDir = dirname(changedPath);
-  if (requiredExtension === ".html" || requiredExtension === ".htm") {
-    return changedDir === requiredDir || isChildPath(requiredDir, changedPath);
+  if (required.extension === ".html" || required.extension === ".htm") {
+    return changed.dir === required.dir || isChildPath(required.dir, changed.path);
   }
 
-  if (changedExtension === ".html" || changedExtension === ".htm") {
-    return requiredDir === changedDir || isChildPath(changedDir, requiredPath);
+  if (changed.extension === ".html" || changed.extension === ".htm") {
+    return required.dir === changed.dir || isChildPath(changed.dir, required.path);
   }
 
-  return requiredDir === changedDir && sharesMeaningfulToken(changedPath, requiredPath);
+  return required.dir === changed.dir && sharesMeaningfulToken(changed, required);
 }
 
-function isTestCompanion(changedPath: string, requiredPath: string): boolean {
-  if (!testPathPattern.test(changedPath)) {
+function isTestCompanion(changed: PathFacts, required: PathFacts): boolean {
+  if (!changed.isTest) {
     return false;
   }
 
-  const changedStem = stem(changedPath);
-  const requiredStem = stem(requiredPath);
-  return changedStem.includes(requiredStem) ||
-    requiredStem.includes(changedStem) ||
-    sharesMeaningfulToken(changedPath, requiredPath);
+  return changed.stem.includes(required.stem) ||
+    required.stem.includes(changed.stem) ||
+    sharesMeaningfulToken(changed, required);
 }
 
-function isCompanionConfigForRequiredFile(changedPath: string, requiredPath: string): boolean {
-  if (!companionConfigPathPattern.test(changedPath)) {
+function isCompanionConfigForRequiredFile(changed: PathFacts, required: PathFacts): boolean {
+  if (!changed.isCompanionConfig) {
     return false;
   }
 
-  return isAncestorPath(dirname(changedPath), requiredPath);
+  return isAncestorPath(changed.dir, required.path);
 }
 
-function isAllowedPlannedCompanionChange(change: GeneratedChange, requiredPath: string, plan: ImplementationPlan, sourceText: string): boolean {
-  const changedPath = normalizeRepoPath(change.filePath);
-  const normalizedRequiredPath = normalizeRepoPath(requiredPath);
-  const sameDir = dirname(changedPath) === dirname(normalizedRequiredPath);
+function isAllowedPlannedCompanionChange(change: GeneratedChange, changedPath: PathFacts, requiredPath: PathFacts, requiresBehavioralTests: boolean): boolean {
+  const sameDir = changedPath.dir === requiredPath.dir;
 
-  if (sameDir && change.originalContent.length === 0 && (sourcePathPattern.test(changedPath) || testPathPattern.test(changedPath))) {
+  if (sameDir && change.originalContent.length === 0 && (changedPath.isSource || changedPath.isTest)) {
     return true;
   }
 
-  if (isStaticAssetCompanion(changedPath, normalizedRequiredPath)) {
+  if (isStaticAssetCompanion(changedPath, requiredPath)) {
     return true;
   }
 
-  if (isCompanionConfigForRequiredFile(changedPath, normalizedRequiredPath)) {
+  if (isCompanionConfigForRequiredFile(changedPath, requiredPath)) {
     return true;
   }
 
-  if ((planRequiresBehavioralTests(plan, sourceText) || testPathPattern.test(normalizedRequiredPath)) && isTestCompanion(changedPath, normalizedRequiredPath)) {
+  if ((requiresBehavioralTests || requiredPath.isTest) && isTestCompanion(changedPath, requiredPath)) {
     return true;
   }
 
   return false;
 }
 
+function createPlannedScope(plan: ImplementationPlan, sourceText: string): PlannedScope | null {
+  const requiredPathList = [...new Set(plan.requiredFiles.map((file) => normalizeRepoPath(file.path)).filter(Boolean))];
+  if (requiredPathList.length === 0) {
+    return null;
+  }
+
+  const requiredPaths = requiredPathList.map(pathFacts);
+  if (!requiredPaths.some((path) => !path.isTest && !path.isDocumentation)) {
+    return null;
+  }
+
+  return {
+    requiredPaths,
+    requiredPathList,
+    requiredPathSet: new Set(requiredPathList),
+    requiredDirSet: new Set(requiredPaths.map((path) => path.dir)),
+    requiresBehavioralTests: planRequiresBehavioralTests(plan, sourceText)
+  };
+}
+
+function plannedChangeScopeError(change: GeneratedChange, scope: PlannedScope): string | null {
+  const normalizedChangedPath = normalizeRepoPath(change.filePath);
+  if (scope.requiredPathSet.has(normalizedChangedPath)) {
+    return null;
+  }
+
+  const changedDir = dirname(normalizedChangedPath);
+  if (
+    change.originalContent.length === 0 &&
+    (sourcePathPattern.test(normalizedChangedPath) || testPathPattern.test(normalizedChangedPath)) &&
+    scope.requiredDirSet.has(changedDir)
+  ) {
+    return null;
+  }
+
+  const changedPath = pathFacts(normalizedChangedPath);
+  if (scope.requiredPaths.some((requiredPath) => isAllowedPlannedCompanionChange(change, changedPath, requiredPath, scope.requiresBehavioralTests))) {
+    return null;
+  }
+
+  return `Change for ${change.filePath} is outside the implementation plan scope. Planned files: ${scope.requiredPathList.join(", ")}`;
+}
+
 function validatePlannedChangeScope(changes: GeneratedChange[], plan: ImplementationPlan, sourceText = ""): string[] {
-  const requiredPaths = [...new Set(plan.requiredFiles.map((file) => normalizeRepoPath(file.path)).filter(Boolean))];
-  if (requiredPaths.length === 0) {
+  const scope = createPlannedScope(plan, sourceText);
+  if (!scope) {
     return [];
   }
 
-  if (!requiredPaths.some((path) => !testPathPattern.test(path) && !documentationPathPattern.test(path))) {
-    return [];
-  }
-
-  const requiredPathSet = new Set(requiredPaths);
-  const errors: string[] = [];
-
-  for (const change of changes) {
-    const changedPath = normalizeRepoPath(change.filePath);
-    if (requiredPathSet.has(changedPath)) {
-      continue;
-    }
-
-    if (requiredPaths.some((requiredPath) => isAllowedPlannedCompanionChange(change, requiredPath, plan, sourceText))) {
-      continue;
-    }
-
-    errors.push(`Change for ${change.filePath} is outside the implementation plan scope. Planned files: ${requiredPaths.join(", ")}`);
-  }
-
-  return errors;
+  return changes
+    .map((change) => plannedChangeScopeError(change, scope))
+    .filter((error): error is string => Boolean(error));
 }
 
 export function pruneChangesToPlanScope(changes: GeneratedChange[], plan: ImplementationPlan | undefined, sourceText = ""): GeneratedChange[] {
@@ -199,7 +255,12 @@ export function pruneChangesToPlanScope(changes: GeneratedChange[], plan: Implem
     return changes;
   }
 
-  return changes.filter((change) => validatePlannedChangeScope([change], plan, sourceText).length === 0);
+  const scope = createPlannedScope(plan, sourceText);
+  if (!scope) {
+    return changes;
+  }
+
+  return changes.filter((change) => !plannedChangeScopeError(change, scope));
 }
 
 function extractPythonListFunctionFields(content: string): Map<string, Set<string>> {

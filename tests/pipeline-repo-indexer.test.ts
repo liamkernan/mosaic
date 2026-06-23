@@ -13,6 +13,50 @@ describe("RepoIndexer repository references", () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
 
+  it("flattens repository file trees in pre-order without exposing the cached array", () => {
+    const indexer = new RepoIndexer();
+    const context = {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath: process.cwd(),
+      installationId: 1,
+      fileTree: [
+        {
+          path: "src",
+          type: "directory" as const,
+          children: [
+            { path: "src/index.ts", type: "file" as const },
+            {
+              path: "src/components",
+              type: "directory" as const,
+              children: [{ path: "src/components/card.ts", type: "file" as const }]
+            }
+          ]
+        },
+        { path: "README.md", type: "file" as const }
+      ]
+    };
+
+    const first = indexer.fileTreeToPaths(context);
+    first.push("mutated-by-caller");
+
+    expect(first).toEqual([
+      "src",
+      "src/index.ts",
+      "src/components",
+      "src/components/card.ts",
+      "README.md",
+      "mutated-by-caller"
+    ]);
+    expect(indexer.fileTreeToPaths(context)).toEqual([
+      "src",
+      "src/index.ts",
+      "src/components",
+      "src/components/card.ts",
+      "README.md"
+    ]);
+  });
+
   it("loads promoted local issue specs and related reported tests as authoritative references", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
     tempDirs.push(localPath);

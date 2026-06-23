@@ -58,6 +58,43 @@ describe("validate", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("counts localized edits in large files without charging unchanged prefix and suffix lines", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(tempDir);
+    await mkdir(join(tempDir, "src"), { recursive: true });
+    const originalContent = [
+      ...Array.from({ length: 300 }, (_, index) => `const prefix${index} = ${index};`),
+      "const target = 'old';",
+      ...Array.from({ length: 300 }, (_, index) => `const suffix${index} = ${index};`)
+    ].join("\n");
+    const modifiedContent = originalContent.replace("const target = 'old';", "const target = 'new';");
+    await writeFile(join(tempDir, "src", "large.ts"), originalContent);
+
+    const result = await validate(
+      [
+        {
+          filePath: "src/large.ts",
+          originalContent,
+          modifiedContent,
+          explanation: "update one localized value"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath: tempDir,
+        fileTree: [{ path: "src/large.ts", type: "file" }],
+        installationId: 1
+      },
+      {
+        maxChangedLines: 3,
+        maxLinesAdded: 10
+      }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
   it("rejects generated change paths outside the repository", async () => {
     const result = await validate(
       [

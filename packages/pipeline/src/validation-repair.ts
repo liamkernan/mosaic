@@ -3,12 +3,74 @@ import { join } from "node:path";
 
 import type { GeneratedChange, RepoContext } from "@mosaic/core";
 
+interface ChangeUpdater {
+  changes: GeneratedChange[];
+  indexesByPath: Map<string, number[]>;
+  copied: boolean;
+}
+
 const modalStyleValidationPattern =
   /Change for .+ adds modal UI hooks (?:\(([^)]+)\)|without matching selectors in ([^:]+): (.+)|but does not update ([^ ]+) with matching styles)/;
 const unlinkedStaticAssetPattern = /New static asset ([^\s]+) is not linked from ([^\s]+)/;
 const missingHtmlIdPattern = /queries missing HTML id\(s\): (.+)$/;
 const missingHtmlSelectorPattern = /queries selector\(s\) with no matching HTML: (.+)$/;
 const missingPythonImportPattern = /Change for ([^\s]+\.py) calls (.+) from ([^\s]+)\.py but does not import or define (.+)$/;
+
+function createChangeUpdater(changes: GeneratedChange[]): ChangeUpdater {
+  const indexesByPath = new Map<string, number[]>();
+  for (let index = 0; index < changes.length; index += 1) {
+    const change = changes[index];
+    const indexes = indexesByPath.get(change.filePath);
+    if (indexes) {
+      indexes.push(index);
+    } else {
+      indexesByPath.set(change.filePath, [index]);
+    }
+  }
+
+  return {
+    changes,
+    indexesByPath,
+    copied: false
+  };
+}
+
+function copyChangesForUpdate(updater: ChangeUpdater): GeneratedChange[] {
+  if (!updater.copied) {
+    updater.changes = updater.changes.slice();
+    updater.copied = true;
+  }
+
+  return updater.changes;
+}
+
+function findChange(updater: ChangeUpdater, filePath: string): GeneratedChange | undefined {
+  const indexes = updater.indexesByPath.get(filePath);
+  return indexes ? updater.changes[indexes[0]] : undefined;
+}
+
+function updateChangesForPath(
+  updater: ChangeUpdater,
+  filePath: string,
+  update: (change: GeneratedChange) => GeneratedChange
+): void {
+  const indexes = updater.indexesByPath.get(filePath);
+  if (!indexes) {
+    return;
+  }
+
+  const changes = copyChangesForUpdate(updater);
+  for (const index of indexes) {
+    changes[index] = update(changes[index]);
+  }
+}
+
+function appendChange(updater: ChangeUpdater, change: GeneratedChange): void {
+  const changes = copyChangesForUpdate(updater);
+  const index = changes.length;
+  changes.push(change);
+  updater.indexesByPath.set(change.filePath, [index]);
+}
 
 function findFilePathByName(nodes: RepoContext["fileTree"], fileName: string): string | null {
   for (const node of nodes) {
@@ -446,14 +508,20 @@ export async function completeUnlinkedStaticAssets(
     return changes;
   }
 
-  let completedChanges = changes;
+  const completedChanges = createChangeUpdater(changes);
+  const resolvedHtmlPaths = new Map<string, string | null>();
   for (const { assetPath, htmlPath } of unlinkedAssets) {
-    const resolvedHtmlPath = findHtmlInsertTarget(repoContext.fileTree, htmlPath);
+    let resolvedHtmlPath = resolvedHtmlPaths.get(htmlPath);
+    if (resolvedHtmlPath === undefined) {
+      resolvedHtmlPath = findHtmlInsertTarget(repoContext.fileTree, htmlPath);
+      resolvedHtmlPaths.set(htmlPath, resolvedHtmlPath);
+    }
+
     if (!resolvedHtmlPath) {
       continue;
     }
 
-    const existingHtmlChange = completedChanges.find((change) => change.filePath === resolvedHtmlPath);
+    const existingHtmlChange = findChange(completedChanges, resolvedHtmlPath);
     const originalContent = existingHtmlChange?.originalContent ??
       await readFile(join(repoContext.localPath, resolvedHtmlPath), "utf8").catch(() => "");
     const baseContent = existingHtmlChange?.modifiedContent ?? originalContent;
@@ -463,30 +531,27 @@ export async function completeUnlinkedStaticAssets(
     }
 
     if (existingHtmlChange) {
-      completedChanges = completedChanges.map((change) =>
-        change.filePath === resolvedHtmlPath
-          ? {
-              ...change,
-              modifiedContent,
-              explanation: `${change.explanation} Linked ${assetPath} so the new static asset loads.`
-            }
-          : change
+      updateChangesForPath(
+        completedChanges,
+        resolvedHtmlPath,
+        (change) => ({
+          ...change,
+          modifiedContent,
+          explanation: `${change.explanation} Linked ${assetPath} so the new static asset loads.`
+        })
       );
       continue;
     }
 
-    completedChanges = [
-      ...completedChanges,
-      {
-        filePath: resolvedHtmlPath,
-        originalContent,
-        modifiedContent,
-        explanation: `Linked ${assetPath} so the new static asset loads.`
-      }
-    ];
+    appendChange(completedChanges, {
+      filePath: resolvedHtmlPath,
+      originalContent,
+      modifiedContent,
+      explanation: `Linked ${assetPath} so the new static asset loads.`
+    });
   }
 
-  return completedChanges;
+  return completedChanges.changes;
 }
 
 export async function completeMissingHtmlHooks(
@@ -548,9 +613,9 @@ export async function completeMissingPythonImports(
     return changes;
   }
 
-  let completedChanges = changes;
+  const completedChanges = createChangeUpdater(changes);
   for (const missingImport of missingImports) {
-    const existingChange = completedChanges.find((change) => change.filePath === missingImport.filePath);
+    const existingChange = findChange(completedChanges, missingImport.filePath);
     const originalContent = existingChange?.originalContent ??
       await readFile(join(repoContext.localPath, missingImport.filePath), "utf8").catch(() => "");
     const baseContent = existingChange?.modifiedContent ?? originalContent;
@@ -561,30 +626,27 @@ export async function completeMissingPythonImports(
     }
 
     if (existingChange) {
-      completedChanges = completedChanges.map((change) =>
-        change.filePath === missingImport.filePath
-          ? {
-              ...change,
-              modifiedContent,
-              explanation: `${change.explanation} Added missing Python import required by validation.`
-            }
-          : change
+      updateChangesForPath(
+        completedChanges,
+        missingImport.filePath,
+        (change) => ({
+          ...change,
+          modifiedContent,
+          explanation: `${change.explanation} Added missing Python import required by validation.`
+        })
       );
       continue;
     }
 
-    completedChanges = [
-      ...completedChanges,
-      {
-        filePath: missingImport.filePath,
-        originalContent,
-        modifiedContent,
-        explanation: "Added missing Python import required by validation."
-      }
-    ];
+    appendChange(completedChanges, {
+      filePath: missingImport.filePath,
+      originalContent,
+      modifiedContent,
+      explanation: "Added missing Python import required by validation."
+    });
   }
 
-  return completedChanges;
+  return completedChanges.changes;
 }
 
 export async function applyValidationFallbacks(

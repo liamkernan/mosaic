@@ -18,8 +18,6 @@ export interface ValidationLimits {
   blockPatterns?: string[];
 }
 
-type RepoFileReader = (filePath: string) => Promise<string>;
-
 const urlPattern = /\bhttps?:\/\/[^\s"'`]+/g;
 const ipPattern = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
 const modalTokenPattern = /\b[a-z0-9-]*(?:modal|overlay|dialog)(?:-[a-z0-9]+)*\b/gi;
@@ -48,6 +46,12 @@ const pythonBuiltinCallNames = new Set([
   "tuple"
 ]);
 
+interface HtmlFacts {
+  html: string;
+  ids: Set<string>;
+  tagsByClass: Map<string, string[]>;
+}
+
 function countChangedLines(original: string, modified: string): number {
   const originalLines = original.split("\n");
   const modifiedLines = modified.split("\n");
@@ -59,13 +63,39 @@ function countChangedLines(original: string, modified: string): number {
     return originalLines.length;
   }
 
-  let previous = new Array<number>(modifiedLines.length + 1).fill(0);
+  let start = 0;
+  while (
+    start < originalLines.length &&
+    start < modifiedLines.length &&
+    originalLines[start] === modifiedLines[start]
+  ) {
+    start += 1;
+  }
 
-  for (const originalLine of originalLines) {
-    const current = new Array<number>(modifiedLines.length + 1).fill(0);
+  let originalEnd = originalLines.length - 1;
+  let modifiedEnd = modifiedLines.length - 1;
+  while (
+    originalEnd >= start &&
+    modifiedEnd >= start &&
+    originalLines[originalEnd] === modifiedLines[modifiedEnd]
+  ) {
+    originalEnd -= 1;
+    modifiedEnd -= 1;
+  }
 
-    for (let index = 0; index < modifiedLines.length; index += 1) {
-      current[index + 1] = originalLine === modifiedLines[index]
+  const changedOriginalLines = originalLines.slice(start, originalEnd + 1);
+  const changedModifiedLines = modifiedLines.slice(start, modifiedEnd + 1);
+  if (changedOriginalLines.length === 0 || changedModifiedLines.length === 0) {
+    return changedOriginalLines.length + changedModifiedLines.length;
+  }
+
+  let previous = new Array<number>(changedModifiedLines.length + 1).fill(0);
+
+  for (const originalLine of changedOriginalLines) {
+    const current = new Array<number>(changedModifiedLines.length + 1).fill(0);
+
+    for (let index = 0; index < changedModifiedLines.length; index += 1) {
+      current[index + 1] = originalLine === changedModifiedLines[index]
         ? previous[index] + 1
         : Math.max(current[index], previous[index + 1]);
     }
@@ -73,8 +103,8 @@ function countChangedLines(original: string, modified: string): number {
     previous = current;
   }
 
-  const commonLines = previous[modifiedLines.length];
-  return (originalLines.length - commonLines) + (modifiedLines.length - commonLines);
+  const commonLines = previous[changedModifiedLines.length];
+  return (changedOriginalLines.length - commonLines) + (changedModifiedLines.length - commonLines);
 }
 
 function countAddedLines(original: string, modified: string): number {
@@ -265,20 +295,6 @@ function findRepoFile(repoContext: RepoContext, fileName: string): string | unde
   return findFileInTree(repoContext.fileTree, fileName);
 }
 
-function createRepoFileReader(repoContext: RepoContext): RepoFileReader {
-  const cache = new Map<string, Promise<string>>();
-
-  return (filePath: string) => {
-    let cached = cache.get(filePath);
-    if (!cached) {
-      cached = readFile(join(repoContext.localPath, filePath), "utf8").catch(() => "");
-      cache.set(filePath, cached);
-    }
-
-    return cached;
-  };
-}
-
 function isStylesheet(filePath: string): boolean {
   return /\.css$/i.test(filePath);
 }
@@ -342,9 +358,10 @@ function validatePythonCrossFileImports(changes: GeneratedChange[], errors: stri
   const exportedFunctionsByModule = new Map<string, Set<string>>();
 
   for (const change of pythonChanges) {
-    const exports = pythonTopLevelFunctions(change.modifiedContent);
-    if (exports.size > 0) {
-      exportedFunctionsByModule.set(pythonModuleName(change.filePath), exports);
+    const moduleName = pythonModuleName(change.filePath);
+    const exportedFunctions = pythonTopLevelFunctions(change.modifiedContent);
+    if (exportedFunctions.size > 0) {
+      exportedFunctionsByModule.set(moduleName, exportedFunctions);
     }
   }
 
@@ -352,21 +369,51 @@ function validatePythonCrossFileImports(changes: GeneratedChange[], errors: stri
     return;
   }
 
+  const modulesByExportedFunction = new Map<string, string[]>();
+  for (const [moduleName, exportedFunctions] of exportedFunctionsByModule) {
+    for (const exportedFunction of exportedFunctions) {
+      const modules = modulesByExportedFunction.get(exportedFunction);
+      if (modules) {
+        modules.push(moduleName);
+      } else {
+        modulesByExportedFunction.set(exportedFunction, [moduleName]);
+      }
+    }
+  }
+
   for (const change of pythonChanges) {
     const currentModule = pythonModuleName(change.filePath);
     const definedNames = pythonDefinedNames(change.modifiedContent);
     const callNames = pythonCallNames(change.modifiedContent);
+    const missingImportsByModule = new Map<string, string[]>();
 
-    for (const [moduleName, exportedFunctions] of exportedFunctionsByModule) {
-      if (moduleName === currentModule) {
+    for (const name of callNames) {
+      if (definedNames.has(name)) {
         continue;
       }
 
-      const missingImports = [...callNames]
-        .filter((name) => exportedFunctions.has(name))
-        .filter((name) => !definedNames.has(name));
+      const exportingModules = modulesByExportedFunction.get(name);
+      if (!exportingModules) {
+        continue;
+      }
 
-      if (missingImports.length > 0) {
+      for (const moduleName of exportingModules) {
+        if (moduleName === currentModule) {
+          continue;
+        }
+
+        const missingImports = missingImportsByModule.get(moduleName);
+        if (missingImports) {
+          missingImports.push(name);
+        } else {
+          missingImportsByModule.set(moduleName, [name]);
+        }
+      }
+    }
+
+    for (const moduleName of exportedFunctionsByModule.keys()) {
+      const missingImports = missingImportsByModule.get(moduleName);
+      if (missingImports && missingImports.length > 0) {
         errors.push(`Change for ${change.filePath} calls ${missingImports.join(", ")} from ${moduleName}.py but does not import or define ${missingImports.join(", ")}`);
       }
     }
@@ -396,14 +443,40 @@ function scriptCreatesId(script: string, id: string): boolean {
   return new RegExp(`(?:id\\s*=\\s*["']${escapedId}["']|\\.id\\s*=\\s*["']${escapedId}["']|setAttribute\\(\\s*["']id["']\\s*,\\s*["']${escapedId}["']\\s*\\))`).test(script);
 }
 
-function htmlHasId(html: string, id: string): boolean {
-  const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\bid\\s*=\\s*["']${escapedId}["']`, "i").test(html);
+function tagClassValues(tag: string): string[] {
+  const match = tag.match(/\bclass\s*=\s*["']([^"']*)["']/i);
+  return match ? match[1].split(/\s+/).filter(Boolean) : [];
 }
 
-function tagHasClass(tag: string, className: string): boolean {
-  const escapedClassName = className.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\bclass\\s*=\\s*["'][^"']*\\b${escapedClassName}\\b`, "i").test(tag);
+function collectHtmlFacts(html: string): HtmlFacts {
+  const ids = new Set<string>();
+  for (const match of html.matchAll(/\bid\s*=\s*["']([^"']+)["']/gi)) {
+    ids.add(match[1].toLowerCase());
+  }
+
+  const tagsByClass = new Map<string, string[]>();
+  for (const match of html.matchAll(/<[^>]+>/g)) {
+    const tag = match[0];
+    for (const className of tagClassValues(tag)) {
+      const normalizedClass = className.toLowerCase();
+      const classTags = tagsByClass.get(normalizedClass);
+      if (classTags) {
+        classTags.push(tag);
+      } else {
+        tagsByClass.set(normalizedClass, [tag]);
+      }
+    }
+  }
+
+  return {
+    html,
+    ids,
+    tagsByClass
+  };
+}
+
+function htmlFactsHaveId(facts: HtmlFacts, id: string): boolean {
+  return facts.ids.has(id.toLowerCase());
 }
 
 function tagHasAttributeSelector(tag: string, selector: string): boolean {
@@ -423,21 +496,21 @@ function isLikelyOptionalSelector(selector: string): boolean {
   return selector.includes(":") || selector.includes(" ") || selector.includes(">") || selector.includes("+") || selector.includes("~");
 }
 
-function selectorExistsInHtml(html: string, selector: string): boolean {
+function selectorExistsInHtml(facts: HtmlFacts, selector: string): boolean {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   if (selector.startsWith("#")) {
-    return htmlHasId(html, selector.slice(1));
+    return htmlFactsHaveId(facts, selector.slice(1));
   }
 
   const classAttributeMatch = selector.match(/^\.([a-zA-Z0-9_-]+)(\[[^\]]+\])$/);
   if (classAttributeMatch) {
-    return [...html.matchAll(/<[^>]+>/g)].some((match) =>
-      tagHasClass(match[0], classAttributeMatch[1]) && tagHasAttributeSelector(match[0], classAttributeMatch[2])
+    return (facts.tagsByClass.get(classAttributeMatch[1].toLowerCase()) ?? []).some((tag) =>
+      tagHasAttributeSelector(tag, classAttributeMatch[2])
     );
   }
 
   if (selector.startsWith(".")) {
-    return [...html.matchAll(/<[^>]+>/g)].some((match) => tagHasClass(match[0], selector.slice(1)));
+    return facts.tagsByClass.has(selector.slice(1).toLowerCase());
   }
 
   const attrMatch = selector.match(/^\[([a-zA-Z0-9_-]+)(?:=["']?([^"'\]]+)["']?)?\]$/);
@@ -445,33 +518,34 @@ function selectorExistsInHtml(html: string, selector: string): boolean {
     const attrName = attrMatch[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const attrValue = attrMatch[2]?.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return attrValue
-      ? new RegExp(`\\b${attrName}\\s*=\\s*["']${attrValue}["']`, "i").test(html)
-      : new RegExp(`\\b${attrName}(?:\\s*=|\\s|>)`, "i").test(html);
+      ? new RegExp(`\\b${attrName}\\s*=\\s*["']${attrValue}["']`, "i").test(facts.html)
+      : new RegExp(`\\b${attrName}(?:\\s*=|\\s|>)`, "i").test(facts.html);
   }
 
   if (/^[a-z][a-z0-9-]*$/i.test(selector)) {
-    return new RegExp(`<${escapedSelector}(?:\\s|>)`, "i").test(html);
+    return new RegExp(`<${escapedSelector}(?:\\s|>)`, "i").test(facts.html);
   }
 
   return true;
 }
 
-async function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], repoContext: RepoContext, readRepoFile: RepoFileReader, errors: string[]): Promise<void> {
+async function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
   const htmlPath = findRepoFile(repoContext, "index.html");
   if (!htmlPath) {
     return;
   }
 
   const htmlChange = changes.find((change) => change.filePath === htmlPath);
-  const effectiveHtml = htmlChange?.modifiedContent ?? await readRepoFile(htmlPath);
+  const effectiveHtml = htmlChange?.modifiedContent ?? await readFile(join(repoContext.localPath, htmlPath), "utf8").catch(() => "");
   if (effectiveHtml.length === 0) {
     return;
   }
+  const htmlFacts = collectHtmlFacts(effectiveHtml);
 
   for (const change of changes.filter((candidate) => isScript(candidate.filePath))) {
     const missingIds = [...new Set([...change.modifiedContent.matchAll(getElementByIdPattern)]
       .map((match) => match[1])
-      .filter((id) => !htmlHasId(effectiveHtml, id) && !scriptCreatesId(change.modifiedContent, id)))];
+      .filter((id) => !htmlFactsHaveId(htmlFacts, id) && !scriptCreatesId(change.modifiedContent, id)))];
 
     if (missingIds.length > 0) {
       errors.push(`Change for ${change.filePath} queries missing HTML id(s): ${missingIds.join(", ")}`);
@@ -480,7 +554,7 @@ async function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], re
     const missingSelectors = [...new Set([...change.modifiedContent.matchAll(querySelectorPattern)]
       .map((match) => match[1])
       .filter((selector) => !isLikelyOptionalSelector(selector))
-      .filter((selector) => !selectorExistsInHtml(effectiveHtml, selector)))];
+      .filter((selector) => !selectorExistsInHtml(htmlFacts, selector)))];
 
     if (missingSelectors.length > 0) {
       errors.push(`Change for ${change.filePath} queries selector(s) with no matching HTML: ${missingSelectors.join(", ")}`);
@@ -488,7 +562,7 @@ async function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], re
   }
 }
 
-async function validateAccessibleNonNativeControls(changes: GeneratedChange[], repoContext: RepoContext, readRepoFile: RepoFileReader, errors: string[]): Promise<void> {
+async function validateAccessibleNonNativeControls(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
   const addedControls: Array<{ filePath: string; tags: string[] }> = [];
 
   for (const change of changes.filter((candidate) => /\.(?:html?|[cm]?[jt]sx?)$/i.test(candidate.filePath))) {
@@ -509,7 +583,7 @@ async function validateAccessibleNonNativeControls(changes: GeneratedChange[], r
     .map((fileName) => findRepoFile(repoContext, fileName))
     .filter((filePath): filePath is string => Boolean(filePath))
     .filter((filePath) => !changes.some((change) => change.filePath === filePath))
-    .map(readRepoFile));
+    .map((filePath) => readFile(join(repoContext.localPath, filePath), "utf8").catch(() => "")));
   const effectiveScript = [...changedScripts, ...existingScripts].join("\n");
 
   if (hasNonNativeKeyboardHandler(effectiveScript)) {
@@ -523,7 +597,7 @@ async function validateAccessibleNonNativeControls(changes: GeneratedChange[], r
   }
 }
 
-async function validateStaticAssetLinks(changes: GeneratedChange[], repoContext: RepoContext, readRepoFile: RepoFileReader, errors: string[]): Promise<void> {
+async function validateStaticAssetLinks(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
   const htmlPath = findRepoFile(repoContext, "index.html");
   if (!htmlPath) {
     return;
@@ -532,7 +606,7 @@ async function validateStaticAssetLinks(changes: GeneratedChange[], repoContext:
   const htmlChange = changes.find((change) => change.filePath === htmlPath);
   const effectiveHtml = htmlChange
     ? htmlChange.modifiedContent
-    : await readRepoFile(htmlPath);
+    : await readFile(join(repoContext.localPath, htmlPath), "utf8").catch(() => "");
 
   for (const change of changes) {
     if (change.originalContent.length > 0 || (!isScript(change.filePath) && !isStylesheet(change.filePath))) {
@@ -545,7 +619,7 @@ async function validateStaticAssetLinks(changes: GeneratedChange[], repoContext:
   }
 }
 
-async function validateModalStyling(changes: GeneratedChange[], repoContext: RepoContext, readRepoFile: RepoFileReader, errors: string[]): Promise<void> {
+async function validateModalStyling(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
   const changedPaths = collectChangedPaths(changes);
   const stylePath = findRepoFile(repoContext, "styles.css");
   if (!stylePath) {
@@ -555,7 +629,7 @@ async function validateModalStyling(changes: GeneratedChange[], repoContext: Rep
   const styleChange = changes.find((change) => change.filePath === stylePath);
   const existingStyles = styleChange
     ? styleChange.modifiedContent
-    : await readRepoFile(stylePath);
+    : await readFile(join(repoContext.localPath, stylePath), "utf8").catch(() => "");
   const effectiveStyles = [
     existingStyles,
     ...changes
@@ -589,7 +663,7 @@ async function validateModalStyling(changes: GeneratedChange[], repoContext: Rep
   }
 }
 
-async function validateModalBehavior(changes: GeneratedChange[], repoContext: RepoContext, readRepoFile: RepoFileReader, errors: string[]): Promise<void> {
+async function validateModalBehavior(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
   const changedPaths = collectChangedPaths(changes);
   const scriptPath = findRepoFile(repoContext, "script.js");
   if (!scriptPath) {
@@ -599,7 +673,7 @@ async function validateModalBehavior(changes: GeneratedChange[], repoContext: Re
   const scriptChange = changes.find((change) => change.filePath === scriptPath);
   const existingScript = scriptChange
     ? scriptChange.modifiedContent
-    : await readRepoFile(scriptPath);
+    : await readFile(join(repoContext.localPath, scriptPath), "utf8").catch(() => "");
   const effectiveScript = [
     existingScript,
     ...changes
@@ -646,7 +720,6 @@ export async function validate(
   let totalLinesAdded = 0;
   const maxChangedLines = limits.maxChangedLines ?? defaultSecurityConfig.max_changed_lines;
   const blockedPatterns = limits.blockPatterns ?? defaultSecurityConfig.block_patterns;
-  const readRepoFile = createRepoFileReader(repoContext);
 
   for (const change of changes) {
     const safePath = validateRepoRelativePath(change.filePath);
@@ -726,11 +799,11 @@ export async function validate(
     errors.push(`Total new code added exceeds limit: ${totalLinesAdded} lines`);
   }
 
-  await validateModalStyling(changes, repoContext, readRepoFile, errors);
-  await validateModalBehavior(changes, repoContext, readRepoFile, errors);
-  await validateStaticAssetLinks(changes, repoContext, readRepoFile, errors);
-  await validateScriptSelectorsAgainstHtml(changes, repoContext, readRepoFile, errors);
-  await validateAccessibleNonNativeControls(changes, repoContext, readRepoFile, errors);
+  await validateModalStyling(changes, repoContext, errors);
+  await validateModalBehavior(changes, repoContext, errors);
+  await validateStaticAssetLinks(changes, repoContext, errors);
+  await validateScriptSelectorsAgainstHtml(changes, repoContext, errors);
+  await validateAccessibleNonNativeControls(changes, repoContext, errors);
   validatePythonCrossFileImports(changes, errors);
   validateTestIntegrity(changes, errors);
 
