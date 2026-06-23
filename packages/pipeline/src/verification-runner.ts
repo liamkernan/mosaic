@@ -541,6 +541,14 @@ export async function runVerificationCommands(
     };
   }
 
+  if (commands.length === 0 && unsupportedCommands.length > 0 && !runFrontend) {
+    return {
+      valid: false,
+      commands,
+      errors: unsupportedCommands.map((command) => `Unsupported verification command was not run: ${command}`)
+    };
+  }
+
   const dockerAvailable = await resolveDockerAvailable(options);
   const requireSandbox = resolveRequireSandbox(options);
   if (!dockerAvailable && requireSandbox) {

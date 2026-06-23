@@ -175,25 +175,49 @@ function htmlAlreadyLinks(html: string, assetPath: string): boolean {
     html.includes(`'./${assetPath}'`);
 }
 
-function insertAssetTag(html: string, assetPath: string): string {
-  if (htmlAlreadyLinks(html, assetPath)) {
-    return html;
+function insertAssetTags(html: string, assetPaths: string[]): string {
+  const cssTags: string[] = [];
+  const scriptTags: string[] = [];
+  const seenAssetPaths = new Set<string>();
+
+  for (const assetPath of assetPaths) {
+    if (seenAssetPaths.has(assetPath) || htmlAlreadyLinks(html, assetPath)) {
+      continue;
+    }
+
+    seenAssetPaths.add(assetPath);
+    const tag = assetTag(assetPath);
+    if (!tag) {
+      continue;
+    }
+
+    if (/\.css$/i.test(assetPath)) {
+      cssTags.push(tag);
+    } else if (/\.(?:[cm]?[jt]sx?)$/i.test(assetPath)) {
+      scriptTags.push(tag);
+    }
   }
 
-  const tag = assetTag(assetPath);
-  if (!tag) {
-    return html;
+  let completedHtml = html;
+  if (cssTags.length > 0) {
+    completedHtml = /<\/head>/i.test(completedHtml)
+      ? completedHtml.replace(/<\/head>/i, `${cssTags.join("\n")}\n  </head>`)
+      : `${completedHtml.trimEnd()}\n${cssTags.join("\n")}\n`;
   }
 
-  if (/\.css$/i.test(assetPath) && /<\/head>/i.test(html)) {
-    return html.replace(/<\/head>/i, `${tag}\n  </head>`);
+  if (scriptTags.length > 0) {
+    completedHtml = /<\/body>/i.test(completedHtml)
+      ? completedHtml.replace(/<\/body>/i, `${scriptTags.join("\n")}\n  </body>`)
+      : `${completedHtml.trimEnd()}\n${scriptTags.join("\n")}\n`;
   }
 
-  if (/\.(?:[cm]?[jt]sx?)$/i.test(assetPath) && /<\/body>/i.test(html)) {
-    return html.replace(/<\/body>/i, `${tag}\n  </body>`);
-  }
+  return completedHtml;
+}
 
-  return `${html.trimEnd()}\n${tag}\n`;
+function assetLinkExplanation(assetPaths: string[]): string {
+  return assetPaths.length === 1
+    ? `Linked ${assetPaths[0]} so the new static asset loads.`
+    : `Linked ${assetPaths.length} new static assets so they load.`;
 }
 
 function extractMissingHtmlHooks(validationErrors: string[]): { ids: string[]; selectors: string[] } {
@@ -268,6 +292,38 @@ function addPythonImport(content: string, moduleName: string, names: string[]): 
 
   lines.splice(insertAt, 0, `from .${moduleName} import ${names.join(", ")}`);
   return lines.join("\n");
+}
+
+function mergeMissingPythonImports(
+  imports: Array<{ filePath: string; moduleName: string; names: string[] }>
+): Array<{ filePath: string; modules: Array<{ moduleName: string; names: string[] }> }> {
+  const modulesByFile = new Map<string, Map<string, Set<string>>>();
+
+  for (const missingImport of imports) {
+    let modules = modulesByFile.get(missingImport.filePath);
+    if (!modules) {
+      modules = new Map();
+      modulesByFile.set(missingImport.filePath, modules);
+    }
+
+    let names = modules.get(missingImport.moduleName);
+    if (!names) {
+      names = new Set();
+      modules.set(missingImport.moduleName, names);
+    }
+
+    for (const name of missingImport.names) {
+      names.add(name);
+    }
+  }
+
+  return [...modulesByFile].map(([filePath, modules]) => ({
+    filePath,
+    modules: [...modules].map(([moduleName, names]) => ({
+      moduleName,
+      names: [...names]
+    }))
+  }));
 }
 
 function htmlHasId(html: string, id: string): boolean {
@@ -555,6 +611,8 @@ export async function completeUnlinkedStaticAssets(
 
   const completedChanges = createChangeUpdater(changes);
   const resolvedHtmlPaths = new Map<string, string | null>();
+  const assetPathsByHtmlPath = new Map<string, string[]>();
+
   for (const { assetPath, htmlPath } of unlinkedAssets) {
     let resolvedHtmlPath = resolvedHtmlPaths.get(htmlPath);
     if (resolvedHtmlPath === undefined) {
@@ -566,11 +624,20 @@ export async function completeUnlinkedStaticAssets(
       continue;
     }
 
+    const assetPaths = assetPathsByHtmlPath.get(resolvedHtmlPath);
+    if (assetPaths) {
+      assetPaths.push(assetPath);
+    } else {
+      assetPathsByHtmlPath.set(resolvedHtmlPath, [assetPath]);
+    }
+  }
+
+  for (const [resolvedHtmlPath, assetPaths] of assetPathsByHtmlPath) {
     const existingHtmlChange = findChange(completedChanges, resolvedHtmlPath);
     const originalContent = existingHtmlChange?.originalContent ??
       await readFile(join(repoContext.localPath, resolvedHtmlPath), "utf8").catch(() => "");
     const baseContent = existingHtmlChange?.modifiedContent ?? originalContent;
-    const modifiedContent = insertAssetTag(baseContent, assetPath);
+    const modifiedContent = insertAssetTags(baseContent, assetPaths);
     if (modifiedContent === baseContent) {
       continue;
     }
@@ -582,7 +649,7 @@ export async function completeUnlinkedStaticAssets(
         (change) => ({
           ...change,
           modifiedContent,
-          explanation: `${change.explanation} Linked ${assetPath} so the new static asset loads.`
+          explanation: `${change.explanation} ${assetLinkExplanation(assetPaths)}`
         })
       );
       continue;
@@ -592,7 +659,7 @@ export async function completeUnlinkedStaticAssets(
       filePath: resolvedHtmlPath,
       originalContent,
       modifiedContent,
-      explanation: `Linked ${assetPath} so the new static asset loads.`
+      explanation: assetLinkExplanation(assetPaths)
     });
   }
 
@@ -659,21 +726,23 @@ export async function completeMissingPythonImports(
   }
 
   const completedChanges = createChangeUpdater(changes);
-  for (const missingImport of missingImports) {
-    const existingChange = findChange(completedChanges, missingImport.filePath);
+  for (const missingImportsForFile of mergeMissingPythonImports(missingImports)) {
+    const existingChange = findChange(completedChanges, missingImportsForFile.filePath);
     const originalContent = existingChange?.originalContent ??
-      await readFile(join(repoContext.localPath, missingImport.filePath), "utf8").catch(() => "");
-    const baseContent = existingChange?.modifiedContent ?? originalContent;
-    const modifiedContent = addPythonImport(baseContent, missingImport.moduleName, missingImport.names);
+      await readFile(join(repoContext.localPath, missingImportsForFile.filePath), "utf8").catch(() => "");
+    let modifiedContent = existingChange?.modifiedContent ?? originalContent;
+    for (const { moduleName, names } of missingImportsForFile.modules) {
+      modifiedContent = addPythonImport(modifiedContent, moduleName, names);
+    }
 
-    if (modifiedContent === baseContent) {
+    if (modifiedContent === (existingChange?.modifiedContent ?? originalContent)) {
       continue;
     }
 
     if (existingChange) {
       updateChangesForPath(
         completedChanges,
-        missingImport.filePath,
+        missingImportsForFile.filePath,
         (change) => ({
           ...change,
           modifiedContent,
@@ -684,7 +753,7 @@ export async function completeMissingPythonImports(
     }
 
     appendChange(completedChanges, {
-      filePath: missingImport.filePath,
+      filePath: missingImportsForFile.filePath,
       originalContent,
       modifiedContent,
       explanation: "Added missing Python import required by validation."
