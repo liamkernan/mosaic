@@ -29,6 +29,7 @@ const testFilePathPattern = /(?:^|\/)(?:test|tests|spec|specs|__tests__|reported
 const testAssertionPattern = /\bassert\b|self\.assert[A-Z][A-Za-z]*\s*\(|\bexpect\s*\(|\bshould\s*\(|\btoEqual\s*\(|\btoBe\s*\(|\btoContain\s*\(/g;
 const testSkipPattern = /@(?:unittest\.)?skip\b|pytest\.mark\.skip\b|\b(?:describe|it|test)\.skip\s*\(|\b(?:xdescribe|xit)\s*\(/i;
 const trivialAssertionPattern = /^\s*(?:assert\s+True\b|self\.assertTrue\(\s*True\s*\)|expect\(\s*true\s*\)\.(?:toBe|toEqual)\(\s*true\s*\)|expect\(\s*true\s*\)\.toBeTruthy\(\s*\))/i;
+const pythonSyntaxConcurrency = 8;
 const pythonBuiltinCallNames = new Set([
   "dict",
   "int",
@@ -52,17 +53,24 @@ interface HtmlFacts {
   tagsByClass: Map<string, string[]>;
 }
 
-function countChangedLines(original: string, modified: string): number {
-  const originalLines = original.split("\n");
-  const modifiedLines = modified.split("\n");
-  if (originalLines.length === 0) {
-    return modifiedLines.length;
-  }
+interface LineChangeStats {
+  changedLines: number;
+  addedLines: number;
+  modifiedChangedText: string;
+}
 
-  if (modifiedLines.length === 0) {
-    return originalLines.length;
-  }
+interface ModalStyleFacts {
+  lowerStyles: string;
+  compactStyles: string;
+}
 
+interface ModalScriptFacts {
+  lowerScript: string;
+  compactScript: string;
+  hasCompleteModalBehavior: boolean;
+}
+
+function changedLineWindow(originalLines: string[], modifiedLines: string[]): { start: number; originalEnd: number; modifiedEnd: number } {
   let start = 0;
   while (
     start < originalLines.length &&
@@ -83,10 +91,40 @@ function countChangedLines(original: string, modified: string): number {
     modifiedEnd -= 1;
   }
 
-  const changedOriginalLines = originalLines.slice(start, originalEnd + 1);
+  return { start, originalEnd, modifiedEnd };
+}
+
+function lineChangeStats(original: string, modified: string): LineChangeStats {
+  const originalLines = original.split("\n");
+  const modifiedLines = modified.split("\n");
+  const originalSet = new Set(originalLines);
+  let addedLines = 0;
+  const { start, originalEnd, modifiedEnd } = changedLineWindow(originalLines, modifiedLines);
   const changedModifiedLines = modifiedLines.slice(start, modifiedEnd + 1);
+
+  for (let index = start; index <= modifiedEnd; index += 1) {
+    const line = modifiedLines[index];
+    if (line.trim().length > 0 && !originalSet.has(line)) {
+      addedLines += 1;
+    }
+  }
+
+  const modifiedChangedText = changedModifiedLines.join("\n");
+  if (originalLines.length === 0) {
+    return { changedLines: modifiedLines.length, addedLines, modifiedChangedText };
+  }
+
+  if (modifiedLines.length === 0) {
+    return { changedLines: originalLines.length, addedLines, modifiedChangedText };
+  }
+
+  const changedOriginalLines = originalLines.slice(start, originalEnd + 1);
   if (changedOriginalLines.length === 0 || changedModifiedLines.length === 0) {
-    return changedOriginalLines.length + changedModifiedLines.length;
+    return {
+      changedLines: changedOriginalLines.length + changedModifiedLines.length,
+      addedLines,
+      modifiedChangedText
+    };
   }
 
   let previous = new Array<number>(changedModifiedLines.length + 1).fill(0);
@@ -104,24 +142,38 @@ function countChangedLines(original: string, modified: string): number {
   }
 
   const commonLines = previous[changedModifiedLines.length];
-  return (changedOriginalLines.length - commonLines) + (changedModifiedLines.length - commonLines);
+  return {
+    changedLines: (changedOriginalLines.length - commonLines) + (changedModifiedLines.length - commonLines),
+    addedLines,
+    modifiedChangedText
+  };
 }
 
-function countAddedLines(original: string, modified: string): number {
-  const originalSet = new Set(original.split("\n"));
-  return modified
-    .split("\n")
-    .filter((line) => line.trim().length > 0 && !originalSet.has(line)).length;
-}
+function findAddedMatches(pattern: RegExp, original: string, modified: string, modifiedSearchText = modified): string[] {
+  const modifiedMatches = [...new Set(modifiedSearchText.match(pattern) ?? [])];
+  if (modifiedMatches.length === 0) {
+    return [];
+  }
 
-function findAddedMatches(pattern: RegExp, original: string, modified: string): string[] {
   const originalMatches = new Set(original.match(pattern) ?? []);
-  return [...new Set(modified.match(pattern) ?? [])].filter((match) => !originalMatches.has(match));
+  return modifiedMatches.filter((match) => !originalMatches.has(match));
 }
 
 function findAddedLines(original: string, modified: string): string[] {
-  const originalLines = new Set(original.split("\n"));
-  return modified.split("\n").filter((line) => line.trim().length > 0 && !originalLines.has(line));
+  const originalLines = original.split("\n");
+  const modifiedLines = modified.split("\n");
+  const { start, modifiedEnd } = changedLineWindow(originalLines, modifiedLines);
+  const originalSet = new Set(originalLines);
+  const addedLines: string[] = [];
+
+  for (let index = start; index <= modifiedEnd; index += 1) {
+    const line = modifiedLines[index];
+    if (line.trim().length > 0 && !originalSet.has(line)) {
+      addedLines.push(line);
+    }
+  }
+
+  return addedLines;
 }
 
 function countTestAssertions(content: string): number {
@@ -227,6 +279,57 @@ async function pythonSyntaxErrorsForFile(filePath: string, contents: string): Pr
   });
 }
 
+async function collectPythonSyntaxErrors(
+  changes: GeneratedChange[],
+  safePaths: Array<string | null>,
+  changedLineCounts: number[]
+): Promise<Map<number, string[]>> {
+  const errorsByIndex = new Map<number, string[]>();
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= changes.length) {
+        return;
+      }
+
+      const change = changes[index];
+      if (!safePaths[index] || changedLineCounts[index] === 0 || !isPython(change.filePath)) {
+        continue;
+      }
+
+      errorsByIndex.set(index, await pythonSyntaxErrorsForFile(change.filePath, change.modifiedContent));
+    }
+  }
+
+  const workerCount = Math.min(pythonSyntaxConcurrency, changes.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return errorsByIndex;
+}
+
+async function collectFileExistence(
+  changes: GeneratedChange[],
+  safePaths: Array<string | null>,
+  localPath: string
+): Promise<Map<number, boolean>> {
+  const entries = await Promise.all(changes.map(async (change, index) => {
+    const safePath = safePaths[index];
+    if (!safePath || change.originalContent.length === 0) {
+      return undefined;
+    }
+
+    const exists = await access(join(localPath, safePath)).then(
+      () => true,
+      () => false
+    );
+    return [index, exists] as const;
+  }));
+
+  return new Map(entries.filter((entry): entry is readonly [number, boolean] => entry !== undefined));
+}
+
 function findNewModalTokens(original: string, modified: string): string[] {
   const originalMatches = new Set((original.match(modalTokenPattern) ?? []).map((match) => match.toLowerCase()));
   return [...new Set((modified.match(modalTokenPattern) ?? []).map((match) => match.toLowerCase()))]
@@ -237,26 +340,25 @@ function compactToken(token: string): string {
   return token.replace(/[^a-z0-9]/gi, "").toLowerCase();
 }
 
-function hasModalOpenBehavior(script: string): boolean {
-  const lowerScript = script.toLowerCase();
+function hasModalOpenBehavior(script: string, lowerScript = script.toLowerCase()): boolean {
   return /(?:addeventlistener|onclick|showmodal|classlist\.add|setattribute\(\s*["']aria-hidden["']\s*,\s*["']false["']|hidden\s*=\s*false)/i.test(script) &&
     /(?:modal|overlay|dialog)/i.test(lowerScript);
 }
 
-function hasModalCloseBehavior(script: string): boolean {
-  const lowerScript = script.toLowerCase();
+function hasModalCloseBehavior(script: string, lowerScript = script.toLowerCase()): boolean {
   return /(?:close\(\)|classlist\.remove|setattribute\(\s*["']aria-hidden["']\s*,\s*["']true["']|hidden\s*=\s*true)/i.test(script) &&
     /(?:modal|overlay|dialog|close)/i.test(lowerScript);
 }
 
-function hasModalKeyboardBehavior(script: string): boolean {
-  const lowerScript = script.toLowerCase();
+function hasModalKeyboardBehavior(script: string, lowerScript = script.toLowerCase()): boolean {
   return /(?:keydown|keyup|keypress|escape|enter|code\s*===\s*["']space["']|key\s*===\s*["']\s["'])/i.test(script) &&
     /(?:modal|overlay|dialog)/i.test(lowerScript);
 }
 
-function hasModalBehavior(script: string): boolean {
-  return hasModalOpenBehavior(script) && hasModalCloseBehavior(script) && hasModalKeyboardBehavior(script);
+function hasModalBehavior(script: string, lowerScript = script.toLowerCase()): boolean {
+  return hasModalOpenBehavior(script, lowerScript) &&
+    hasModalCloseBehavior(script, lowerScript) &&
+    hasModalKeyboardBehavior(script, lowerScript);
 }
 
 function hasNonNativeKeyboardHandler(script: string): boolean {
@@ -264,10 +366,24 @@ function hasNonNativeKeyboardHandler(script: string): boolean {
     /(?:enter|space|code\s*===\s*["']space["']|key\s*===\s*["']\s["']|keycode\s*===\s*(?:13|32))/i.test(script);
 }
 
-function hasModalStyleCoverage(styles: string, tokens: string[]): boolean {
-  const lowerStyles = styles.toLowerCase();
-  const compactStyles = compactToken(styles);
-  return tokens.some((token) => lowerStyles.includes(token) || compactStyles.includes(compactToken(token)));
+function collectModalStyleFacts(styles: string): ModalStyleFacts {
+  return {
+    lowerStyles: styles.toLowerCase(),
+    compactStyles: compactToken(styles)
+  };
+}
+
+function hasModalStyleCoverage(facts: ModalStyleFacts, tokens: string[]): boolean {
+  return tokens.some((token) => facts.lowerStyles.includes(token) || facts.compactStyles.includes(compactToken(token)));
+}
+
+function collectModalScriptFacts(script: string): ModalScriptFacts {
+  const lowerScript = script.toLowerCase();
+  return {
+    lowerScript,
+    compactScript: compactToken(script),
+    hasCompleteModalBehavior: hasModalBehavior(script, lowerScript)
+  };
 }
 
 function collectChangedPaths(changes: GeneratedChange[]): Set<string> {
@@ -358,10 +474,9 @@ function validatePythonCrossFileImports(changes: GeneratedChange[], errors: stri
   const exportedFunctionsByModule = new Map<string, Set<string>>();
 
   for (const change of pythonChanges) {
-    const moduleName = pythonModuleName(change.filePath);
-    const exportedFunctions = pythonTopLevelFunctions(change.modifiedContent);
-    if (exportedFunctions.size > 0) {
-      exportedFunctionsByModule.set(moduleName, exportedFunctions);
+    const exports = pythonTopLevelFunctions(change.modifiedContent);
+    if (exports.size > 0) {
+      exportedFunctionsByModule.set(pythonModuleName(change.filePath), exports);
     }
   }
 
@@ -369,51 +484,21 @@ function validatePythonCrossFileImports(changes: GeneratedChange[], errors: stri
     return;
   }
 
-  const modulesByExportedFunction = new Map<string, string[]>();
-  for (const [moduleName, exportedFunctions] of exportedFunctionsByModule) {
-    for (const exportedFunction of exportedFunctions) {
-      const modules = modulesByExportedFunction.get(exportedFunction);
-      if (modules) {
-        modules.push(moduleName);
-      } else {
-        modulesByExportedFunction.set(exportedFunction, [moduleName]);
-      }
-    }
-  }
-
   for (const change of pythonChanges) {
     const currentModule = pythonModuleName(change.filePath);
     const definedNames = pythonDefinedNames(change.modifiedContent);
     const callNames = pythonCallNames(change.modifiedContent);
-    const missingImportsByModule = new Map<string, string[]>();
 
-    for (const name of callNames) {
-      if (definedNames.has(name)) {
+    for (const [moduleName, exportedFunctions] of exportedFunctionsByModule) {
+      if (moduleName === currentModule) {
         continue;
       }
 
-      const exportingModules = modulesByExportedFunction.get(name);
-      if (!exportingModules) {
-        continue;
-      }
+      const missingImports = [...callNames]
+        .filter((name) => exportedFunctions.has(name))
+        .filter((name) => !definedNames.has(name));
 
-      for (const moduleName of exportingModules) {
-        if (moduleName === currentModule) {
-          continue;
-        }
-
-        const missingImports = missingImportsByModule.get(moduleName);
-        if (missingImports) {
-          missingImports.push(name);
-        } else {
-          missingImportsByModule.set(moduleName, [name]);
-        }
-      }
-    }
-
-    for (const moduleName of exportedFunctionsByModule.keys()) {
-      const missingImports = missingImportsByModule.get(moduleName);
-      if (missingImports && missingImports.length > 0) {
+      if (missingImports.length > 0) {
         errors.push(`Change for ${change.filePath} calls ${missingImports.join(", ")} from ${moduleName}.py but does not import or define ${missingImports.join(", ")}`);
       }
     }
@@ -428,14 +513,28 @@ function normalizeAssetReference(reference: string): string {
   return reference.replace(/^\.\//, "").replace(/^\//, "");
 }
 
-function htmlReferencesAsset(html: string, filePath: string): boolean {
-  const normalizedPath = normalizeAssetReference(filePath);
-  const references = Array.from(html.matchAll(/\b(?:src|href)\s*=\s*["']([^"']+)["']/gi))
-    .map((match) => match[1])
-    .filter(isLocalAssetReference)
-    .map(normalizeAssetReference);
+function collectHtmlAssetReferences(html: string): Set<string> {
+  const references = new Set<string>();
+  for (const match of html.matchAll(/\b(?:src|href)\s*=\s*["']([^"']+)["']/gi)) {
+    const reference = match[1];
+    if (!isLocalAssetReference(reference)) {
+      continue;
+    }
 
-  return references.some((reference) => reference === normalizedPath || reference.endsWith(`/${normalizedPath}`));
+    const normalizedReference = normalizeAssetReference(reference);
+    references.add(normalizedReference);
+
+    const segments = normalizedReference.split("/");
+    for (let index = 1; index < segments.length; index += 1) {
+      references.add(segments.slice(index).join("/"));
+    }
+  }
+
+  return references;
+}
+
+function htmlReferencesAsset(references: Set<string>, filePath: string): boolean {
+  return references.has(normalizeAssetReference(filePath));
 }
 
 function scriptCreatesId(script: string, id: string): boolean {
@@ -607,13 +706,14 @@ async function validateStaticAssetLinks(changes: GeneratedChange[], repoContext:
   const effectiveHtml = htmlChange
     ? htmlChange.modifiedContent
     : await readFile(join(repoContext.localPath, htmlPath), "utf8").catch(() => "");
+  const htmlAssetReferences = collectHtmlAssetReferences(effectiveHtml);
 
   for (const change of changes) {
     if (change.originalContent.length > 0 || (!isScript(change.filePath) && !isStylesheet(change.filePath))) {
       continue;
     }
 
-    if (!htmlReferencesAsset(effectiveHtml, change.filePath)) {
+    if (!htmlReferencesAsset(htmlAssetReferences, change.filePath)) {
       errors.push(`New static asset ${change.filePath} is not linked from ${htmlPath}`);
     }
   }
@@ -636,6 +736,7 @@ async function validateModalStyling(changes: GeneratedChange[], repoContext: Rep
       .filter((change) => isStylesheet(change.filePath) && change.filePath !== stylePath)
       .map((change) => change.modifiedContent)
   ].join("\n");
+  const styleFacts = collectModalStyleFacts(effectiveStyles);
 
   for (const change of changes) {
     if (!/\.(?:html?|[cm]?[jt]sx)$/i.test(change.filePath)) {
@@ -647,9 +748,9 @@ async function validateModalStyling(changes: GeneratedChange[], repoContext: Rep
       continue;
     }
 
-    const missingTokens = hasModalStyleCoverage(effectiveStyles, newModalTokens)
+    const missingTokens = hasModalStyleCoverage(styleFacts, newModalTokens)
       ? []
-      : newModalTokens.filter((token) => !effectiveStyles.toLowerCase().includes(token));
+      : newModalTokens.filter((token) => !styleFacts.lowerStyles.includes(token));
     if (missingTokens.length === 0) {
       continue;
     }
@@ -680,6 +781,7 @@ async function validateModalBehavior(changes: GeneratedChange[], repoContext: Re
       .filter((change) => isScript(change.filePath) && change.filePath !== scriptPath)
       .map((change) => change.modifiedContent)
   ].join("\n");
+  const scriptFacts = collectModalScriptFacts(effectiveScript);
 
   for (const change of changes) {
     if (!/\.(?:html?|[cm]?[jt]sx)$/i.test(change.filePath)) {
@@ -691,12 +793,11 @@ async function validateModalBehavior(changes: GeneratedChange[], repoContext: Re
       continue;
     }
 
-    if (hasModalBehavior(effectiveScript)) {
+    if (scriptFacts.hasCompleteModalBehavior) {
       continue;
     }
 
-    const compactScript = compactToken(effectiveScript);
-    const missingTokens = newModalTokens.filter((token) => !effectiveScript.toLowerCase().includes(token) && !compactScript.includes(compactToken(token)));
+    const missingTokens = newModalTokens.filter((token) => !scriptFacts.lowerScript.includes(token) && !scriptFacts.compactScript.includes(compactToken(token)));
     if (missingTokens.length === 0) {
       errors.push(`Change for ${change.filePath} adds modal UI hooks without complete open/close/keyboard behavior in changed scripts`);
       continue;
@@ -720,25 +821,27 @@ export async function validate(
   let totalLinesAdded = 0;
   const maxChangedLines = limits.maxChangedLines ?? defaultSecurityConfig.max_changed_lines;
   const blockedPatterns = limits.blockPatterns ?? defaultSecurityConfig.block_patterns;
+  const safePaths = changes.map((change) => validateRepoRelativePath(change.filePath));
+  const lineStats = changes.map((change) => lineChangeStats(change.originalContent, change.modifiedContent));
+  const changedLineCounts = lineStats.map((stats) => stats.changedLines);
+  const [fileExistsByIndex, pythonSyntaxErrorsByIndex] = await Promise.all([
+    collectFileExistence(changes, safePaths, repoContext.localPath),
+    collectPythonSyntaxErrors(changes, safePaths, changedLineCounts)
+  ]);
 
-  for (const change of changes) {
-    const safePath = validateRepoRelativePath(change.filePath);
+  for (let index = 0; index < changes.length; index += 1) {
+    const change = changes[index];
+    const safePath = safePaths[index];
     if (!safePath) {
       errors.push(`Unsafe generated change path rejected: ${change.filePath}`);
       continue;
     }
 
-    const absolutePath = join(repoContext.localPath, safePath);
-    const fileExists = await access(absolutePath).then(
-      () => true,
-      () => false
-    );
-
-    if (!fileExists && change.originalContent.length > 0) {
+    if (change.originalContent.length > 0 && fileExistsByIndex.get(index) === false) {
       errors.push(`File ${change.filePath} was expected to exist but does not`);
     }
 
-    const changedLines = countChangedLines(change.originalContent, change.modifiedContent);
+    const changedLines = changedLineCounts[index];
     if (changedLines === 0) {
       continue;
     }
@@ -748,13 +851,13 @@ export async function validate(
 
     const parseErrors = [
       ...syntaxErrorsForFile(change.filePath, change.modifiedContent),
-      ...await pythonSyntaxErrorsForFile(change.filePath, change.modifiedContent)
+      ...(pythonSyntaxErrorsByIndex.get(index) ?? [])
     ];
     if (parseErrors.length > 0) {
       errors.push(`Syntax validation failed for ${change.filePath}: ${parseErrors.join("; ")}`);
     }
 
-    totalLinesAdded += countAddedLines(change.originalContent, change.modifiedContent);
+    totalLinesAdded += lineStats[index].addedLines;
 
     const addedUnsafePatterns = blockedPatterns.filter(
       (pattern) => change.modifiedContent.includes(pattern) && !change.originalContent.includes(pattern)
@@ -763,12 +866,12 @@ export async function validate(
       errors.push(`Unsafe patterns added to ${change.filePath}: ${addedUnsafePatterns.join(", ")}`);
     }
 
-    const newUrls = findAddedMatches(urlPattern, change.originalContent, change.modifiedContent);
+    const newUrls = findAddedMatches(urlPattern, change.originalContent, change.modifiedContent, lineStats[index].modifiedChangedText);
     if (newUrls.length > 0) {
       errors.push(`New URL(s) added to ${change.filePath}: ${newUrls.join(", ")}`);
     }
 
-    const newIps = findAddedMatches(ipPattern, change.originalContent, change.modifiedContent);
+    const newIps = findAddedMatches(ipPattern, change.originalContent, change.modifiedContent, lineStats[index].modifiedChangedText);
     if (newIps.length > 0) {
       errors.push(`New IP address(es) added to ${change.filePath}: ${newIps.join(", ")}`);
     }

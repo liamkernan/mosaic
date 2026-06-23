@@ -363,6 +363,29 @@ function addAttributeToClassSelector(html: string, className: string, attrName: 
   });
 }
 
+function addAttributesToClassSelector(html: string, className: string, attrNames: string[]): string {
+  const countsByAttribute = new Map(attrNames.map((attrName) => [attrName, 0]));
+  return html.replace(/<[a-z][a-z0-9-]*(?:\s[^<>]*)?>/gi, (tag, offset) => {
+    if (!tagHasClass(tag, className)) {
+      return tag;
+    }
+
+    let updatedTag = tag;
+    for (const attrName of attrNames) {
+      if (tagHasAttribute(updatedTag, attrName)) {
+        continue;
+      }
+
+      const count = countsByAttribute.get(attrName) ?? 0;
+      const value = inferAttributeValue(html, offset, className, count);
+      countsByAttribute.set(attrName, count + 1);
+      updatedTag = updatedTag.replace(/\s*\/?>$/, ` ${attrName}="${value}"$&`);
+    }
+
+    return updatedTag;
+  });
+}
+
 function addClassToSemanticMatches(html: string, className: string): string {
   return html.replace(/<[a-z][a-z0-9-]*(?:\s[^<>]*)?>/gi, (tag) => {
     if (!tagSemanticallyMatchesClass(tag, className)) {
@@ -375,18 +398,39 @@ function addClassToSemanticMatches(html: string, className: string): string {
 
 function applySelectorHookFallbacks(html: string, selectors: string[]): string {
   let completedHtml = html;
+  const attributesByClass = new Map<string, string[]>();
+  const missingClasses: string[] = [];
+
   for (const selector of selectors) {
     const classAttrMatch = selector.match(/^\.([a-zA-Z0-9_-]+)\[([a-zA-Z0-9_-]+)\]$/);
     if (classAttrMatch) {
-      completedHtml = addAttributeToClassSelector(completedHtml, classAttrMatch[1], classAttrMatch[2]);
+      const attrNames = attributesByClass.get(classAttrMatch[1]);
+      if (attrNames) {
+        attrNames.push(classAttrMatch[2]);
+      } else {
+        attributesByClass.set(classAttrMatch[1], [classAttrMatch[2]]);
+      }
       continue;
     }
 
     const classMatch = selector.match(/^\.([a-zA-Z0-9_-]+)$/);
-    if (classMatch && !htmlHasClass(completedHtml, classMatch[1])) {
-      completedHtml = addClassToSemanticMatches(completedHtml, classMatch[1]);
+    if (classMatch) {
+      missingClasses.push(classMatch[1]);
     }
   }
+
+  for (const [className, attrNames] of attributesByClass) {
+    completedHtml = attrNames.length === 1
+      ? addAttributeToClassSelector(completedHtml, className, attrNames[0])
+      : addAttributesToClassSelector(completedHtml, className, attrNames);
+  }
+
+  for (const className of missingClasses) {
+    if (!htmlHasClass(completedHtml, className)) {
+      completedHtml = addClassToSemanticMatches(completedHtml, className);
+    }
+  }
+
   return completedHtml;
 }
 
@@ -464,8 +508,9 @@ export async function completeMissingModalStyles(
   const originalContent = existingStyleChange?.originalContent ??
     await readFile(join(repoContext.localPath, stylePath), "utf8").catch(() => "");
   const baseContent = existingStyleChange?.modifiedContent ?? originalContent;
+  const lowerBaseContent = baseContent.toLowerCase();
   const stylesToAdd = missingTokens
-    .filter((token) => !baseContent.toLowerCase().includes(token))
+    .filter((token) => !lowerBaseContent.includes(token))
     .map((token) => buildModalStyleFallback([token]))
     .filter((style) => style.trim().length > 0)
     .join("\n\n");
