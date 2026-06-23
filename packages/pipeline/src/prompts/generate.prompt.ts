@@ -18,12 +18,18 @@ export function buildGenerationPrompt(
   const planSection = implementationPlan
     ? `\nIMPLEMENTATION PLAN:\nRequired files:\n${implementationPlan.requiredFiles.map((file) => `- ${file.path}: ${file.reason}`).join("\n")}\n\nAcceptance criteria:\n${implementationPlan.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}\n\nCompletion checklist:\n${implementationPlan.implementationChecklist.map((item) => `- ${item}`).join("\n")}\n\nVerification checklist:\n${implementationPlan.verificationChecklist.map((item) => `- ${item}`).join("\n")}\n\nVerification commands:\n${implementationPlan.verificationCommands.map((item) => `- ${item}`).join("\n")}\n`
     : "";
-  const staticFrontendBytes = relevantFiles
-    .filter((file) => /\.(?:html?|css|[cm]?js)$/i.test(file.path))
-    .reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
-  const hasCompactedStaticFrontendContext = relevantFiles.some(
-    (file) => file.reason?.includes("compacted large static asset context") || file.content.includes("MOSAIC CONTEXT NOTE")
-  );
+  let staticFrontendBytes = 0;
+  let hasCompactedStaticFrontendContext = false;
+  for (const file of relevantFiles) {
+    if (/\.(?:html?|css|[cm]?js)$/i.test(file.path)) {
+      staticFrontendBytes += Buffer.byteLength(file.content);
+    }
+    if (!hasCompactedStaticFrontendContext) {
+      hasCompactedStaticFrontendContext =
+        file.reason?.includes("compacted large static asset context") === true ||
+        file.content.includes("MOSAIC CONTEXT NOTE");
+    }
+  }
   const largeStaticFrontendSection = staticFrontendBytes > 45_000 || hasCompactedStaticFrontendContext
     ? "\nLARGE STATIC FRONTEND NOTE:\n- This appears to be a large static HTML/CSS/JS site. To avoid rewriting large existing assets, prefer the smallest durable integration: make a minimal HTML hook/link/script insertion and add new scoped supplemental JS/CSS files for the feature when that satisfies the request.\n- Do not duplicate large existing files unless the existing file itself must change extensively.\n"
     : "";

@@ -49,6 +49,7 @@ interface TreeScoreContext {
   directPathSet: Set<string>;
   directAncestorSet: Set<string>;
   directDirectorySet: Set<string>;
+  directDirectoryPrefixes: string[];
 }
 
 interface RankedPath {
@@ -79,28 +80,39 @@ function pathAncestors(path: string): string[] {
 }
 
 function tokenize(text: string): string[] {
-  return [...new Set(text.toLowerCase().match(/[a-z0-9_]{4,}/g) ?? [])]
-    .filter((term) => !treeStopWords.has(term))
-    .slice(0, 40);
+  const terms: string[] = [];
+  const seen = new Set<string>();
+
+  for (const match of text.toLowerCase().matchAll(/[a-z0-9_]{4,}/g)) {
+    const term = match[0];
+    if (treeStopWords.has(term) || seen.has(term)) {
+      continue;
+    }
+
+    seen.add(term);
+    terms.push(term);
+    if (terms.length >= 40) {
+      break;
+    }
+  }
+
+  return terms;
 }
 
-function hasDirectDirectoryMatch(candidatePath: string, directDirectorySet: Set<string>): boolean {
+function hasDirectDirectoryMatch(candidatePath: string, context: TreeScoreContext): boolean {
+  const { directDirectorySet, directDirectoryPrefixes } = context;
   if (directDirectorySet.has("") && !candidatePath.includes("/")) {
     return true;
   }
 
-  let current = candidatePath;
-  while (current.length > 0) {
-    if (directDirectorySet.has(current)) {
+  if (directDirectorySet.has(candidatePath)) {
+    return true;
+  }
+
+  for (const directDirectoryPrefix of directDirectoryPrefixes) {
+    if (candidatePath.startsWith(directDirectoryPrefix)) {
       return true;
     }
-
-    const slashIndex = current.lastIndexOf("/");
-    if (slashIndex < 0) {
-      return false;
-    }
-
-    current = current.slice(0, slashIndex);
   }
 
   return false;
@@ -135,17 +147,20 @@ function buildTreeScoreContext(options: PromptTreeOptions, terms: string[]): Tre
     }
   }
 
+  const directDirectorySet = new Set(directPaths.map(dirname));
+
   return {
     options,
     terms,
     directPathSet: new Set(directPaths),
     directAncestorSet,
-    directDirectorySet: new Set(directPaths.map(dirname))
+    directDirectorySet,
+    directDirectoryPrefixes: [...directDirectorySet].filter(Boolean).map((path) => `${path}/`)
   };
 }
 
 function scoreTreePath(path: string, context: TreeScoreContext): number {
-  const { options, terms, directPathSet, directAncestorSet, directDirectorySet } = context;
+  const { terms, directPathSet, directAncestorSet } = context;
   const normalized = path;
   const lowerPath = normalized.toLowerCase();
   let score = 0;
@@ -158,7 +173,7 @@ function scoreTreePath(path: string, context: TreeScoreContext): number {
     score += 80;
   }
 
-  if (hasDirectDirectoryMatch(normalized, directDirectorySet)) {
+  if (hasDirectDirectoryMatch(normalized, context)) {
     score += 35;
   }
 
@@ -257,7 +272,15 @@ function selectTopRankedPaths(paths: string[], context: TreeScoreContext, limit:
 }
 
 export function compactPromptFileTree(fileTree: string[], options: PromptTreeOptions): PromptTree {
-  const normalizedTree = [...new Set(fileTree.map(normalizePath).filter(Boolean))];
+  const normalizedTreeSet = new Set<string>();
+  for (const path of fileTree) {
+    const normalized = normalizePath(path);
+    if (normalized.length > 0) {
+      normalizedTreeSet.add(normalized);
+    }
+  }
+
+  const normalizedTree = [...normalizedTreeSet];
   if (normalizedTree.length <= options.maxPaths) {
     return { paths: normalizedTree, omittedCount: 0 };
   }
@@ -272,7 +295,6 @@ export function compactPromptFileTree(fileTree: string[], options: PromptTreeOpt
   ].filter(Boolean).join("\n"));
   const scoreContext = buildTreeScoreContext(options, terms);
   const selected = new Set(selectTopRankedPaths(normalizedTree, scoreContext, options.maxPaths).map((item) => item.path));
-  const normalizedTreeSet = new Set(normalizedTree);
 
   for (const path of [
     ...(options.relevantPaths ?? []),

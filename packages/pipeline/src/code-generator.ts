@@ -30,8 +30,21 @@ interface PromptFileOptions {
   keywords?: string[];
 }
 
+const fileByteLengthCache = new WeakMap<RelevantFile, { content: string; byteLength: number }>();
+
+function fileContentByteLength(file: RelevantFile): number {
+  const cached = fileByteLengthCache.get(file);
+  if (cached?.content === file.content) {
+    return cached.byteLength;
+  }
+
+  const byteLength = Buffer.byteLength(file.content);
+  fileByteLengthCache.set(file, { content: file.content, byteLength });
+  return byteLength;
+}
+
 function estimateGenerationMaxTokens(relevantFiles: RelevantFile[], options: GenerationOptions = {}): number {
-  const totalBytes = relevantFiles.reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
+  const totalBytes = relevantFiles.reduce((sum, file) => sum + fileContentByteLength(file), 0);
   const estimatedTokens = Math.ceil(totalBytes / 3) + (options.completeSolution ? 8_192 : 2_048);
   const floor = options.completeSolution ? 8_192 : 4_096;
   const ceiling = options.completeSolution ? 32_768 : 16_384;
@@ -45,7 +58,7 @@ function isStaticFrontendFile(filePath: string): boolean {
 function totalStaticFrontendBytes(relevantFiles: RelevantFile[]): number {
   return relevantFiles
     .filter((file) => isStaticFrontendFile(file.path))
-    .reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
+    .reduce((sum, file) => sum + fileContentByteLength(file), 0);
 }
 
 function shouldCompactStaticFrontendContext(relevantFiles: RelevantFile[]): boolean {
@@ -84,13 +97,13 @@ function promptKeywordText(feedback: ClassifiedFeedback, implementationPlan?: Im
 }
 
 function totalPromptFileBytes(relevantFiles: RelevantFile[]): number {
-  return relevantFiles.reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
+  return relevantFiles.reduce((sum, file) => sum + fileContentByteLength(file), 0);
 }
 
 function shouldCompactPromptContext(relevantFiles: RelevantFile[]): boolean {
   return shouldCompactStaticFrontendContext(relevantFiles) ||
     totalPromptFileBytes(relevantFiles) > COMPACT_CONTEXT_TOTAL_BYTES ||
-    relevantFiles.some((file) => Buffer.byteLength(file.content) > COMPACT_SOURCE_FILE_BYTES);
+    relevantFiles.some((file) => fileContentByteLength(file) > COMPACT_SOURCE_FILE_BYTES);
 }
 
 function keywordLineIndexes(lines: string[], keywords: string[], limit: number): number[] {
@@ -113,7 +126,7 @@ function keywordLineIndexes(lines: string[], keywords: string[], limit: number):
 }
 
 function compactHtmlContent(file: RelevantFile, options: PromptFileOptions): RelevantFile {
-  if (!options.compactHtml || !/\.html?$/i.test(file.path) || Buffer.byteLength(file.content) <= options.compactAssetBytes) {
+  if (!options.compactHtml || !/\.html?$/i.test(file.path) || fileContentByteLength(file) <= options.compactAssetBytes) {
     return file;
   }
 
@@ -178,7 +191,7 @@ function formatOmittedLineNote(filePath: string, omittedLineCount: number): stri
 }
 
 function compactLargeSourceContent(file: RelevantFile, options: PromptFileOptions): RelevantFile {
-  const byteLength = Buffer.byteLength(file.content);
+  const byteLength = fileContentByteLength(file);
   if (byteLength <= COMPACT_SOURCE_FILE_BYTES || /\.(?:css|html?|[cm]?js)$/i.test(file.path)) {
     return file;
   }
@@ -228,7 +241,7 @@ function compactFileContent(file: RelevantFile, options: PromptFileOptions): Rel
     return htmlCompacted;
   }
 
-  if (!/\.(?:css|[cm]?js)$/i.test(file.path) || Buffer.byteLength(file.content) <= options.compactAssetBytes) {
+  if (!/\.(?:css|[cm]?js)$/i.test(file.path) || fileContentByteLength(file) <= options.compactAssetBytes) {
     return file;
   }
 
@@ -255,7 +268,7 @@ function promptRelevantFiles(relevantFiles: RelevantFile[], options: PromptFileO
 function retryPromptRelevantFiles(relevantFiles: RelevantFile[], keywords: string[]): RelevantFile[] {
   const totalStaticBytes = relevantFiles
     .filter((file) => isStaticFrontendFile(file.path))
-    .reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
+    .reduce((sum, file) => sum + fileContentByteLength(file), 0);
 
   if (totalStaticBytes <= STATIC_FRONTEND_RETRY_BYTES) {
     return relevantFiles;

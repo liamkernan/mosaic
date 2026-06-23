@@ -18,6 +18,10 @@ function decodeXmlText(value: string): string {
 }
 
 function parseTaggedChanges(response: string): GeneratedChangeResponse[] {
+  if (!/<(?:change|edit)\b/i.test(response)) {
+    return [];
+  }
+
   const changesMatch = response.match(/<changes>([\s\S]*?)<\/changes>/i);
   const source = changesMatch?.[1] ?? response;
   const fullFileMatches = Array.from(
@@ -96,6 +100,14 @@ function extractJsonArrayCandidate(response: string): string {
 }
 
 export function parseGeneratedChanges(response: string): GeneratedChangeResponse[] {
+  if (response.trimStart().startsWith("[")) {
+    try {
+      return parseJsonChanges(response);
+    } catch (error) {
+      throw new LLMError("Code generation returned invalid structured output", { cause: error as Error });
+    }
+  }
+
   const taggedChanges = parseTaggedChanges(response);
   if (taggedChanges.length > 0) {
     return taggedChanges;
