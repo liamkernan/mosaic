@@ -163,18 +163,18 @@ describe("applyValidationFallbacks", () => {
       {
         filePath: "modal.js",
         originalContent: "",
-        modifiedContent: "document.querySelectorAll('.collection-card-btn').forEach(function (button) { button.addEventListener('click', function () {}); });\n",
+        modifiedContent: "document.querySelectorAll('.collection-card-btn').forEach(function (button) { button.addEventListener('click', function () {}); });\ndocument.querySelectorAll('.collection-card-link');\n",
         explanation: "wire collection modal"
       }
     ];
 
     const completed = await applyValidationFallbacks(changes, repoContext, [
-      "Change for modal.js queries selector(s) with no matching HTML: .collection-card-btn"
+      "Change for modal.js queries selector(s) with no matching HTML: .collection-card-btn, .collection-card-link"
     ]);
 
     const htmlChange = completed.find((change) => change.filePath === "index.html");
-    expect(htmlChange?.modifiedContent).toContain('class="collection-card collection-card-btn"');
-    expect(htmlChange?.modifiedContent).toContain('class="collection-card shifted-card collection-card-btn"');
+    expect(htmlChange?.modifiedContent).toContain('class="collection-card collection-card-btn collection-card-link"');
+    expect(htmlChange?.modifiedContent).toContain('class="collection-card shifted-card collection-card-btn collection-card-link"');
   });
 
   it("adds missing sibling Python imports reported by validation", async () => {

@@ -389,16 +389,6 @@ function tagClassValues(tag: string): string[] {
   return match[1].split(/\s+/).filter(Boolean);
 }
 
-function tagSemanticallyMatchesClass(tag: string, missingClassName: string): boolean {
-  const missingTokens = classTokens(missingClassName);
-  if (missingTokens.length === 0) {
-    return false;
-  }
-
-  const existingTokens = new Set(tagClassValues(tag).flatMap(classTokens));
-  return missingTokens.every((token) => existingTokens.has(token));
-}
-
 function addClassToTag(tag: string, className: string): string {
   if (tagHasClass(tag, className)) {
     return tag;
@@ -457,13 +447,50 @@ function addAttributesToClassSelector(html: string, className: string, attrNames
   });
 }
 
-function addClassToSemanticMatches(html: string, className: string): string {
+function htmlClassNames(html: string): Set<string> {
+  const classNames = new Set<string>();
+
+  for (const match of html.matchAll(/<[^>]+>/g)) {
+    for (const className of tagClassValues(match[0])) {
+      classNames.add(className);
+    }
+  }
+
+  return classNames;
+}
+
+function addClassesToSemanticMatches(html: string, classNames: string[]): string {
+  const existingClassNames = htmlClassNames(html);
+  const missingClassNames: Array<{ className: string; tokens: string[] }> = [];
+  const seenMissingClassNames = new Set<string>();
+
+  for (const className of classNames) {
+    if (!existingClassNames.has(className) && !seenMissingClassNames.has(className)) {
+      seenMissingClassNames.add(className);
+      const tokens = classTokens(className);
+      if (tokens.length > 0) {
+        missingClassNames.push({ className, tokens });
+      }
+    }
+  }
+
+  if (missingClassNames.length === 0) {
+    return html;
+  }
+
   return html.replace(/<[a-z][a-z0-9-]*(?:\s[^<>]*)?>/gi, (tag) => {
-    if (!tagSemanticallyMatchesClass(tag, className)) {
-      return tag;
+    const tagTokens = new Set(tagClassValues(tag).flatMap(classTokens));
+    let updatedTag = tag;
+    for (const { className, tokens } of missingClassNames) {
+      if (tokens.every((token) => tagTokens.has(token))) {
+        updatedTag = addClassToTag(updatedTag, className);
+        for (const token of tokens) {
+          tagTokens.add(token);
+        }
+      }
     }
 
-    return addClassToTag(tag, className);
+    return updatedTag;
   });
 }
 
@@ -496,11 +523,7 @@ function applySelectorHookFallbacks(html: string, selectors: string[]): string {
       : addAttributesToClassSelector(completedHtml, className, attrNames);
   }
 
-  for (const className of missingClasses) {
-    if (!htmlHasClass(completedHtml, className)) {
-      completedHtml = addClassToSemanticMatches(completedHtml, className);
-    }
-  }
+  completedHtml = addClassesToSemanticMatches(completedHtml, missingClasses);
 
   return completedHtml;
 }
