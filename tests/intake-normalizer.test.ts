@@ -3,6 +3,19 @@ import { describe, expect, it } from "vitest";
 import { normalize } from "../packages/intake/src/normalizer.js";
 
 describe("normalize", () => {
+  it("normalizes plain text without changing content", () => {
+    const feedback = normalize(
+      {
+        rawContent: "  Please update the billing dashboard status copy.  ",
+        repoFullName: "owner/repo",
+        senderEmail: "user@example.com"
+      },
+      "email"
+    );
+
+    expect(feedback.rawContent).toBe("Please update the billing dashboard status copy.");
+  });
+
   it("strips html and truncates content", () => {
     const feedback = normalize(
       {
