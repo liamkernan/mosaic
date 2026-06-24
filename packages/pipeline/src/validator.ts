@@ -419,6 +419,10 @@ function isScript(filePath: string): boolean {
   return /\.(?:[cm]?[jt]sx?)$/i.test(filePath);
 }
 
+function isFrontendMarkupOrScript(filePath: string): boolean {
+  return /\.(?:html?|[cm]?[jt]sx)$/i.test(filePath);
+}
+
 function isPython(filePath: string): boolean {
   return /\.py$/i.test(filePath);
 }
@@ -876,7 +880,7 @@ export async function validate(
       errors.push(`New IP address(es) added to ${change.filePath}: ${newIps.join(", ")}`);
     }
 
-    if (/\.(?:html?|[cm]?[jt]sx)$/i.test(change.filePath)) {
+    if (isFrontendMarkupOrScript(change.filePath)) {
       const inertAnchors = findAddedMatches(inertAnchorPattern, change.originalContent, change.modifiedContent);
       if (inertAnchors.length > 0) {
         errors.push(
@@ -902,11 +906,22 @@ export async function validate(
     errors.push(`Total new code added exceeds limit: ${totalLinesAdded} lines`);
   }
 
-  await validateModalStyling(changes, repoContext, errors);
-  await validateModalBehavior(changes, repoContext, errors);
-  await validateStaticAssetLinks(changes, repoContext, errors);
-  await validateScriptSelectorsAgainstHtml(changes, repoContext, errors);
-  await validateAccessibleNonNativeControls(changes, repoContext, errors);
+  const hasFrontendMarkupOrScriptChange = changes.some((change) => isFrontendMarkupOrScript(change.filePath));
+  const hasScriptChange = changes.some((change) => isScript(change.filePath));
+  const hasNewStaticAssetChange = changes.some((change) =>
+    change.originalContent.length === 0 && (isScript(change.filePath) || isStylesheet(change.filePath))
+  );
+  if (hasFrontendMarkupOrScriptChange) {
+    await validateModalStyling(changes, repoContext, errors);
+    await validateModalBehavior(changes, repoContext, errors);
+    await validateAccessibleNonNativeControls(changes, repoContext, errors);
+  }
+  if (hasNewStaticAssetChange) {
+    await validateStaticAssetLinks(changes, repoContext, errors);
+  }
+  if (hasScriptChange) {
+    await validateScriptSelectorsAgainstHtml(changes, repoContext, errors);
+  }
   validatePythonCrossFileImports(changes, errors);
   validateTestIntegrity(changes, errors);
 
