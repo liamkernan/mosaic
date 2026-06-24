@@ -36,7 +36,7 @@ interface PathFacts {
 
 interface RuntimeChangeFacts {
   change: GeneratedChange;
-  compactContent: string;
+  compactContent?: string;
 }
 
 function planText(plan: ImplementationPlan, sourceText = ""): string {
@@ -306,7 +306,7 @@ function extractPythonListFunctionFields(content: string): Map<string, Set<strin
 
 function generatedTestListFieldErrors(changes: GeneratedChange[]): string[] {
   const fieldsByFunction = new Map<string, Set<string>>();
-  for (const change of changes.filter((item) => !testPathPattern.test(item.filePath))) {
+  for (const change of changes.filter((item) => !testPathPattern.test(item.filePath) && /\.py$/i.test(item.filePath))) {
     for (const [functionName, fields] of extractPythonListFunctionFields(change.modifiedContent)) {
       fieldsByFunction.set(functionName, fields);
     }
@@ -426,6 +426,11 @@ function compactContent(content: string): string {
   return content.toLowerCase().replace(/\s+/g, " ");
 }
 
+function runtimeCompactContent(facts: RuntimeChangeFacts): string {
+  facts.compactContent ??= compactContent(facts.change.modifiedContent);
+  return facts.compactContent;
+}
+
 function contentContainsTermsInOrder(compact: string, terms: string[]): boolean {
   let cursor = 0;
 
@@ -503,10 +508,7 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
   }
 
   const runtimeChanges = changedRuntimeFiles(changes);
-  const runtimeChangeFacts: RuntimeChangeFacts[] = runtimeChanges.map((change) => ({
-    change,
-    compactContent: compactContent(change.modifiedContent)
-  }));
+  const runtimeChangeFacts: RuntimeChangeFacts[] = runtimeChanges.map((change) => ({ change }));
   if (planRequiresRuntimeChange(plan) && runtimeChanges.length === 0) {
     errors.push("Implementation plan requires runtime/source changes, but the generated change only modifies tests or documentation");
   }
@@ -523,7 +525,7 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
   }
 
   for (const terms of extractOrderedClauses(text)) {
-    const matched = runtimeChangeFacts.some((facts) => contentContainsTermsInOrder(facts.compactContent, terms));
+    const matched = runtimeChangeFacts.some((facts) => contentContainsTermsInOrder(runtimeCompactContent(facts), terms));
     if (!matched) {
       errors.push(`Acceptance criteria require ordered clause ${terms.join(", ")}, but no implementation change contains those terms in that order`);
     }
