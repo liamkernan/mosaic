@@ -25,14 +25,39 @@ interface RawFormEmbedConfig {
   minSubmitMs?: unknown;
 }
 
+let cachedRawFormEmbeds: string | undefined;
+let cachedFormEmbedConfigs: FormEmbedConfig[] | undefined;
+let cachedFormEmbedConfigByKey: Map<string, FormEmbedConfig> | undefined;
+
 export interface EmbedBotFields {
   honeypot?: unknown;
   loadedAt?: unknown;
 }
 
 export function getFormEmbedConfigs(): FormEmbedConfig[] {
-  const rawConfig = process.env.MOSAIC_FORM_EMBEDS?.trim();
-  return parseFormEmbedConfigs(rawConfig && rawConfig.length > 0 ? rawConfig : undefined);
+  return cachedFormEmbedConfigsForEnv().map(cloneFormEmbedConfig);
+}
+
+function cachedFormEmbedConfigsForEnv(): FormEmbedConfig[] {
+  const rawConfig = process.env.MOSAIC_FORM_EMBEDS;
+  if (cachedFormEmbedConfigs && cachedRawFormEmbeds === rawConfig) {
+    return cachedFormEmbedConfigs;
+  }
+
+  const trimmedRawConfig = rawConfig?.trim();
+  const normalizedRawConfig = trimmedRawConfig && trimmedRawConfig.length > 0 ? trimmedRawConfig : undefined;
+  const configs = parseFormEmbedConfigs(normalizedRawConfig);
+  cachedRawFormEmbeds = rawConfig;
+  cachedFormEmbedConfigs = configs;
+  cachedFormEmbedConfigByKey = new Map(configs.map((config) => [config.embedKey, config]));
+  return configs;
+}
+
+function cloneFormEmbedConfig(config: FormEmbedConfig): FormEmbedConfig {
+  return {
+    ...config,
+    allowedOrigins: [...config.allowedOrigins]
+  };
 }
 
 export function parseFormEmbedConfigs(rawConfig: string | undefined): FormEmbedConfig[] {
@@ -56,12 +81,13 @@ export function parseFormEmbedConfigs(rawConfig: string | undefined): FormEmbedC
 }
 
 export function findFormEmbedConfig(embedKey: string): FormEmbedConfig {
-  const config = getFormEmbedConfigs().find((item) => item.embedKey === embedKey);
+  cachedFormEmbedConfigsForEnv();
+  const config = cachedFormEmbedConfigByKey?.get(embedKey);
   if (!config) {
     throw new ValidationError("Unknown feedback form embed key");
   }
 
-  return config;
+  return cloneFormEmbedConfig(config);
 }
 
 export function isOriginAllowed(origin: string | undefined, allowedOrigins: string[]): boolean {
@@ -73,7 +99,8 @@ export function isOriginAllowed(origin: string | undefined, allowedOrigins: stri
     return true;
   }
 
-  return allowedOrigins.some((allowedOrigin) => originMatches(origin, allowedOrigin));
+  const normalizedOrigin = normalizedOriginValue(origin);
+  return normalizedOrigin !== undefined && allowedOrigins.includes(normalizedOrigin);
 }
 
 export function assertEmbedOriginAllowed(origin: string | undefined, config: FormEmbedConfig): void {
@@ -315,11 +342,11 @@ function normalizeMinSubmitMs(value: unknown, index: number): number {
   return parsed;
 }
 
-function originMatches(origin: string, allowedOrigin: string): boolean {
+function normalizedOriginValue(origin: string): string | undefined {
   try {
-    return new URL(origin).origin === allowedOrigin;
+    return new URL(origin).origin;
   } catch {
-    return false;
+    return undefined;
   }
 }
 

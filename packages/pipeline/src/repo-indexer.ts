@@ -14,6 +14,7 @@ const fileSizeCache = new WeakMap<FileNode[], Map<string, number>>();
 const largeFileTruncationBytes = 100 * 1024;
 const largeFileTruncationLines = 200;
 const referenceFilePattern = /\.(?:md|mdx|rst|txt|ya?ml|json|py|[cm]?[jt]sx?|html|css)$/i;
+const referenceDirectoryPattern = /(?:^|\/)(?:test|tests|spec|specs|__tests__|reported)(?:\/|$)/;
 const repoReferenceNames = new Set([
   "readme.md",
   "readme.mdx",
@@ -222,25 +223,20 @@ function issueNumberPattern(issueNumber: number): RegExp {
   return new RegExp(`^(?:0*)${issueNumber}(?:[^0-9]|$)`);
 }
 
-function isLikelyReferencePath(path: string): boolean {
-  const lowerPath = path.toLowerCase();
-  const name = basename(lowerPath);
-
+function isLikelyReferencePath(lowerPath: string, name: string): boolean {
   return repoReferenceNames.has(name) ||
     lowerPath.startsWith("docs/") ||
     lowerPath.startsWith("issues/") ||
     lowerPath.includes("/docs/") ||
     lowerPath.includes("/issues/") ||
-    /(?:^|\/)(?:test|tests|spec|specs|__tests__|reported)(?:\/|$)/.test(lowerPath);
+    referenceDirectoryPattern.test(lowerPath);
 }
 
-function scoreReferencePath(path: string, terms: string[], issuePattern?: RegExp): number {
+function scoreReferencePath(path: string, lowerPath: string, name: string, terms: string[], issuePattern?: RegExp): number {
   if (!referenceFilePattern.test(path)) {
     return 0;
   }
 
-  const lowerPath = path.toLowerCase();
-  const name = basename(lowerPath);
   let score = 0;
 
   if (repoReferenceNames.has(name)) {
@@ -255,7 +251,7 @@ function scoreReferencePath(path: string, terms: string[], issuePattern?: RegExp
     score += 6;
   }
 
-  if (/(?:^|\/)(?:test|tests|spec|specs|__tests__|reported)(?:\/|$)/.test(lowerPath)) {
+  if (referenceDirectoryPattern.test(lowerPath)) {
     score += 4;
   }
 
@@ -269,6 +265,29 @@ function scoreReferencePath(path: string, terms: string[], issuePattern?: RegExp
   return score;
 }
 
+function rankReferencePaths(fileTree: string[], terms: string[], issuePattern?: RegExp): Array<{ path: string; name: string; score: number }> {
+  const rankedPaths: Array<{ path: string; name: string; score: number }> = [];
+
+  for (const path of fileTree) {
+    if (!referenceFilePattern.test(path)) {
+      continue;
+    }
+
+    const lowerPath = path.toLowerCase();
+    const name = basename(lowerPath);
+    if (!isLikelyReferencePath(lowerPath, name)) {
+      continue;
+    }
+
+    const score = scoreReferencePath(path, lowerPath, name, terms, issuePattern);
+    if (score > 0) {
+      rankedPaths.push({ path, name, score });
+    }
+  }
+
+  return rankedPaths.sort((left, right) => right.score - left.score || left.path.localeCompare(right.path));
+}
+
 function referenceReason(path: string, issueNumber?: number, issuePattern?: RegExp): string {
   const lowerPath = path.toLowerCase();
   const name = basename(lowerPath);
@@ -277,7 +296,7 @@ function referenceReason(path: string, issueNumber?: number, issuePattern?: RegE
     return `Repository issue/spec reference for promoted issue #${issueNumber}`;
   }
 
-  if (/(?:^|\/)(?:test|tests|spec|specs|__tests__|reported)(?:\/|$)/.test(lowerPath)) {
+  if (referenceDirectoryPattern.test(lowerPath)) {
     return "Repository test reference for expected behavior and coverage pattern";
   }
 
@@ -433,14 +452,7 @@ export class RepoIndexer {
     const fileTree = this.fileTreeToPaths(context);
     const terms = tokenizeForSearch(`${classified.rawContent}\n${classified.summary}`);
     const issuePattern = options.issueNumber ? issueNumberPattern(options.issueNumber) : undefined;
-    const rankedPaths = fileTree
-      .filter(isLikelyReferencePath)
-      .map((path) => ({
-        path,
-        score: scoreReferencePath(path, terms, issuePattern)
-      }))
-      .filter((candidate) => candidate.score > 0)
-      .sort((left, right) => right.score - left.score || left.path.localeCompare(right.path));
+    const rankedPaths = rankReferencePaths(fileTree, terms, issuePattern);
 
     const references: RelevantFile[] = [];
     let totalBytes = 0;
@@ -461,8 +473,8 @@ export class RepoIndexer {
       if (loadedFile) {
         const lowerContent = loadedFile.content.toLowerCase();
         const contentMatches = terms.some((term) => lowerContent.includes(term));
-        const exactIssueMatch = issuePattern?.test(basename(candidate.path.toLowerCase())) ?? false;
-        if (!exactIssueMatch && !repoReferenceNames.has(basename(candidate.path.toLowerCase())) && !contentMatches && candidate.score < 10) {
+        const exactIssueMatch = issuePattern?.test(candidate.name) ?? false;
+        if (!exactIssueMatch && !repoReferenceNames.has(candidate.name) && !contentMatches && candidate.score < 10) {
           continue;
         }
 

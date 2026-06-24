@@ -30,6 +30,7 @@ const testAssertionPattern = /\bassert\b|self\.assert[A-Z][A-Za-z]*\s*\(|\bexpec
 const testSkipPattern = /@(?:unittest\.)?skip\b|pytest\.mark\.skip\b|\b(?:describe|it|test)\.skip\s*\(|\b(?:xdescribe|xit)\s*\(/i;
 const trivialAssertionPattern = /^\s*(?:assert\s+True\b|self\.assertTrue\(\s*True\s*\)|expect\(\s*true\s*\)\.(?:toBe|toEqual)\(\s*true\s*\)|expect\(\s*true\s*\)\.toBeTruthy\(\s*\))/i;
 const pythonSyntaxConcurrency = 8;
+const repoFileLookupCache = new WeakMap<FileNode[], Map<string, string | undefined>>();
 const pythonBuiltinCallNames = new Set([
   "dict",
   "int",
@@ -408,7 +409,17 @@ function findFileInTree(nodes: FileNode[], fileName: string): string | undefined
 }
 
 function findRepoFile(repoContext: RepoContext, fileName: string): string | undefined {
-  return findFileInTree(repoContext.fileTree, fileName);
+  let lookup = repoFileLookupCache.get(repoContext.fileTree);
+  if (!lookup) {
+    lookup = new Map();
+    repoFileLookupCache.set(repoContext.fileTree, lookup);
+  }
+
+  if (!lookup.has(fileName)) {
+    lookup.set(fileName, findFileInTree(repoContext.fileTree, fileName));
+  }
+
+  return lookup.get(fileName);
 }
 
 function isStylesheet(filePath: string): boolean {

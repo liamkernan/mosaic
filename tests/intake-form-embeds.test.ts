@@ -4,6 +4,7 @@ import {
   assertEmbedBotFields,
   assertEmbedOriginAllowed,
   buildAnonymousSenderIdentifier,
+  findFormEmbedConfig,
   parseFormEmbedConfigs,
   renderEmbedScript
 } from "../packages/intake/src/form-embeds.js";
@@ -49,6 +50,30 @@ describe("form embeds", () => {
         minSubmitMs: 800
       }
     ]);
+  });
+
+  it("refreshes cached embed configs when the environment changes", () => {
+    process.env.MOSAIC_FORM_EMBEDS = JSON.stringify([
+      { embedKey: "site-one", repoFullName: "owner/one", allowedOrigins: ["https://one.example.com"] }
+    ]);
+    expect(findFormEmbedConfig("site-one").repoFullName).toBe("owner/one");
+
+    process.env.MOSAIC_FORM_EMBEDS = JSON.stringify([
+      { embedKey: "site-one", repoFullName: "owner/two", allowedOrigins: ["https://two.example.com"] }
+    ]);
+
+    expect(findFormEmbedConfig("site-one").repoFullName).toBe("owner/two");
+  });
+
+  it("does not expose cached embed config objects for mutation", () => {
+    process.env.MOSAIC_FORM_EMBEDS = JSON.stringify([
+      { embedKey: "site-one", repoFullName: "owner/one", allowedOrigins: ["https://one.example.com"] }
+    ]);
+
+    const config = findFormEmbedConfig("site-one");
+    config.allowedOrigins.push("https://mutated.example.com");
+
+    expect(findFormEmbedConfig("site-one").allowedOrigins).toEqual(["https://one.example.com"]);
   });
 
   it("requires unique embed keys and valid repo mappings", () => {
