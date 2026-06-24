@@ -49,7 +49,6 @@ interface TreeScoreContext {
   directPathSet: Set<string>;
   directAncestorSet: Set<string>;
   directDirectorySet: Set<string>;
-  directDirectoryPrefixes: string[];
 }
 
 interface RankedPath {
@@ -100,7 +99,7 @@ function tokenize(text: string): string[] {
 }
 
 function hasDirectDirectoryMatch(candidatePath: string, context: TreeScoreContext): boolean {
-  const { directDirectorySet, directDirectoryPrefixes } = context;
+  const { directDirectorySet } = context;
   if (directDirectorySet.has("") && !candidatePath.includes("/")) {
     return true;
   }
@@ -109,8 +108,8 @@ function hasDirectDirectoryMatch(candidatePath: string, context: TreeScoreContex
     return true;
   }
 
-  for (const directDirectoryPrefix of directDirectoryPrefixes) {
-    if (candidatePath.startsWith(directDirectoryPrefix)) {
+  for (let index = candidatePath.indexOf("/"); index >= 0; index = candidatePath.indexOf("/", index + 1)) {
+    if (directDirectorySet.has(candidatePath.slice(0, index))) {
       return true;
     }
   }
@@ -154,8 +153,7 @@ function buildTreeScoreContext(options: PromptTreeOptions, terms: string[]): Tre
     terms,
     directPathSet: new Set(directPaths),
     directAncestorSet,
-    directDirectorySet,
-    directDirectoryPrefixes: [...directDirectorySet].filter(Boolean).map((path) => `${path}/`)
+    directDirectorySet
   };
 }
 
