@@ -31,6 +31,15 @@ body {
     expect(parsed[0]?.filePath).toBe("styles.css");
   });
 
+  it("parses json arrays with leading whitespace", () => {
+    const parsed = parseGeneratedChanges(
+      '\n  [{"filePath":"styles.css","modifiedContent":"body {}","explanation":"Fix alignment."}]'
+    );
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.filePath).toBe("styles.css");
+  });
+
   it("parses tagged search replace edits", () => {
     const parsed = parseGeneratedChanges(`
 <changes>
@@ -63,5 +72,21 @@ body {
 
     expect(parsed).toHaveLength(1);
     expect(parsed[0]?.explanation).toBe("Fix alignment.");
+  });
+
+  it("decodes xml entities in tagged metadata", () => {
+    const parsed = parseGeneratedChanges(`
+<changes>
+  <change>
+    <filePath>src/routes/users&amp;teams.ts</filePath>
+    <modifiedContent><![CDATA[
+export const value = true;
+]]></modifiedContent>
+    <explanation>Handle &lt;users&gt; &amp; teams.</explanation>
+  </change>
+</changes>`);
+
+    expect(parsed[0]?.filePath).toBe("src/routes/users&teams.ts");
+    expect(parsed[0]?.explanation).toBe("Handle <users> & teams.");
   });
 });

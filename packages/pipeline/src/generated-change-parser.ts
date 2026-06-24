@@ -9,6 +9,10 @@ interface GeneratedChangeResponse {
 }
 
 function decodeXmlText(value: string): string {
+  if (!value.includes("&")) {
+    return value;
+  }
+
   return value
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -17,6 +21,15 @@ function decodeXmlText(value: string): string {
     .replace(/&#39;/g, "'");
 }
 
+function stripBoundaryNewlines(value: string): string {
+  const start = value.charCodeAt(0) === 10 ? 1 : 0;
+  const end = value.charCodeAt(value.length - 1) === 10 ? value.length - 1 : value.length;
+  return start === 0 && end === value.length ? value : value.slice(start, end);
+}
+
+const fullFileChangePattern = /<change>\s*<filePath>([\s\S]*?)<\/filePath>\s*<modifiedContent><!\[CDATA\[([\s\S]*?)\]\]><\/modifiedContent>\s*<explanation>([\s\S]*?)<\/explanation>\s*<\/change>/gi;
+const editChangePattern = /<edit>\s*<filePath>([\s\S]*?)<\/filePath>\s*<search><!\[CDATA\[([\s\S]*?)\]\]><\/search>\s*<replace><!\[CDATA\[([\s\S]*?)\]\]><\/replace>\s*<explanation>([\s\S]*?)<\/explanation>\s*<\/edit>/gi;
+
 function parseTaggedChanges(response: string): GeneratedChangeResponse[] {
   if (!/<(?:change|edit)\b/i.test(response)) {
     return [];
@@ -24,30 +37,29 @@ function parseTaggedChanges(response: string): GeneratedChangeResponse[] {
 
   const changesMatch = response.match(/<changes>([\s\S]*?)<\/changes>/i);
   const source = changesMatch?.[1] ?? response;
-  const fullFileMatches = Array.from(
-    source.matchAll(
-      /<change>\s*<filePath>([\s\S]*?)<\/filePath>\s*<modifiedContent><!\[CDATA\[([\s\S]*?)\]\]><\/modifiedContent>\s*<explanation>([\s\S]*?)<\/explanation>\s*<\/change>/gi
-    )
-  );
-  const editMatches = Array.from(
-    source.matchAll(
-      /<edit>\s*<filePath>([\s\S]*?)<\/filePath>\s*<search><!\[CDATA\[([\s\S]*?)\]\]><\/search>\s*<replace><!\[CDATA\[([\s\S]*?)\]\]><\/replace>\s*<explanation>([\s\S]*?)<\/explanation>\s*<\/edit>/gi
-    )
-  );
+  const changes: GeneratedChangeResponse[] = [];
 
-  return [
-    ...fullFileMatches.map((match) => ({
+  fullFileChangePattern.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = fullFileChangePattern.exec(source)) !== null) {
+    changes.push({
       filePath: decodeXmlText(match[1].trim()),
-      modifiedContent: match[2].replace(/^\n/, "").replace(/\n$/, ""),
+      modifiedContent: stripBoundaryNewlines(match[2]),
       explanation: decodeXmlText(match[3].trim())
-    })),
-    ...editMatches.map((match) => ({
+    });
+  }
+
+  editChangePattern.lastIndex = 0;
+  while ((match = editChangePattern.exec(source)) !== null) {
+    changes.push({
       filePath: decodeXmlText(match[1].trim()),
-      search: match[2].replace(/^\n/, "").replace(/\n$/, ""),
-      replace: match[3].replace(/^\n/, "").replace(/\n$/, ""),
+      search: stripBoundaryNewlines(match[2]),
+      replace: stripBoundaryNewlines(match[3]),
       explanation: decodeXmlText(match[4].trim())
-    }))
-  ];
+    });
+  }
+
+  return changes;
 }
 
 function isGeneratedChangeResponse(value: unknown): value is GeneratedChangeResponse {
@@ -99,8 +111,22 @@ function extractJsonArrayCandidate(response: string): string {
   return trimmed;
 }
 
+function startsWithJsonArray(response: string): boolean {
+  for (let index = 0; index < response.length; index += 1) {
+    const charCode = response.charCodeAt(index);
+    if (charCode === 91) {
+      return true;
+    }
+    if (charCode !== 9 && charCode !== 10 && charCode !== 13 && charCode !== 32) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 export function parseGeneratedChanges(response: string): GeneratedChangeResponse[] {
-  if (response.trimStart().startsWith("[")) {
+  if (startsWithJsonArray(response)) {
     try {
       return parseJsonChanges(response);
     } catch (error) {
