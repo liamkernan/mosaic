@@ -15,6 +15,7 @@ const unlinkedStaticAssetPattern = /New static asset ([^\s]+) is not linked from
 const missingHtmlIdPattern = /queries missing HTML id\(s\): (.+)$/;
 const missingHtmlSelectorPattern = /queries selector\(s\) with no matching HTML: (.+)$/;
 const missingPythonImportPattern = /Change for ([^\s]+\.py) calls (.+) from ([^\s]+)\.py but does not import or define (.+)$/;
+const filePathByNameCache = new WeakMap<RepoContext["fileTree"], Map<string, string | null>>();
 
 function createChangeUpdater(changes: GeneratedChange[]): ChangeUpdater {
   const indexesByPath = new Map<string, number[]>();
@@ -134,8 +135,22 @@ function buildModalStyleFallback(tokens: string[]): string {
     .join("\n\n");
 }
 
+function cachedFilePathByName(nodes: RepoContext["fileTree"], fileName: string): string | null {
+  let lookup = filePathByNameCache.get(nodes);
+  if (!lookup) {
+    lookup = new Map();
+    filePathByNameCache.set(nodes, lookup);
+  }
+
+  if (!lookup.has(fileName)) {
+    lookup.set(fileName, findFilePathByName(nodes, fileName));
+  }
+
+  return lookup.get(fileName) ?? null;
+}
+
 function findHtmlInsertTarget(nodes: RepoContext["fileTree"], htmlPath: string): string | null {
-  return findFilePathByName(nodes, htmlPath);
+  return cachedFilePathByName(nodes, htmlPath);
 }
 
 function extractUnlinkedStaticAssets(validationErrors: string[]): Array<{ assetPath: string; htmlPath: string }> {
@@ -555,7 +570,7 @@ export async function completeMissingModalStyles(
     return changes;
   }
 
-  const stylePath = findFilePathByName(repoContext.fileTree, "styles.css");
+  const stylePath = cachedFilePathByName(repoContext.fileTree, "styles.css");
   if (!stylePath) {
     return changes;
   }
@@ -676,7 +691,7 @@ export async function completeMissingHtmlHooks(
     return changes;
   }
 
-  const htmlPath = findFilePathByName(repoContext.fileTree, "index.html");
+  const htmlPath = cachedFilePathByName(repoContext.fileTree, "index.html");
   if (!htmlPath) {
     return changes;
   }

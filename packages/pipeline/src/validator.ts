@@ -57,6 +57,7 @@ interface HtmlFacts {
 interface LineChangeStats {
   changedLines: number;
   addedLines: number;
+  addedChangedLines: string[];
   modifiedChangedText: string;
 }
 
@@ -100,6 +101,7 @@ function lineChangeStats(original: string, modified: string): LineChangeStats {
   const modifiedLines = modified.split("\n");
   const originalSet = new Set(originalLines);
   let addedLines = 0;
+  const addedChangedLines: string[] = [];
   const { start, originalEnd, modifiedEnd } = changedLineWindow(originalLines, modifiedLines);
   const changedModifiedLines = modifiedLines.slice(start, modifiedEnd + 1);
 
@@ -107,16 +109,17 @@ function lineChangeStats(original: string, modified: string): LineChangeStats {
     const line = modifiedLines[index];
     if (line.trim().length > 0 && !originalSet.has(line)) {
       addedLines += 1;
+      addedChangedLines.push(line);
     }
   }
 
   const modifiedChangedText = changedModifiedLines.join("\n");
   if (originalLines.length === 0) {
-    return { changedLines: modifiedLines.length, addedLines, modifiedChangedText };
+    return { changedLines: modifiedLines.length, addedLines, addedChangedLines, modifiedChangedText };
   }
 
   if (modifiedLines.length === 0) {
-    return { changedLines: originalLines.length, addedLines, modifiedChangedText };
+    return { changedLines: originalLines.length, addedLines, addedChangedLines, modifiedChangedText };
   }
 
   const changedOriginalLines = originalLines.slice(start, originalEnd + 1);
@@ -124,17 +127,28 @@ function lineChangeStats(original: string, modified: string): LineChangeStats {
     return {
       changedLines: changedOriginalLines.length + changedModifiedLines.length,
       addedLines,
+      addedChangedLines,
       modifiedChangedText
     };
   }
 
-  let previous = new Array<number>(changedModifiedLines.length + 1).fill(0);
+  const commonLines = longestCommonSubsequenceLength(changedOriginalLines, changedModifiedLines);
+  return {
+    changedLines: (changedOriginalLines.length - commonLines) + (changedModifiedLines.length - commonLines),
+    addedLines,
+    addedChangedLines,
+    modifiedChangedText
+  };
+}
 
-  for (const originalLine of changedOriginalLines) {
-    const current = new Array<number>(changedModifiedLines.length + 1).fill(0);
+function dynamicLongestCommonSubsequenceLength(left: string[], right: string[]): number {
+  let previous = new Array<number>(right.length + 1).fill(0);
 
-    for (let index = 0; index < changedModifiedLines.length; index += 1) {
-      current[index + 1] = originalLine === changedModifiedLines[index]
+  for (const leftLine of left) {
+    const current = new Array<number>(right.length + 1).fill(0);
+
+    for (let index = 0; index < right.length; index += 1) {
+      current[index + 1] = leftLine === right[index]
         ? previous[index] + 1
         : Math.max(current[index], previous[index + 1]);
     }
@@ -142,12 +156,54 @@ function lineChangeStats(original: string, modified: string): LineChangeStats {
     previous = current;
   }
 
-  const commonLines = previous[changedModifiedLines.length];
-  return {
-    changedLines: (changedOriginalLines.length - commonLines) + (changedModifiedLines.length - commonLines),
-    addedLines,
-    modifiedChangedText
-  };
+  return previous[right.length];
+}
+
+function lowerBound(values: number[], target: number): number {
+  let left = 0;
+  let right = values.length;
+
+  while (left < right) {
+    const middle = Math.floor((left + right) / 2);
+    if (values[middle] < target) {
+      left = middle + 1;
+    } else {
+      right = middle;
+    }
+  }
+
+  return left;
+}
+
+function longestCommonSubsequenceLength(left: string[], right: string[]): number {
+  const positionsByLine = new Map<string, number[]>();
+  for (let index = right.length - 1; index >= 0; index -= 1) {
+    const line = right[index];
+    const positions = positionsByLine.get(line);
+    if (positions) {
+      positions.push(index);
+    } else {
+      positionsByLine.set(line, [index]);
+    }
+  }
+
+  let matchCount = 0;
+  for (const line of left) {
+    matchCount += positionsByLine.get(line)?.length ?? 0;
+  }
+
+  if (matchCount > (left.length * right.length) / 4) {
+    return dynamicLongestCommonSubsequenceLength(left, right);
+  }
+
+  const tails: number[] = [];
+  for (const line of left) {
+    for (const index of positionsByLine.get(line) ?? []) {
+      tails[lowerBound(tails, index)] = index;
+    }
+  }
+
+  return tails.length;
 }
 
 function findAddedMatches(pattern: RegExp, original: string, modified: string, modifiedSearchText = modified): string[] {
@@ -160,36 +216,31 @@ function findAddedMatches(pattern: RegExp, original: string, modified: string, m
   return modifiedMatches.filter((match) => !originalMatches.has(match));
 }
 
-function findAddedLines(original: string, modified: string): string[] {
-  const originalLines = original.split("\n");
-  const modifiedLines = modified.split("\n");
-  const { start, modifiedEnd } = changedLineWindow(originalLines, modifiedLines);
-  const originalSet = new Set(originalLines);
-  const addedLines: string[] = [];
-
-  for (let index = start; index <= modifiedEnd; index += 1) {
-    const line = modifiedLines[index];
-    if (line.trim().length > 0 && !originalSet.has(line)) {
-      addedLines.push(line);
-    }
+function countTestAssertions(content: string): number {
+  let count = 0;
+  testAssertionPattern.lastIndex = 0;
+  while (testAssertionPattern.exec(content) !== null) {
+    count += 1;
   }
 
-  return addedLines;
+  testAssertionPattern.lastIndex = 0;
+  return count;
 }
 
-function countTestAssertions(content: string): number {
-  return [...content.matchAll(testAssertionPattern)].length;
-}
+function validateTestIntegrity(changes: GeneratedChange[], lineStats: LineChangeStats[], errors: string[]): void {
+  for (let index = 0; index < changes.length; index += 1) {
+    const change = changes[index];
+    if (!testFilePathPattern.test(change.filePath)) {
+      continue;
+    }
 
-function validateTestIntegrity(changes: GeneratedChange[], errors: string[]): void {
-  for (const change of changes.filter((candidate) => testFilePathPattern.test(candidate.filePath))) {
     const originalAssertions = countTestAssertions(change.originalContent);
     const modifiedAssertions = countTestAssertions(change.modifiedContent);
     if (originalAssertions > 0 && modifiedAssertions < originalAssertions) {
       errors.push(`Change for ${change.filePath} weakens existing test assertions (${originalAssertions} -> ${modifiedAssertions})`);
     }
 
-    const suspiciousAddedLines = findAddedLines(change.originalContent, change.modifiedContent)
+    const suspiciousAddedLines = lineStats[index].addedChangedLines
       .filter((line) => testSkipPattern.test(line) || trivialAssertionPattern.test(line));
     if (suspiciousAddedLines.length > 0) {
       errors.push(`Change for ${change.filePath} adds skipped or trivial test assertions: ${suspiciousAddedLines.map((line) => line.trim()).join(", ")}`);
@@ -934,7 +985,7 @@ export async function validate(
     await validateScriptSelectorsAgainstHtml(changes, repoContext, errors);
   }
   validatePythonCrossFileImports(changes, errors);
-  validateTestIntegrity(changes, errors);
+  validateTestIntegrity(changes, lineStats, errors);
 
   return {
     valid: errors.length === 0,

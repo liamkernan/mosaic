@@ -95,6 +95,38 @@ describe("validate", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("counts reordered changed-window lines using line-level common subsequences", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(tempDir);
+    const originalContent = ["alpha", "beta", "gamma", "delta"].join("\n");
+    const modifiedContent = ["alpha", "gamma", "beta", "delta"].join("\n");
+    await writeFile(join(tempDir, "notes.md"), originalContent);
+
+    const result = await validate(
+      [
+        {
+          filePath: "notes.md",
+          originalContent,
+          modifiedContent,
+          explanation: "swap adjacent notes"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath: tempDir,
+        fileTree: [{ path: "notes.md", type: "file" }],
+        installationId: 1
+      },
+      {
+        maxChangedLines: 2,
+        maxLinesAdded: 10
+      }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
   it("rejects generated change paths outside the repository", async () => {
     const result = await validate(
       [
