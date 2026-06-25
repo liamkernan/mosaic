@@ -58,9 +58,15 @@ function isStaticFrontendFile(filePath: string): boolean {
 }
 
 function totalStaticFrontendBytes(relevantFiles: RelevantFile[]): number {
-  return relevantFiles
-    .filter((file) => isStaticFrontendFile(file.path))
-    .reduce((sum, file) => sum + fileContentByteLength(file), 0);
+  let totalBytes = 0;
+
+  for (const file of relevantFiles) {
+    if (isStaticFrontendFile(file.path)) {
+      totalBytes += fileContentByteLength(file);
+    }
+  }
+
+  return totalBytes;
 }
 
 function shouldCompactStaticFrontendContext(relevantFiles: RelevantFile[]): boolean {
