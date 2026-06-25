@@ -31,6 +31,8 @@ interface PromptFileOptions {
 }
 
 const fileByteLengthCache = new WeakMap<RelevantFile, { content: string; byteLength: number }>();
+const keywordPattern = /[a-z][a-z0-9-]{3,}/g;
+const keywordStopwords = new Set(["about", "add", "and", "for", "from", "into", "make", "open", "that", "the", "them", "this", "with"]);
 
 function fileContentByteLength(file: RelevantFile): number {
   const cached = fileByteLengthCache.get(file);
@@ -79,10 +81,23 @@ function shouldRetryStaticFrontendGeneration(relevantFiles: RelevantFile[], erro
 }
 
 function extractKeywords(text: string): string[] {
-  const stopwords = new Set(["about", "add", "and", "for", "from", "into", "make", "open", "that", "the", "them", "this", "with"]);
-  return [...new Set(text.toLowerCase().match(/[a-z][a-z0-9-]{3,}/g) ?? [])]
-    .filter((word) => !stopwords.has(word))
-    .slice(0, 12);
+  const keywords: string[] = [];
+  const seen = new Set<string>();
+
+  for (const match of text.toLowerCase().matchAll(keywordPattern)) {
+    const word = match[0];
+    if (keywordStopwords.has(word) || seen.has(word)) {
+      continue;
+    }
+
+    seen.add(word);
+    keywords.push(word);
+    if (keywords.length >= 12) {
+      return keywords;
+    }
+  }
+
+  return keywords;
 }
 
 function promptKeywordText(feedback: ClassifiedFeedback, implementationPlan?: ImplementationPlan, validationErrors: string[] = []): string {
