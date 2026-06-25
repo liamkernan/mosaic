@@ -1,6 +1,6 @@
 import type { RelevantFile } from "@mosaic/core";
 import type { ImplementationPlan } from "../implementation-planner.js";
-import { formatPromptFileTree, promptFilePaths } from "./context-budget.js";
+import { formatPromptFileBlocks, formatPromptFileTree, promptFilePaths } from "./context-budget.js";
 
 export function buildGenerationPrompt(
   summary: string,
@@ -42,7 +42,7 @@ REPOSITORY FILE TREE:
 ${promptFileTree}
 
 RELEVANT FILES:
-${relevantFiles.map((file) => `--- ${file.path} ---\n${file.content}\n--- END ${file.path} ---`).join("\n\n")}
+${formatPromptFileBlocks(relevantFiles)}
 ${planSection}
 ${largeStaticFrontendSection}
 

@@ -1,5 +1,5 @@
 import type { ClassifiedFeedback, RelevantFile } from "@mosaic/core";
-import { formatPromptFileTree, promptFilePaths } from "./context-budget.js";
+import { formatPromptFileBlocksWithReasons, formatPromptFileTree, promptFilePaths } from "./context-budget.js";
 
 const implementationPlanMaxFileTreePaths = 1_800;
 
@@ -29,7 +29,7 @@ REPOSITORY FILE TREE:
 ${promptFileTree}
 
 CURRENTLY LOADED FILES:
-${relevantFiles.map((file) => `--- ${file.path} ---\nReason: ${file.reason}\n${file.content}\n--- END ${file.path} ---`).join("\n\n")}
+${formatPromptFileBlocksWithReasons(relevantFiles)}
 
 Your job is to identify every file surface needed for a complete user-visible solution in one PR.
 

@@ -1,4 +1,4 @@
-import { formatPromptFileTree } from "./context-budget.js";
+import { formatPromptFileBlocks, formatPromptFileTree } from "./context-budget.js";
 
 const CURRENT_CHANGE_PROMPT_BYTES = 24_000;
 
@@ -120,7 +120,7 @@ ${largeStaticFrontendSection}
 ${oversizedPatchSection}
 
 ORIGINAL RELEVANT FILES:
-${relevantFiles.map((file) => `--- ${file.path} ---\n${file.content}\n--- END ${file.path} ---`).join("\n\n")}
+${formatPromptFileBlocks(relevantFiles)}
 
 CURRENT INVALID CHANGES:
 ${currentChanges.map((change) => `--- ${change.filePath} ---\n${compactCurrentChangeContent(change.filePath, change.modifiedContent)}\n--- END ${change.filePath} ---\nExplanation: ${change.explanation}`).join("\n\n")}

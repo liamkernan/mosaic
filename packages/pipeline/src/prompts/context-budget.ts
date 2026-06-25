@@ -329,3 +329,25 @@ export function formatPromptFileTree(fileTree: string[], options: PromptTreeOpti
 export function promptFilePaths(files: Array<Pick<RelevantFile, "path">>): string[] {
   return files.map((file) => file.path);
 }
+
+export function formatPromptFileBlocks(files: Array<Pick<RelevantFile, "path" | "content">>): string {
+  let output = "";
+
+  for (const file of files) {
+    const block = `--- ${file.path} ---\n${file.content}\n--- END ${file.path} ---`;
+    output = output.length === 0 ? block : `${output}\n\n${block}`;
+  }
+
+  return output;
+}
+
+export function formatPromptFileBlocksWithReasons(files: RelevantFile[]): string {
+  let output = "";
+
+  for (const file of files) {
+    const block = `--- ${file.path} ---\nReason: ${file.reason}\n${file.content}\n--- END ${file.path} ---`;
+    output = output.length === 0 ? block : `${output}\n\n${block}`;
+  }
+
+  return output;
+}
