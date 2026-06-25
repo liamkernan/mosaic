@@ -133,7 +133,15 @@ function flattenFileTree(nodes: FileNode[]): string[] {
 }
 
 function truncateLargeFile(content: string): string {
-  return content.split("\n").slice(0, largeFileTruncationLines).join("\n");
+  let newlineIndex = -1;
+  for (let line = 0; line < largeFileTruncationLines; line += 1) {
+    newlineIndex = content.indexOf("\n", newlineIndex + 1);
+    if (newlineIndex === -1) {
+      return content;
+    }
+  }
+
+  return content.slice(0, newlineIndex);
 }
 
 async function readLargeFilePrefix(filePath: string): Promise<string> {
