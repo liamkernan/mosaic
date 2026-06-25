@@ -203,13 +203,33 @@ function isAllowedPlannedCompanionChange(change: GeneratedChange, changedPath: P
 }
 
 function createPlannedScope(plan: ImplementationPlan, sourceText: string): PlannedScope | null {
-  const requiredPathList = [...new Set(plan.requiredFiles.map((file) => normalizeRepoPath(file.path)).filter(Boolean))];
+  const requiredPathList: string[] = [];
+  const requiredPathSet = new Set<string>();
+  for (const file of plan.requiredFiles) {
+    const normalizedPath = normalizeRepoPath(file.path);
+    if (normalizedPath.length > 0 && !requiredPathSet.has(normalizedPath)) {
+      requiredPathSet.add(normalizedPath);
+      requiredPathList.push(normalizedPath);
+    }
+  }
+
   if (requiredPathList.length === 0) {
     return null;
   }
 
-  const requiredPaths = requiredPathList.map(pathFacts);
-  if (!requiredPaths.some((path) => !path.isTest && !path.isDocumentation)) {
+  const requiredPaths: PathFacts[] = [];
+  const requiredDirSet = new Set<string>();
+  let hasRuntimePath = false;
+  for (const path of requiredPathList) {
+    const facts = pathFacts(path);
+    requiredPaths.push(facts);
+    requiredDirSet.add(facts.dir);
+    if (!facts.isTest && !facts.isDocumentation) {
+      hasRuntimePath = true;
+    }
+  }
+
+  if (!hasRuntimePath) {
     return null;
   }
 
@@ -217,8 +237,8 @@ function createPlannedScope(plan: ImplementationPlan, sourceText: string): Plann
     requiredPaths,
     requiredPathList,
     requiredPathText: requiredPathList.join(", "),
-    requiredPathSet: new Set(requiredPathList),
-    requiredDirSet: new Set(requiredPaths.map((path) => path.dir)),
+    requiredPathSet,
+    requiredDirSet,
     requiresBehavioralTests: planRequiresBehavioralTests(plan, sourceText)
   };
 }
