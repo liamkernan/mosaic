@@ -299,6 +299,8 @@ describe("pipeline prompts", () => {
     );
 
     expect(prompt).toContain("invalid generated index.html omitted from repair prompt");
+    expect(prompt).toContain("1702 middle line(s)");
+    expect(prompt).toContain("<article>0</article>");
     expect(prompt).toContain("<article>1999</article>");
     expect(prompt).not.toContain("<article>1000</article>");
   });
