@@ -494,7 +494,13 @@ function pythonModuleName(filePath: string): string {
 }
 
 function pythonTopLevelFunctions(content: string): Set<string> {
-  return new Set([...content.matchAll(/^(?:async\s+)?def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/gm)].map((match) => match[1]));
+  const names = new Set<string>();
+
+  for (const match of content.matchAll(/^(?:async\s+)?def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/gm)) {
+    names.add(match[1]);
+  }
+
+  return names;
 }
 
 function pythonDefinedNames(content: string): Set<string> {
@@ -530,9 +536,16 @@ function pythonDefinedNames(content: string): Set<string> {
 }
 
 function pythonCallNames(content: string): Set<string> {
-  return new Set([...content.matchAll(/(?<![\w.])([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)]
-    .map((match) => match[1])
-    .filter((name) => !pythonBuiltinCallNames.has(name)));
+  const names = new Set<string>();
+
+  for (const match of content.matchAll(/(?<![\w.])([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)) {
+    const name = match[1];
+    if (!pythonBuiltinCallNames.has(name)) {
+      names.add(name);
+    }
+  }
+
+  return names;
 }
 
 function validatePythonCrossFileImports(changes: GeneratedChange[], errors: string[]): void {
