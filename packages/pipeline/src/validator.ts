@@ -721,18 +721,29 @@ async function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], re
   const htmlFacts = collectHtmlFacts(effectiveHtml);
 
   for (const change of changes.filter((candidate) => isScript(candidate.filePath))) {
-    const missingIds = [...new Set([...change.modifiedContent.matchAll(getElementByIdPattern)]
-      .map((match) => match[1])
-      .filter((id) => !htmlFactsHaveId(htmlFacts, id) && !scriptCreatesId(change.modifiedContent, id)))];
+    const missingIds: string[] = [];
+    const seenMissingIds = new Set<string>();
+    for (const match of change.modifiedContent.matchAll(getElementByIdPattern)) {
+      const id = match[1];
+      if (!seenMissingIds.has(id) && !htmlFactsHaveId(htmlFacts, id) && !scriptCreatesId(change.modifiedContent, id)) {
+        seenMissingIds.add(id);
+        missingIds.push(id);
+      }
+    }
 
     if (missingIds.length > 0) {
       errors.push(`Change for ${change.filePath} queries missing HTML id(s): ${missingIds.join(", ")}`);
     }
 
-    const missingSelectors = [...new Set([...change.modifiedContent.matchAll(querySelectorPattern)]
-      .map((match) => match[1])
-      .filter((selector) => !isLikelyOptionalSelector(selector))
-      .filter((selector) => !selectorExistsInHtml(htmlFacts, selector)))];
+    const missingSelectors: string[] = [];
+    const seenMissingSelectors = new Set<string>();
+    for (const match of change.modifiedContent.matchAll(querySelectorPattern)) {
+      const selector = match[1];
+      if (!seenMissingSelectors.has(selector) && !isLikelyOptionalSelector(selector) && !selectorExistsInHtml(htmlFacts, selector)) {
+        seenMissingSelectors.add(selector);
+        missingSelectors.push(selector);
+      }
+    }
 
     if (missingSelectors.length > 0) {
       errors.push(`Change for ${change.filePath} queries selector(s) with no matching HTML: ${missingSelectors.join(", ")}`);
