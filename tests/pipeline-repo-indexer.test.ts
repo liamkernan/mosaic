@@ -125,6 +125,51 @@ describe("RepoIndexer repository references", () => {
     expect(references.find((file) => file.path === "issues/001-sla-queue-ordering.md")?.reason).toContain("issue #1");
   });
 
+  it("keeps exact promoted issue references without requiring content term matches", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
+    tempDirs.push(localPath);
+    await mkdir(join(localPath, "issues"));
+    await writeFile(
+      join(localPath, "issues", "042-payment-reconciliation.md"),
+      "Acceptance criteria are intentionally phrased differently from the feedback text.\n",
+      "utf8"
+    );
+
+    const references = await new RepoIndexer().findRepositoryReferenceFiles(
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        installationId: 1,
+        fileTree: [
+          {
+            path: "issues",
+            type: "directory",
+            children: [{ path: "issues/042-payment-reconciliation.md", type: "file", language: "markdown" }]
+          }
+        ]
+      },
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Fix customer billing totals",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Fix customer billing totals",
+        relevantFiles: [],
+        confidence: 0.3
+      },
+      { issueNumber: 42 }
+    );
+
+    expect(references.map((file) => file.path)).toEqual(["issues/042-payment-reconciliation.md"]);
+    expect(references[0]?.reason).toContain("issue #42");
+  });
+
   it("does not read classifier or requested files outside the repository root", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
     const outsidePath = await mkdtemp(join(tmpdir(), "mosaic-repo-outside-"));

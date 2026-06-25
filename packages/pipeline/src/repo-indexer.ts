@@ -471,11 +471,13 @@ export class RepoIndexer {
       );
 
       if (loadedFile) {
-        const lowerContent = loadedFile.content.toLowerCase();
-        const contentMatches = terms.some((term) => lowerContent.includes(term));
         const exactIssueMatch = issuePattern?.test(candidate.name) ?? false;
-        if (!exactIssueMatch && !repoReferenceNames.has(candidate.name) && !contentMatches && candidate.score < 10) {
-          continue;
+        const contentMatchRequired = !exactIssueMatch && !repoReferenceNames.has(candidate.name) && candidate.score < 10;
+        if (contentMatchRequired) {
+          const lowerContent = loadedFile.content.toLowerCase();
+          if (!terms.some((term) => lowerContent.includes(term))) {
+            continue;
+          }
         }
 
         totalBytes += Buffer.byteLength(loadedFile.content);
