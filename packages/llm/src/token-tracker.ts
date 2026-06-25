@@ -60,30 +60,36 @@ export async function getUsage(
   );
 }
 
+export function summarizeFeedbackUsageRecords(
+  recordsByKey: string[][],
+  feedbackId: string
+): { inputTokens: number; outputTokens: number } {
+  const usage = { inputTokens: 0, outputTokens: 0 };
+
+  for (const records of recordsByKey) {
+    for (const record of records) {
+      const parsed = JSON.parse(record) as TokenUsageEvent;
+      if (parsed.feedbackId === feedbackId) {
+        usage.inputTokens += parsed.inputTokens;
+        usage.outputTokens += parsed.outputTokens;
+      }
+    }
+  }
+
+  return usage;
+}
+
 export async function getFeedbackUsage(
   repoFullName: string,
   feedbackId: string,
   startedAt: number,
   finishedAt: number
 ): Promise<{ inputTokens: number; outputTokens: number }> {
-  const records = (
-    await Promise.all(
-      usageKeysBetween(repoFullName, startedAt, finishedAt)
-        .map((key) => getRedis().zrangebyscore(key, startedAt, finishedAt))
-    )
-  ).flat();
-
-  return records.reduce(
-    (accumulator: { inputTokens: number; outputTokens: number }, record: string) => {
-      const parsed = JSON.parse(record) as TokenUsageEvent;
-      if (parsed.feedbackId === feedbackId) {
-        accumulator.inputTokens += parsed.inputTokens;
-        accumulator.outputTokens += parsed.outputTokens;
-      }
-      return accumulator;
-    },
-    { inputTokens: 0, outputTokens: 0 }
+  const recordsByKey = await Promise.all(
+    usageKeysBetween(repoFullName, startedAt, finishedAt)
+      .map((key) => getRedis().zrangebyscore(key, startedAt, finishedAt))
   );
+  return summarizeFeedbackUsageRecords(recordsByKey, feedbackId);
 }
 
 export function resetTokenTrackerForTests(): void {
