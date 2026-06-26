@@ -1,6 +1,7 @@
 import type { RelevantFile } from "@mosaic/core";
 import type { ImplementationPlan } from "../implementation-planner.js";
 import { formatPromptFileBlocks, formatPromptFileTree, promptFilePaths } from "./context-budget.js";
+import { formatImplementationPlanSection } from "./implementation-plan-section.js";
 
 export function buildGenerationPrompt(
   summary: string,
@@ -15,9 +16,7 @@ export function buildGenerationPrompt(
     relevantPaths: promptFilePaths(relevantFiles),
     planPaths: implementationPlan?.requiredFiles.map((file) => file.path)
   });
-  const planSection = implementationPlan
-    ? `\nIMPLEMENTATION PLAN:\nRequired files:\n${implementationPlan.requiredFiles.map((file) => `- ${file.path}: ${file.reason}`).join("\n")}\n\nAcceptance criteria:\n${implementationPlan.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}\n\nCompletion checklist:\n${implementationPlan.implementationChecklist.map((item) => `- ${item}`).join("\n")}\n\nVerification checklist:\n${implementationPlan.verificationChecklist.map((item) => `- ${item}`).join("\n")}\n\nVerification commands:\n${implementationPlan.verificationCommands.map((item) => `- ${item}`).join("\n")}\n`
-    : "";
+  const planSection = formatImplementationPlanSection(implementationPlan);
   let staticFrontendBytes = 0;
   let hasCompactedStaticFrontendContext = false;
   for (const file of relevantFiles) {
