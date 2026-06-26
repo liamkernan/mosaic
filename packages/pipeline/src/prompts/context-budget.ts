@@ -78,6 +78,27 @@ function pathAncestors(path: string): string[] {
   return ancestors;
 }
 
+function addPathAncestors(path: string, ancestors: Set<string>): void {
+  for (let slashIndex = path.indexOf("/"); slashIndex >= 0; slashIndex = path.indexOf("/", slashIndex + 1)) {
+    ancestors.add(path.slice(0, slashIndex));
+  }
+}
+
+function addDirectPaths(
+  paths: string[] | undefined,
+  directPathSet: Set<string>,
+  directAncestorSet: Set<string>,
+  directDirectorySet: Set<string>
+): void {
+  for (const rawPath of paths ?? []) {
+    const directPath = normalizePath(rawPath);
+    directPathSet.add(directPath);
+    const slashIndex = directPath.lastIndexOf("/");
+    directDirectorySet.add(slashIndex >= 0 ? directPath.slice(0, slashIndex) : "");
+    addPathAncestors(directPath, directAncestorSet);
+  }
+}
+
 function tokenize(text: string): string[] {
   const terms: string[] = [];
   const seen = new Set<string>();
@@ -133,25 +154,18 @@ function cappedTermMatches(text: string, terms: string[], cap: number): number {
 }
 
 function buildTreeScoreContext(options: PromptTreeOptions, terms: string[]): TreeScoreContext {
-  const directPaths = [
-    ...(options.relevantPaths ?? []),
-    ...(options.planPaths ?? []),
-    ...(options.changedPaths ?? [])
-  ].map(normalizePath);
+  const directPathSet = new Set<string>();
   const directAncestorSet = new Set<string>();
+  const directDirectorySet = new Set<string>();
 
-  for (const directPath of directPaths) {
-    for (const ancestor of pathAncestors(directPath)) {
-      directAncestorSet.add(ancestor);
-    }
-  }
-
-  const directDirectorySet = new Set(directPaths.map(dirname));
+  addDirectPaths(options.relevantPaths, directPathSet, directAncestorSet, directDirectorySet);
+  addDirectPaths(options.planPaths, directPathSet, directAncestorSet, directDirectorySet);
+  addDirectPaths(options.changedPaths, directPathSet, directAncestorSet, directDirectorySet);
 
   return {
     options,
     terms,
-    directPathSet: new Set(directPaths),
+    directPathSet,
     directAncestorSet,
     directDirectorySet
   };
