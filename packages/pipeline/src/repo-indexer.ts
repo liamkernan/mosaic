@@ -449,7 +449,14 @@ export class RepoIndexer {
       return null;
     }));
 
-    return loadedFiles.filter((file): file is RelevantFile => Boolean(file));
+    const files: RelevantFile[] = [];
+    for (const file of loadedFiles) {
+      if (file) {
+        files.push(file);
+      }
+    }
+
+    return files;
   }
 
   async findRepositoryReferenceFiles(
