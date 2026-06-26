@@ -121,6 +121,10 @@ function totalPromptFileBytes(relevantFiles: RelevantFile[]): number {
   return relevantFiles.reduce((sum, file) => sum + fileContentByteLength(file), 0);
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function shouldCompactPromptContext(relevantFiles: RelevantFile[]): boolean {
   return shouldCompactStaticFrontendContext(relevantFiles) ||
     totalPromptFileBytes(relevantFiles) > COMPACT_CONTEXT_TOTAL_BYTES ||
@@ -132,10 +136,10 @@ function keywordLineIndexes(lines: string[], keywords: string[], limit: number):
     return [];
   }
 
+  const keywordPattern = new RegExp(keywords.map(escapeRegExp).join("|"), "i");
   const indexes: number[] = [];
   for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index].toLowerCase();
-    if (keywords.some((keyword) => line.includes(keyword))) {
+    if (keywordPattern.test(lines[index])) {
       indexes.push(index);
       if (indexes.length >= limit) {
         break;
