@@ -495,7 +495,9 @@ function isPython(filePath: string): boolean {
 }
 
 function pythonModuleName(filePath: string): string {
-  return filePath.replace(/\.py$/i, "").split("/").pop() ?? "";
+  const withoutExtension = filePath.replace(/\.py$/i, "");
+  const slashIndex = withoutExtension.lastIndexOf("/");
+  return slashIndex >= 0 ? withoutExtension.slice(slashIndex + 1) : withoutExtension;
 }
 
 function pythonTopLevelFunctions(content: string): Set<string> {
