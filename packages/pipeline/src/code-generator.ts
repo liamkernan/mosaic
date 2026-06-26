@@ -31,6 +31,8 @@ interface PromptFileOptions {
 }
 
 const fileByteLengthCache = new WeakMap<RelevantFile, { content: string; byteLength: number }>();
+const keywordPattern = /[a-z][a-z0-9-]{3,}/g;
+const keywordStopwords = new Set(["about", "add", "and", "for", "from", "into", "make", "open", "that", "the", "them", "this", "with"]);
 
 function fileContentByteLength(file: RelevantFile): number {
   const cached = fileByteLengthCache.get(file);
@@ -56,9 +58,15 @@ function isStaticFrontendFile(filePath: string): boolean {
 }
 
 function totalStaticFrontendBytes(relevantFiles: RelevantFile[]): number {
-  return relevantFiles
-    .filter((file) => isStaticFrontendFile(file.path))
-    .reduce((sum, file) => sum + fileContentByteLength(file), 0);
+  let totalBytes = 0;
+
+  for (const file of relevantFiles) {
+    if (isStaticFrontendFile(file.path)) {
+      totalBytes += fileContentByteLength(file);
+    }
+  }
+
+  return totalBytes;
 }
 
 function shouldCompactStaticFrontendContext(relevantFiles: RelevantFile[]): boolean {
@@ -79,10 +87,23 @@ function shouldRetryStaticFrontendGeneration(relevantFiles: RelevantFile[], erro
 }
 
 function extractKeywords(text: string): string[] {
-  const stopwords = new Set(["about", "add", "and", "for", "from", "into", "make", "open", "that", "the", "them", "this", "with"]);
-  return [...new Set(text.toLowerCase().match(/[a-z][a-z0-9-]{3,}/g) ?? [])]
-    .filter((word) => !stopwords.has(word))
-    .slice(0, 12);
+  const keywords: string[] = [];
+  const seen = new Set<string>();
+
+  for (const match of text.toLowerCase().matchAll(keywordPattern)) {
+    const word = match[0];
+    if (keywordStopwords.has(word) || seen.has(word)) {
+      continue;
+    }
+
+    seen.add(word);
+    keywords.push(word);
+    if (keywords.length >= 12) {
+      return keywords;
+    }
+  }
+
+  return keywords;
 }
 
 function promptKeywordText(feedback: ClassifiedFeedback, implementationPlan?: ImplementationPlan, validationErrors: string[] = []): string {
@@ -100,10 +121,31 @@ function totalPromptFileBytes(relevantFiles: RelevantFile[]): number {
   return relevantFiles.reduce((sum, file) => sum + fileContentByteLength(file), 0);
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function shouldCompactPromptContext(relevantFiles: RelevantFile[]): boolean {
-  return shouldCompactStaticFrontendContext(relevantFiles) ||
-    totalPromptFileBytes(relevantFiles) > COMPACT_CONTEXT_TOTAL_BYTES ||
-    relevantFiles.some((file) => fileContentByteLength(file) > COMPACT_SOURCE_FILE_BYTES);
+  let totalBytes = 0;
+  let staticFrontendBytes = 0;
+
+  for (const file of relevantFiles) {
+    const byteLength = fileContentByteLength(file);
+    totalBytes += byteLength;
+    if (isStaticFrontendFile(file.path)) {
+      staticFrontendBytes += byteLength;
+    }
+
+    if (
+      staticFrontendBytes > LARGE_STATIC_FRONTEND_BYTES ||
+      totalBytes > COMPACT_CONTEXT_TOTAL_BYTES ||
+      byteLength > COMPACT_SOURCE_FILE_BYTES
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function keywordLineIndexes(lines: string[], keywords: string[], limit: number): number[] {
@@ -111,10 +153,10 @@ function keywordLineIndexes(lines: string[], keywords: string[], limit: number):
     return [];
   }
 
+  const keywordPattern = new RegExp(keywords.map(escapeRegExp).join("|"), "i");
   const indexes: number[] = [];
   for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index].toLowerCase();
-    if (keywords.some((keyword) => line.includes(keyword))) {
+    if (keywordPattern.test(lines[index])) {
       indexes.push(index);
       if (indexes.length >= limit) {
         break;
@@ -266,11 +308,19 @@ function promptRelevantFiles(relevantFiles: RelevantFile[], options: PromptFileO
 }
 
 function retryPromptRelevantFiles(relevantFiles: RelevantFile[], keywords: string[]): RelevantFile[] {
-  const totalStaticBytes = relevantFiles
-    .filter((file) => isStaticFrontendFile(file.path))
-    .reduce((sum, file) => sum + fileContentByteLength(file), 0);
+  let shouldCompact = false;
+  let totalStaticBytes = 0;
+  for (const file of relevantFiles) {
+    if (isStaticFrontendFile(file.path)) {
+      totalStaticBytes += fileContentByteLength(file);
+      if (totalStaticBytes > STATIC_FRONTEND_RETRY_BYTES) {
+        shouldCompact = true;
+        break;
+      }
+    }
+  }
 
-  if (totalStaticBytes <= STATIC_FRONTEND_RETRY_BYTES) {
+  if (!shouldCompact) {
     return relevantFiles;
   }
 
@@ -453,20 +503,18 @@ export class CodeGenerator {
     parsed: Array<{ filePath: string; modifiedContent?: string; search?: string; replace?: string; explanation: string }>,
     relevantFiles: RelevantFile[]
   ): GeneratedChange[] {
-    const originals = new Map(relevantFiles.map((file) => [file.path, file.content]));
+    const originals = new Map<string, string>();
+    for (const file of relevantFiles) {
+      originals.set(file.path, file.content);
+    }
 
-    return parsed
-      .map((change) => {
-        const originalContent = originals.get(change.filePath) ?? "";
-        if (change.modifiedContent !== undefined) {
-          return {
-            filePath: change.filePath,
-            originalContent,
-            modifiedContent: change.modifiedContent,
-            explanation: change.explanation
-          };
-        }
-
+    const changes: GeneratedChange[] = [];
+    for (const change of parsed) {
+      const originalContent = originals.get(change.filePath) ?? "";
+      let modifiedContent: string;
+      if (change.modifiedContent !== undefined) {
+        modifiedContent = change.modifiedContent;
+      } else {
         if (change.search === undefined || change.replace === undefined) {
           throw new LLMError(`Change for ${change.filePath} did not include modifiedContent or search/replace edit`);
         }
@@ -484,14 +532,20 @@ export class CodeGenerator {
           throw new LLMError(`Search block for ${change.filePath} matched more than once`);
         }
 
-        return {
+        modifiedContent = originalContent.slice(0, firstIndex) + change.replace + originalContent.slice(firstIndex + change.search.length);
+      }
+
+      if (originalContent !== modifiedContent) {
+        changes.push({
           filePath: change.filePath,
           originalContent,
-          modifiedContent: originalContent.slice(0, firstIndex) + change.replace + originalContent.slice(firstIndex + change.search.length),
+          modifiedContent,
           explanation: change.explanation
-        };
-      })
-      .filter((change) => change.originalContent !== change.modifiedContent);
+        });
+      }
+    }
+
+    return changes;
   }
 
   async generate(

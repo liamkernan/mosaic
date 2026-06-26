@@ -2,6 +2,7 @@ import { lstat, mkdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 const windowsAbsolutePathPattern = /^[a-zA-Z]:[\\/]|^\\\\/;
+const repoRootRealPathCache = new Map<string, Promise<string>>();
 
 export function normalizeRepoRelativePath(filePath: string): string | null {
   const rawPath = filePath.trim();
@@ -29,6 +30,19 @@ function isWithinRoot(rootPath: string, candidatePath: string): boolean {
   return relativePath.length === 0 || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
 }
 
+function repoRootRealPath(repoRoot: string): Promise<string> {
+  let cached = repoRootRealPathCache.get(repoRoot);
+  if (!cached) {
+    cached = realpath(repoRoot).catch((error: unknown) => {
+      repoRootRealPathCache.delete(repoRoot);
+      throw error;
+    });
+    repoRootRealPathCache.set(repoRoot, cached);
+  }
+
+  return cached;
+}
+
 export function validateRepoRelativePath(filePath: string): string | null {
   return normalizeRepoRelativePath(filePath);
 }
@@ -39,7 +53,7 @@ export async function resolveExistingRepoPath(repoRoot: string, filePath: string
     return null;
   }
 
-  const rootRealPath = await realpath(repoRoot);
+  const rootRealPath = await repoRootRealPath(repoRoot);
   const absolutePath = resolve(rootRealPath, repoPath);
   const targetRealPath = await realpath(absolutePath);
   if (!isWithinRoot(rootRealPath, targetRealPath)) {
@@ -58,7 +72,7 @@ export async function resolveRepoWritePath(repoRoot: string, filePath: string): 
     return null;
   }
 
-  const rootRealPath = await realpath(repoRoot);
+  const rootRealPath = await repoRootRealPath(repoRoot);
   const absolutePath = resolve(rootRealPath, repoPath);
   if (!isWithinRoot(rootRealPath, absolutePath)) {
     return null;

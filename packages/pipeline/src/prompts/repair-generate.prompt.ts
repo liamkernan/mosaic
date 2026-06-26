@@ -1,17 +1,49 @@
-import { formatPromptFileTree } from "./context-budget.js";
+import { formatPromptFileBlocks, formatPromptFileTree } from "./context-budget.js";
 
 const CURRENT_CHANGE_PROMPT_BYTES = 24_000;
+
+function firstLines(content: string, lineCount: number): string {
+  let newlineIndex = -1;
+  for (let line = 0; line < lineCount; line += 1) {
+    newlineIndex = content.indexOf("\n", newlineIndex + 1);
+    if (newlineIndex === -1) {
+      return content;
+    }
+  }
+
+  return content.slice(0, newlineIndex);
+}
+
+function lastLines(content: string, lineCount: number): string {
+  let newlineIndex = content.length;
+  for (let line = 0; line < lineCount; line += 1) {
+    newlineIndex = content.lastIndexOf("\n", newlineIndex - 1);
+    if (newlineIndex === -1) {
+      return content;
+    }
+  }
+
+  return content.slice(newlineIndex + 1);
+}
+
+function lineCount(content: string): number {
+  let count = 1;
+  for (let index = content.indexOf("\n"); index !== -1; index = content.indexOf("\n", index + 1)) {
+    count += 1;
+  }
+
+  return count;
+}
 
 function compactCurrentChangeContent(filePath: string, content: string): string {
   if (Buffer.byteLength(content) <= CURRENT_CHANGE_PROMPT_BYTES) {
     return content;
   }
 
-  const lines = content.split("\n");
-  const head = lines.slice(0, 180).join("\n");
-  const tail = lines.slice(-120).join("\n");
+  const head = firstLines(content, 180);
+  const tail = lastLines(content, 120);
 
-  return `${head}\n\n<!-- MOSAIC CONTEXT NOTE: ${Math.max(0, lines.length - 300)} middle line(s) of invalid generated ${filePath} omitted from repair prompt. Preserve the intended behavior, but prefer compact localized edits. -->\n\n${tail}`;
+  return `${head}\n\n<!-- MOSAIC CONTEXT NOTE: ${Math.max(0, lineCount(content) - 300)} middle line(s) of invalid generated ${filePath} omitted from repair prompt. Preserve the intended behavior, but prefer compact localized edits. -->\n\n${tail}`;
 }
 
 export function buildGenerationRepairPrompt(rawResponse: string): string {
@@ -88,7 +120,7 @@ ${largeStaticFrontendSection}
 ${oversizedPatchSection}
 
 ORIGINAL RELEVANT FILES:
-${relevantFiles.map((file) => `--- ${file.path} ---\n${file.content}\n--- END ${file.path} ---`).join("\n\n")}
+${formatPromptFileBlocks(relevantFiles)}
 
 CURRENT INVALID CHANGES:
 ${currentChanges.map((change) => `--- ${change.filePath} ---\n${compactCurrentChangeContent(change.filePath, change.modifiedContent)}\n--- END ${change.filePath} ---\nExplanation: ${change.explanation}`).join("\n\n")}

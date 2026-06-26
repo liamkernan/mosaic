@@ -49,7 +49,6 @@ interface TreeScoreContext {
   directPathSet: Set<string>;
   directAncestorSet: Set<string>;
   directDirectorySet: Set<string>;
-  directDirectoryPrefixes: string[];
 }
 
 interface RankedPath {
@@ -79,6 +78,44 @@ function pathAncestors(path: string): string[] {
   return ancestors;
 }
 
+function addPathAncestors(path: string, ancestors: Set<string>): void {
+  const end = path.lastIndexOf("/");
+  if (end < 0) {
+    return;
+  }
+
+  let ancestor = "";
+  let segmentStart = 0;
+  for (let index = 0; index <= end; index += 1) {
+    if (index !== end && path[index] !== "/") {
+      continue;
+    }
+
+    if (index > segmentStart) {
+      const segment = path.slice(segmentStart, index);
+      ancestor = ancestor.length === 0 ? segment : `${ancestor}/${segment}`;
+      ancestors.add(ancestor);
+    }
+
+    segmentStart = index + 1;
+  }
+}
+
+function addDirectPaths(
+  paths: string[] | undefined,
+  directPathSet: Set<string>,
+  directAncestorSet: Set<string>,
+  directDirectorySet: Set<string>
+): void {
+  for (const rawPath of paths ?? []) {
+    const directPath = normalizePath(rawPath);
+    directPathSet.add(directPath);
+    const slashIndex = directPath.lastIndexOf("/");
+    directDirectorySet.add(slashIndex >= 0 ? directPath.slice(0, slashIndex) : "");
+    addPathAncestors(directPath, directAncestorSet);
+  }
+}
+
 function tokenize(text: string): string[] {
   const terms: string[] = [];
   const seen = new Set<string>();
@@ -100,7 +137,7 @@ function tokenize(text: string): string[] {
 }
 
 function hasDirectDirectoryMatch(candidatePath: string, context: TreeScoreContext): boolean {
-  const { directDirectorySet, directDirectoryPrefixes } = context;
+  const { directDirectorySet } = context;
   if (directDirectorySet.has("") && !candidatePath.includes("/")) {
     return true;
   }
@@ -109,8 +146,8 @@ function hasDirectDirectoryMatch(candidatePath: string, context: TreeScoreContex
     return true;
   }
 
-  for (const directDirectoryPrefix of directDirectoryPrefixes) {
-    if (candidatePath.startsWith(directDirectoryPrefix)) {
+  for (let index = candidatePath.indexOf("/"); index >= 0; index = candidatePath.indexOf("/", index + 1)) {
+    if (directDirectorySet.has(candidatePath.slice(0, index))) {
       return true;
     }
   }
@@ -134,28 +171,20 @@ function cappedTermMatches(text: string, terms: string[], cap: number): number {
 }
 
 function buildTreeScoreContext(options: PromptTreeOptions, terms: string[]): TreeScoreContext {
-  const directPaths = [
-    ...(options.relevantPaths ?? []),
-    ...(options.planPaths ?? []),
-    ...(options.changedPaths ?? [])
-  ].map(normalizePath);
+  const directPathSet = new Set<string>();
   const directAncestorSet = new Set<string>();
+  const directDirectorySet = new Set<string>();
 
-  for (const directPath of directPaths) {
-    for (const ancestor of pathAncestors(directPath)) {
-      directAncestorSet.add(ancestor);
-    }
-  }
-
-  const directDirectorySet = new Set(directPaths.map(dirname));
+  addDirectPaths(options.relevantPaths, directPathSet, directAncestorSet, directDirectorySet);
+  addDirectPaths(options.planPaths, directPathSet, directAncestorSet, directDirectorySet);
+  addDirectPaths(options.changedPaths, directPathSet, directAncestorSet, directDirectorySet);
 
   return {
     options,
     terms,
-    directPathSet: new Set(directPaths),
+    directPathSet,
     directAncestorSet,
-    directDirectorySet,
-    directDirectoryPrefixes: [...directDirectorySet].filter(Boolean).map((path) => `${path}/`)
+    directDirectorySet
   };
 }
 
@@ -330,4 +359,26 @@ export function formatPromptFileTree(fileTree: string[], options: PromptTreeOpti
 
 export function promptFilePaths(files: Array<Pick<RelevantFile, "path">>): string[] {
   return files.map((file) => file.path);
+}
+
+export function formatPromptFileBlocks(files: Array<Pick<RelevantFile, "path" | "content">>): string {
+  let output = "";
+
+  for (const file of files) {
+    const block = `--- ${file.path} ---\n${file.content}\n--- END ${file.path} ---`;
+    output = output.length === 0 ? block : `${output}\n\n${block}`;
+  }
+
+  return output;
+}
+
+export function formatPromptFileBlocksWithReasons(files: RelevantFile[]): string {
+  let output = "";
+
+  for (const file of files) {
+    const block = `--- ${file.path} ---\nReason: ${file.reason}\n${file.content}\n--- END ${file.path} ---`;
+    output = output.length === 0 ? block : `${output}\n\n${block}`;
+  }
+
+  return output;
 }

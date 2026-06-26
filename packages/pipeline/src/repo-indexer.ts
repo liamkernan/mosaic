@@ -53,7 +53,8 @@ const stopWords = new Set([
 ]);
 
 function detectLanguage(filePath: string): string | undefined {
-  const extension = filePath.split(".").pop()?.toLowerCase();
+  const dotIndex = filePath.lastIndexOf(".");
+  const extension = dotIndex >= 0 ? filePath.slice(dotIndex + 1).toLowerCase() : undefined;
   const languageMap: Record<string, string> = {
     ts: "typescript",
     tsx: "typescript",
@@ -133,7 +134,15 @@ function flattenFileTree(nodes: FileNode[]): string[] {
 }
 
 function truncateLargeFile(content: string): string {
-  return content.split("\n").slice(0, largeFileTruncationLines).join("\n");
+  let newlineIndex = -1;
+  for (let line = 0; line < largeFileTruncationLines; line += 1) {
+    newlineIndex = content.indexOf("\n", newlineIndex + 1);
+    if (newlineIndex === -1) {
+      return content;
+    }
+  }
+
+  return content.slice(0, newlineIndex);
 }
 
 async function readLargeFilePrefix(filePath: string): Promise<string> {
@@ -441,7 +450,14 @@ export class RepoIndexer {
       return null;
     }));
 
-    return loadedFiles.filter((file): file is RelevantFile => Boolean(file));
+    const files: RelevantFile[] = [];
+    for (const file of loadedFiles) {
+      if (file) {
+        files.push(file);
+      }
+    }
+
+    return files;
   }
 
   async findRepositoryReferenceFiles(
@@ -471,11 +487,13 @@ export class RepoIndexer {
       );
 
       if (loadedFile) {
-        const lowerContent = loadedFile.content.toLowerCase();
-        const contentMatches = terms.some((term) => lowerContent.includes(term));
         const exactIssueMatch = issuePattern?.test(candidate.name) ?? false;
-        if (!exactIssueMatch && !repoReferenceNames.has(candidate.name) && !contentMatches && candidate.score < 10) {
-          continue;
+        const contentMatchRequired = !exactIssueMatch && !repoReferenceNames.has(candidate.name) && candidate.score < 10;
+        if (contentMatchRequired) {
+          const lowerContent = loadedFile.content.toLowerCase();
+          if (!terms.some((term) => lowerContent.includes(term))) {
+            continue;
+          }
         }
 
         totalBytes += Buffer.byteLength(loadedFile.content);
