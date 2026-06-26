@@ -495,20 +495,18 @@ export class CodeGenerator {
     parsed: Array<{ filePath: string; modifiedContent?: string; search?: string; replace?: string; explanation: string }>,
     relevantFiles: RelevantFile[]
   ): GeneratedChange[] {
-    const originals = new Map(relevantFiles.map((file) => [file.path, file.content]));
+    const originals = new Map<string, string>();
+    for (const file of relevantFiles) {
+      originals.set(file.path, file.content);
+    }
 
-    return parsed
-      .map((change) => {
-        const originalContent = originals.get(change.filePath) ?? "";
-        if (change.modifiedContent !== undefined) {
-          return {
-            filePath: change.filePath,
-            originalContent,
-            modifiedContent: change.modifiedContent,
-            explanation: change.explanation
-          };
-        }
-
+    const changes: GeneratedChange[] = [];
+    for (const change of parsed) {
+      const originalContent = originals.get(change.filePath) ?? "";
+      let modifiedContent: string;
+      if (change.modifiedContent !== undefined) {
+        modifiedContent = change.modifiedContent;
+      } else {
         if (change.search === undefined || change.replace === undefined) {
           throw new LLMError(`Change for ${change.filePath} did not include modifiedContent or search/replace edit`);
         }
@@ -526,14 +524,20 @@ export class CodeGenerator {
           throw new LLMError(`Search block for ${change.filePath} matched more than once`);
         }
 
-        return {
+        modifiedContent = originalContent.slice(0, firstIndex) + change.replace + originalContent.slice(firstIndex + change.search.length);
+      }
+
+      if (originalContent !== modifiedContent) {
+        changes.push({
           filePath: change.filePath,
           originalContent,
-          modifiedContent: originalContent.slice(0, firstIndex) + change.replace + originalContent.slice(firstIndex + change.search.length),
+          modifiedContent,
           explanation: change.explanation
-        };
-      })
-      .filter((change) => change.originalContent !== change.modifiedContent);
+        });
+      }
+    }
+
+    return changes;
   }
 
   async generate(
