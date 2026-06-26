@@ -360,7 +360,11 @@ function extractPythonListFunctionFields(content: string): Map<string, Set<strin
 
 function generatedTestListFieldErrors(changes: GeneratedChange[]): string[] {
   const fieldsByFunction = new Map<string, Set<string>>();
-  for (const change of changes.filter((item) => !testPathPattern.test(item.filePath) && /\.py$/i.test(item.filePath))) {
+  for (const change of changes) {
+    if (testPathPattern.test(change.filePath) || !/\.py$/i.test(change.filePath)) {
+      continue;
+    }
+
     for (const [functionName, fields] of extractPythonListFunctionFields(change.modifiedContent)) {
       fieldsByFunction.set(functionName, fields);
     }
@@ -371,7 +375,11 @@ function generatedTestListFieldErrors(changes: GeneratedChange[]): string[] {
   }
 
   const errors: string[] = [];
-  for (const testChange of changedTestFiles(changes)) {
+  for (const testChange of changes) {
+    if (!testPathPattern.test(testChange.filePath)) {
+      continue;
+    }
+
     const variablesByFunction = new Map<string, string[]>();
     for (const assignmentMatch of testChange.modifiedContent.matchAll(/\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(list_[a-zA-Z0-9_]*)\s*\(/g)) {
       const functionName = assignmentMatch[2];
