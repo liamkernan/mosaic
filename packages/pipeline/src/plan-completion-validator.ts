@@ -554,10 +554,10 @@ function planRequiresIdempotencyUpdate(text: string): boolean {
 }
 
 function contentHasIdempotencyUpdatePath(content: string): boolean {
-  const blocks = content.split(/\n(?=(?:async\s+)?(?:def|function)\s+|(?:export\s+)?(?:async\s+)?function\s+|class\s+)/i);
+  const blocks = content.toLowerCase().split(/\n(?=(?:async\s+)?(?:def|function)\s+|(?:export\s+)?(?:async\s+)?function\s+|class\s+)/i);
 
   return blocks.some((block) => {
-    const compact = block.toLowerCase().replace(/\s+/g, " ");
+    const compact = block.replace(/\s+/g, " ");
     const identifiesRequest = /\b(?:external_ref|externalref|external reference|idempotency|dedupe|duplicate|source)\b/.test(compact);
     const createsRequest = /(?:\b|_)(?:insert|create|add|save)(?:\b|_)/.test(compact);
     const findsExisting = /(?:\b|_)(?:select|where|find|lookup|get_or_create|existing|on conflict|upsert|merge)(?:\b|_)/.test(compact);
