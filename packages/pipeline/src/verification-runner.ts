@@ -189,9 +189,20 @@ function collectVerificationCommands(changes: GeneratedChange[], implementationP
 }
 
 function unsupportedPlannedVerificationCommands(implementationPlan?: ImplementationPlan): string[] {
-  return (implementationPlan?.verificationCommands ?? [])
-    .map((command) => command.trim())
-    .filter((command) => command.length > 0 && !isAllowedVerificationCommand(command));
+  const commands = implementationPlan?.verificationCommands;
+  if (!commands) {
+    return [];
+  }
+
+  const unsupported: string[] = [];
+  for (const command of commands) {
+    const trimmed = command.trim();
+    if (trimmed.length > 0 && !isAllowedVerificationCommand(trimmed)) {
+      unsupported.push(trimmed);
+    }
+  }
+
+  return unsupported;
 }
 
 async function writeChanges(repoPath: string, changes: GeneratedChange[]): Promise<string[]> {
