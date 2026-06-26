@@ -726,7 +726,11 @@ async function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], re
   }
   const htmlFacts = collectHtmlFacts(effectiveHtml);
 
-  for (const change of changes.filter((candidate) => isScript(candidate.filePath))) {
+  for (const change of changes) {
+    if (!isScript(change.filePath)) {
+      continue;
+    }
+
     const missingIds: string[] = [];
     const seenMissingIds = new Set<string>();
     for (const match of change.modifiedContent.matchAll(getElementByIdPattern)) {
@@ -760,7 +764,11 @@ async function validateScriptSelectorsAgainstHtml(changes: GeneratedChange[], re
 async function validateAccessibleNonNativeControls(changes: GeneratedChange[], repoContext: RepoContext, errors: string[]): Promise<void> {
   const addedControls: Array<{ filePath: string; tags: string[] }> = [];
 
-  for (const change of changes.filter((candidate) => /\.(?:html?|[cm]?[jt]sx?)$/i.test(candidate.filePath))) {
+  for (const change of changes) {
+    if (!/\.(?:html?|[cm]?[jt]sx?)$/i.test(change.filePath)) {
+      continue;
+    }
+
     const tags = findAddedAccessibleNonNativeInteractiveTags(change.originalContent, change.modifiedContent);
     if (tags.length > 0) {
       addedControls.push({ filePath: change.filePath, tags });
@@ -771,15 +779,27 @@ async function validateAccessibleNonNativeControls(changes: GeneratedChange[], r
     return;
   }
 
-  const changedScripts = changes
-    .filter((change) => isScript(change.filePath))
-    .map((change) => change.modifiedContent);
+  const changedPaths = collectChangedPaths(changes);
+  let effectiveScript = "";
+  for (const change of changes) {
+    if (!isScript(change.filePath)) {
+      continue;
+    }
+
+    effectiveScript = effectiveScript.length === 0
+      ? change.modifiedContent
+      : `${effectiveScript}\n${change.modifiedContent}`;
+  }
   const existingScripts = await Promise.all(["script.js", "main.js", "app.js"]
     .map((fileName) => findRepoFile(repoContext, fileName))
     .filter((filePath): filePath is string => Boolean(filePath))
-    .filter((filePath) => !changes.some((change) => change.filePath === filePath))
+    .filter((filePath) => !changedPaths.has(filePath))
     .map((filePath) => readFile(join(repoContext.localPath, filePath), "utf8").catch(() => "")));
-  const effectiveScript = [...changedScripts, ...existingScripts].join("\n");
+  for (const script of existingScripts) {
+    effectiveScript = effectiveScript.length === 0
+      ? script
+      : `${effectiveScript}\n${script}`;
+  }
 
   if (hasNonNativeKeyboardHandler(effectiveScript)) {
     return;
@@ -826,12 +846,12 @@ async function validateModalStyling(changes: GeneratedChange[], repoContext: Rep
   const existingStyles = styleChange
     ? styleChange.modifiedContent
     : await readFile(join(repoContext.localPath, stylePath), "utf8").catch(() => "");
-  const effectiveStyles = [
-    existingStyles,
-    ...changes
-      .filter((change) => isStylesheet(change.filePath) && change.filePath !== stylePath)
-      .map((change) => change.modifiedContent)
-  ].join("\n");
+  let effectiveStyles = existingStyles;
+  for (const change of changes) {
+    if (change.filePath !== stylePath && isStylesheet(change.filePath)) {
+      effectiveStyles = `${effectiveStyles}\n${change.modifiedContent}`;
+    }
+  }
   const styleFacts = collectModalStyleFacts(effectiveStyles);
 
   for (const change of changes) {
@@ -871,12 +891,12 @@ async function validateModalBehavior(changes: GeneratedChange[], repoContext: Re
   const existingScript = scriptChange
     ? scriptChange.modifiedContent
     : await readFile(join(repoContext.localPath, scriptPath), "utf8").catch(() => "");
-  const effectiveScript = [
-    existingScript,
-    ...changes
-      .filter((change) => isScript(change.filePath) && change.filePath !== scriptPath)
-      .map((change) => change.modifiedContent)
-  ].join("\n");
+  let effectiveScript = existingScript;
+  for (const change of changes) {
+    if (change.filePath !== scriptPath && isScript(change.filePath)) {
+      effectiveScript = `${effectiveScript}\n${change.modifiedContent}`;
+    }
+  }
   const scriptFacts = collectModalScriptFacts(effectiveScript);
 
   for (const change of changes) {
