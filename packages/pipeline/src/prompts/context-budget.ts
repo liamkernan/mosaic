@@ -79,8 +79,25 @@ function pathAncestors(path: string): string[] {
 }
 
 function addPathAncestors(path: string, ancestors: Set<string>): void {
-  for (let slashIndex = path.indexOf("/"); slashIndex >= 0; slashIndex = path.indexOf("/", slashIndex + 1)) {
-    ancestors.add(path.slice(0, slashIndex));
+  const end = path.lastIndexOf("/");
+  if (end < 0) {
+    return;
+  }
+
+  let ancestor = "";
+  let segmentStart = 0;
+  for (let index = 0; index <= end; index += 1) {
+    if (index !== end && path[index] !== "/") {
+      continue;
+    }
+
+    if (index > segmentStart) {
+      const segment = path.slice(segmentStart, index);
+      ancestor = ancestor.length === 0 ? segment : `${ancestor}/${segment}`;
+      ancestors.add(ancestor);
+    }
+
+    segmentStart = index + 1;
   }
 }
 

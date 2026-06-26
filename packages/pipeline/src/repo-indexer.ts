@@ -53,7 +53,8 @@ const stopWords = new Set([
 ]);
 
 function detectLanguage(filePath: string): string | undefined {
-  const extension = filePath.split(".").pop()?.toLowerCase();
+  const dotIndex = filePath.lastIndexOf(".");
+  const extension = dotIndex >= 0 ? filePath.slice(dotIndex + 1).toLowerCase() : undefined;
   const languageMap: Record<string, string> = {
     ts: "typescript",
     tsx: "typescript",
