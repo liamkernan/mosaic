@@ -39,6 +39,12 @@ interface RuntimeChangeFacts {
   compactContent?: string;
 }
 
+interface CompletionChangeGroups {
+  testChanges: GeneratedChange[];
+  runtimeChanges: GeneratedChange[];
+  runtimeChangeFacts: RuntimeChangeFacts[];
+}
+
 function planText(plan: ImplementationPlan, sourceText = ""): string {
   return [
     sourceText,
@@ -57,6 +63,26 @@ function changedRuntimeFiles(changes: GeneratedChange[]): GeneratedChange[] {
     !testPathPattern.test(change.filePath) &&
     !documentationPathPattern.test(change.filePath)
   );
+}
+
+function collectCompletionChangeGroups(changes: GeneratedChange[]): CompletionChangeGroups {
+  const testChanges: GeneratedChange[] = [];
+  const runtimeChanges: GeneratedChange[] = [];
+  const runtimeChangeFacts: RuntimeChangeFacts[] = [];
+
+  for (const change of changes) {
+    const isTest = testPathPattern.test(change.filePath);
+    if (isTest) {
+      testChanges.push(change);
+    }
+
+    if (!isTest && !documentationPathPattern.test(change.filePath)) {
+      runtimeChanges.push(change);
+      runtimeChangeFacts.push({ change });
+    }
+  }
+
+  return { testChanges, runtimeChanges, runtimeChangeFacts };
 }
 
 function normalizeRepoPath(path: string): string {
@@ -522,13 +548,11 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
   errors.push(...generatedTestListFieldErrors(changes));
   errors.push(...validatePlannedChangeScope(changes, plan, sourceText));
 
-  const testChanges = changedTestFiles(changes);
+  const { testChanges, runtimeChanges, runtimeChangeFacts } = collectCompletionChangeGroups(changes);
   if (planRequiresBehavioralTests(plan, text) && testChanges.length === 0) {
     errors.push("Implementation plan requires behavioral test coverage, but the generated change does not modify any test/spec file");
   }
 
-  const runtimeChanges = changedRuntimeFiles(changes);
-  const runtimeChangeFacts: RuntimeChangeFacts[] = runtimeChanges.map((change) => ({ change }));
   if (planRequiresRuntimeChange(plan) && runtimeChanges.length === 0) {
     errors.push("Implementation plan requires runtime/source changes, but the generated change only modifies tests or documentation");
   }
