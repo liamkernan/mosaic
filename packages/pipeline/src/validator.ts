@@ -439,7 +439,12 @@ function collectModalScriptFacts(script: string): ModalScriptFacts {
 }
 
 function collectChangedPaths(changes: GeneratedChange[]): Set<string> {
-  return new Set(changes.map((change) => change.filePath));
+  const paths = new Set<string>();
+  for (const change of changes) {
+    paths.add(change.filePath);
+  }
+
+  return paths;
 }
 
 function findFileInTree(nodes: FileNode[], fileName: string): string | undefined {
