@@ -308,11 +308,19 @@ function promptRelevantFiles(relevantFiles: RelevantFile[], options: PromptFileO
 }
 
 function retryPromptRelevantFiles(relevantFiles: RelevantFile[], keywords: string[]): RelevantFile[] {
-  const totalStaticBytes = relevantFiles
-    .filter((file) => isStaticFrontendFile(file.path))
-    .reduce((sum, file) => sum + fileContentByteLength(file), 0);
+  let shouldCompact = false;
+  let totalStaticBytes = 0;
+  for (const file of relevantFiles) {
+    if (isStaticFrontendFile(file.path)) {
+      totalStaticBytes += fileContentByteLength(file);
+      if (totalStaticBytes > STATIC_FRONTEND_RETRY_BYTES) {
+        shouldCompact = true;
+        break;
+      }
+    }
+  }
 
-  if (totalStaticBytes <= STATIC_FRONTEND_RETRY_BYTES) {
+  if (!shouldCompact) {
     return relevantFiles;
   }
 
