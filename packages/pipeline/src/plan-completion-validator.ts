@@ -12,6 +12,7 @@ const orderedClausePattern = /`([^`]*(?:ASC|DESC|ORDER BY)[^`]*)`/gi;
 const backtickedClausePattern = /`([^`]+)`/g;
 const idempotencyPlanPattern = /\b(?:dedupe|duplicate|idempotent|idempotency|retry|same source|external[_\s-]?ref(?:erence)?)\b/i;
 const endpointPathPattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+(`?)(\/[a-zA-Z0-9_./:-]+)\1/g;
+const quotedEndpointPathPattern = /["'`](\/[a-zA-Z0-9_./:-]+)["'`]/g;
 
 interface PlannedScope {
   requiredPaths: PathFacts[];
@@ -535,8 +536,11 @@ function extractEndpointPaths(text: string): string[] {
 
 function collectQuotedEndpointPaths(changes: GeneratedChange[]): Set<string> {
   const paths = new Set<string>();
+  let match: RegExpExecArray | null;
+
   for (const change of changes) {
-    for (const match of change.modifiedContent.matchAll(/["'`](\/[a-zA-Z0-9_./:-]+)["'`]/g)) {
+    quotedEndpointPathPattern.lastIndex = 0;
+    while ((match = quotedEndpointPathPattern.exec(change.modifiedContent)) !== null) {
       paths.add(match[1]);
     }
   }
