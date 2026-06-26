@@ -429,21 +429,28 @@ function planRequiresRuntimeChange(plan: ImplementationPlan): boolean {
 }
 
 function orderedClauseTerms(clause: string): string[] {
-  return clause
+  const normalized = clause
     .replace(/\bORDER\s+BY\b/gi, "")
-    .replace(/\bthen\b/gi, ",")
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const match = part.match(/([a-zA-Z_][a-zA-Z0-9_.]*)\s+(ASC|DESC)\b/i);
-      if (!match) {
-        return "";
-      }
+    .replace(/\bthen\b/gi, ",");
 
-      return `${match[1].split(".").pop()} ${match[2].toUpperCase()}`;
-    })
-    .filter(Boolean);
+  const terms: string[] = [];
+  for (const rawPart of normalized.split(",")) {
+    const part = rawPart.trim();
+    if (part.length === 0) {
+      continue;
+    }
+
+    const match = part.match(/([a-zA-Z_][a-zA-Z0-9_.]*)\s+(ASC|DESC)\b/i);
+    if (!match) {
+      continue;
+    }
+
+    const field = match[1];
+    const dotIndex = field.lastIndexOf(".");
+    terms.push(`${dotIndex >= 0 ? field.slice(dotIndex + 1) : field} ${match[2].toUpperCase()}`);
+  }
+
+  return terms;
 }
 
 function extractOrderedClauses(text: string): string[][] {
