@@ -126,9 +126,26 @@ function escapeRegExp(value: string): string {
 }
 
 function shouldCompactPromptContext(relevantFiles: RelevantFile[]): boolean {
-  return shouldCompactStaticFrontendContext(relevantFiles) ||
-    totalPromptFileBytes(relevantFiles) > COMPACT_CONTEXT_TOTAL_BYTES ||
-    relevantFiles.some((file) => fileContentByteLength(file) > COMPACT_SOURCE_FILE_BYTES);
+  let totalBytes = 0;
+  let staticFrontendBytes = 0;
+
+  for (const file of relevantFiles) {
+    const byteLength = fileContentByteLength(file);
+    totalBytes += byteLength;
+    if (isStaticFrontendFile(file.path)) {
+      staticFrontendBytes += byteLength;
+    }
+
+    if (
+      staticFrontendBytes > LARGE_STATIC_FRONTEND_BYTES ||
+      totalBytes > COMPACT_CONTEXT_TOTAL_BYTES ||
+      byteLength > COMPACT_SOURCE_FILE_BYTES
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function keywordLineIndexes(lines: string[], keywords: string[], limit: number): number[] {
