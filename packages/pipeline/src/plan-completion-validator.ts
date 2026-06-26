@@ -12,6 +12,7 @@ const orderedClausePattern = /`([^`]*(?:ASC|DESC|ORDER BY)[^`]*)`/gi;
 const backtickedClausePattern = /`([^`]+)`/g;
 const idempotencyPlanPattern = /\b(?:dedupe|duplicate|idempotent|idempotency|retry|same source|external[_\s-]?ref(?:erence)?)\b/i;
 const endpointPathPattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+(`?)(\/[a-zA-Z0-9_./:-]+)\1/g;
+const quotedEndpointPathPattern = /["'`](\/[a-zA-Z0-9_./:-]+)["'`]/g;
 
 interface PlannedScope {
   requiredPaths: PathFacts[];
@@ -359,7 +360,11 @@ function extractPythonListFunctionFields(content: string): Map<string, Set<strin
 
 function generatedTestListFieldErrors(changes: GeneratedChange[]): string[] {
   const fieldsByFunction = new Map<string, Set<string>>();
-  for (const change of changes.filter((item) => !testPathPattern.test(item.filePath) && /\.py$/i.test(item.filePath))) {
+  for (const change of changes) {
+    if (testPathPattern.test(change.filePath) || !/\.py$/i.test(change.filePath)) {
+      continue;
+    }
+
     for (const [functionName, fields] of extractPythonListFunctionFields(change.modifiedContent)) {
       fieldsByFunction.set(functionName, fields);
     }
@@ -370,7 +375,11 @@ function generatedTestListFieldErrors(changes: GeneratedChange[]): string[] {
   }
 
   const errors: string[] = [];
-  for (const testChange of changedTestFiles(changes)) {
+  for (const testChange of changes) {
+    if (!testPathPattern.test(testChange.filePath)) {
+      continue;
+    }
+
     const variablesByFunction = new Map<string, string[]>();
     for (const assignmentMatch of testChange.modifiedContent.matchAll(/\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(list_[a-zA-Z0-9_]*)\s*\(/g)) {
       const functionName = assignmentMatch[2];
@@ -502,7 +511,10 @@ function contentContainsTermsInOrder(compact: string, terms: string[]): boolean 
   let cursor = 0;
 
   for (const term of terms) {
-    const [field, direction] = term.toLowerCase().split(" ");
+    const lowerTerm = term.toLowerCase();
+    const separatorIndex = lowerTerm.lastIndexOf(" ");
+    const field = separatorIndex >= 0 ? lowerTerm.slice(0, separatorIndex) : lowerTerm;
+    const direction = separatorIndex >= 0 ? lowerTerm.slice(separatorIndex + 1) : "";
     const fieldIndex = compact.indexOf(field, cursor);
     if (fieldIndex < 0) {
       return false;
@@ -532,8 +544,11 @@ function extractEndpointPaths(text: string): string[] {
 
 function collectQuotedEndpointPaths(changes: GeneratedChange[]): Set<string> {
   const paths = new Set<string>();
+  let match: RegExpExecArray | null;
+
   for (const change of changes) {
-    for (const match of change.modifiedContent.matchAll(/["'`](\/[a-zA-Z0-9_./:-]+)["'`]/g)) {
+    quotedEndpointPathPattern.lastIndex = 0;
+    while ((match = quotedEndpointPathPattern.exec(change.modifiedContent)) !== null) {
       paths.add(match[1]);
     }
   }
@@ -547,10 +562,10 @@ function planRequiresIdempotencyUpdate(text: string): boolean {
 }
 
 function contentHasIdempotencyUpdatePath(content: string): boolean {
-  const blocks = content.split(/\n(?=(?:async\s+)?(?:def|function)\s+|(?:export\s+)?(?:async\s+)?function\s+|class\s+)/i);
+  const blocks = content.toLowerCase().split(/\n(?=(?:async\s+)?(?:def|function)\s+|(?:export\s+)?(?:async\s+)?function\s+|class\s+)/i);
 
   return blocks.some((block) => {
-    const compact = block.toLowerCase().replace(/\s+/g, " ");
+    const compact = block.replace(/\s+/g, " ");
     const identifiesRequest = /\b(?:external_ref|externalref|external reference|idempotency|dedupe|duplicate|source)\b/.test(compact);
     const createsRequest = /(?:\b|_)(?:insert|create|add|save)(?:\b|_)/.test(compact);
     const findsExisting = /(?:\b|_)(?:select|where|find|lookup|get_or_create|existing|on conflict|upsert|merge)(?:\b|_)/.test(compact);

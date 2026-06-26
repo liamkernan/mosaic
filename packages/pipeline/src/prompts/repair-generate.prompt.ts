@@ -1,4 +1,5 @@
 import { formatPromptFileBlocks, formatPromptFileTree } from "./context-budget.js";
+import { formatImplementationPlanSection, type PromptImplementationPlan } from "./implementation-plan-section.js";
 
 const CURRENT_CHANGE_PROMPT_BYTES = 24_000;
 
@@ -70,13 +71,7 @@ export function buildValidationRepairPrompt(
   currentChanges: Array<{ filePath: string; modifiedContent: string; explanation: string }>,
   validationErrors: string[],
   fileTree: string[],
-  implementationPlan?: {
-    requiredFiles: Array<{ path: string; reason: string }>;
-    acceptanceCriteria: string[];
-    implementationChecklist: string[];
-    verificationChecklist: string[];
-    verificationCommands: string[];
-  }
+  implementationPlan?: PromptImplementationPlan
 ): string {
   const promptFileTree = formatPromptFileTree(fileTree, {
     maxPaths: 300,
@@ -86,9 +81,7 @@ export function buildValidationRepairPrompt(
     planPaths: implementationPlan?.requiredFiles.map((file) => file.path),
     validationErrors
   });
-  const planSection = implementationPlan
-    ? `\nIMPLEMENTATION PLAN:\nRequired files:\n${implementationPlan.requiredFiles.map((file) => `- ${file.path}: ${file.reason}`).join("\n")}\n\nAcceptance criteria:\n${implementationPlan.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}\n\nCompletion checklist:\n${implementationPlan.implementationChecklist.map((item) => `- ${item}`).join("\n")}\n\nVerification checklist:\n${implementationPlan.verificationChecklist.map((item) => `- ${item}`).join("\n")}\n\nVerification commands:\n${implementationPlan.verificationCommands.map((item) => `- ${item}`).join("\n")}\n`
-    : "";
+  const planSection = formatImplementationPlanSection(implementationPlan);
   let staticFrontendBytes = 0;
   let hasCompactedStaticFrontendContext = false;
   for (const file of relevantFiles) {

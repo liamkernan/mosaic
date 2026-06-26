@@ -276,11 +276,23 @@ function extractMissingPythonImports(validationErrors: string[]): Array<{ filePa
     imports.push({
       filePath: match[1],
       moduleName: match[3],
-      names: match[4].split(",").map((name) => name.trim()).filter(Boolean)
+      names: splitCommaSeparatedNames(match[4])
     });
   }
 
   return imports;
+}
+
+function splitCommaSeparatedNames(text: string): string[] {
+  const names: string[] = [];
+  for (const rawName of text.split(",")) {
+    const name = rawName.trim();
+    if (name.length > 0) {
+      names.push(name);
+    }
+  }
+
+  return names;
 }
 
 function addPythonImport(content: string, moduleName: string, names: string[]): string {
