@@ -533,10 +533,13 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
     errors.push("Implementation plan requires runtime/source changes, but the generated change only modifies tests or documentation");
   }
 
-  const runtimeEndpointPaths = collectQuotedEndpointPaths(runtimeChanges);
-  for (const endpointPath of extractEndpointPaths(text)) {
-    if (!runtimeEndpointPaths.has(endpointPath)) {
-      errors.push(`Acceptance criteria require endpoint path ${endpointPath}, but no implementation change appears to route or handle that path`);
+  const requiredEndpointPaths = extractEndpointPaths(text);
+  if (requiredEndpointPaths.length > 0) {
+    const runtimeEndpointPaths = collectQuotedEndpointPaths(runtimeChanges);
+    for (const endpointPath of requiredEndpointPaths) {
+      if (!runtimeEndpointPaths.has(endpointPath)) {
+        errors.push(`Acceptance criteria require endpoint path ${endpointPath}, but no implementation change appears to route or handle that path`);
+      }
     }
   }
 
