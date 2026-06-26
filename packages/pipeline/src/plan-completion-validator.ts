@@ -502,7 +502,10 @@ function contentContainsTermsInOrder(compact: string, terms: string[]): boolean 
   let cursor = 0;
 
   for (const term of terms) {
-    const [field, direction] = term.toLowerCase().split(" ");
+    const lowerTerm = term.toLowerCase();
+    const separatorIndex = lowerTerm.lastIndexOf(" ");
+    const field = separatorIndex >= 0 ? lowerTerm.slice(0, separatorIndex) : lowerTerm;
+    const direction = separatorIndex >= 0 ? lowerTerm.slice(separatorIndex + 1) : "";
     const fieldIndex = compact.indexOf(field, cursor);
     if (fieldIndex < 0) {
       return false;
