@@ -603,9 +603,8 @@ function collectHtmlAssetReferences(html: string): Set<string> {
     const normalizedReference = normalizeAssetReference(reference);
     references.add(normalizedReference);
 
-    const segments = normalizedReference.split("/");
-    for (let index = 1; index < segments.length; index += 1) {
-      references.add(segments.slice(index).join("/"));
+    for (let slashIndex = normalizedReference.indexOf("/"); slashIndex >= 0; slashIndex = normalizedReference.indexOf("/", slashIndex + 1)) {
+      references.add(normalizedReference.slice(slashIndex + 1));
     }
   }
 
