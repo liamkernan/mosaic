@@ -918,9 +918,25 @@ export async function validate(
     collectFileExistence(changes, safePaths, repoContext.localPath),
     collectPythonSyntaxErrors(changes, safePaths, changedLineCounts)
   ]);
+  let hasFrontendMarkupOrScriptChange = false;
+  let hasScriptChange = false;
+  let hasNewStaticAssetChange = false;
 
   for (let index = 0; index < changes.length; index += 1) {
     const change = changes[index];
+    if (!hasFrontendMarkupOrScriptChange || !hasScriptChange || !hasNewStaticAssetChange) {
+      const scriptChange = isScript(change.filePath);
+      if (scriptChange) {
+        hasScriptChange = true;
+      }
+      if (scriptChange || isFrontendMarkupOrScript(change.filePath)) {
+        hasFrontendMarkupOrScriptChange = true;
+      }
+      if (change.originalContent.length === 0 && (scriptChange || isStylesheet(change.filePath))) {
+        hasNewStaticAssetChange = true;
+      }
+    }
+
     const safePath = safePaths[index];
     if (!safePath) {
       errors.push(`Unsafe generated change path rejected: ${change.filePath}`);
@@ -992,11 +1008,6 @@ export async function validate(
     errors.push(`Total new code added exceeds limit: ${totalLinesAdded} lines`);
   }
 
-  const hasFrontendMarkupOrScriptChange = changes.some((change) => isFrontendMarkupOrScript(change.filePath));
-  const hasScriptChange = changes.some((change) => isScript(change.filePath));
-  const hasNewStaticAssetChange = changes.some((change) =>
-    change.originalContent.length === 0 && (isScript(change.filePath) || isStylesheet(change.filePath))
-  );
   if (hasFrontendMarkupOrScriptChange) {
     await validateModalStyling(changes, repoContext, errors);
     await validateModalBehavior(changes, repoContext, errors);
