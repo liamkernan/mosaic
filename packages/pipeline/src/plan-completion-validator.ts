@@ -306,9 +306,15 @@ function validatePlannedChangeScope(changes: GeneratedChange[], plan: Implementa
     return [];
   }
 
-  return changes
-    .map((change) => plannedChangeScopeError(change, scope))
-    .filter((error): error is string => Boolean(error));
+  const errors: string[] = [];
+  for (const change of changes) {
+    const error = plannedChangeScopeError(change, scope);
+    if (error) {
+      errors.push(error);
+    }
+  }
+
+  return errors;
 }
 
 export function pruneChangesToPlanScope(changes: GeneratedChange[], plan: ImplementationPlan | undefined, sourceText = ""): GeneratedChange[] {
