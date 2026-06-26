@@ -9,6 +9,7 @@ const sourcePathPattern = /\.(?:[cm]?[jt]sx?|tsx?|py|rb|go|rs|java|kt|php|cs|swi
 const staticAssetPathPattern = /\.(?:html?|css|[cm]?js)$/i;
 const companionConfigPathPattern = /(?:^|\/)(?:package\.json|pnpm-workspace\.ya?ml|tsconfig(?:\.[^.]+)?\.json|jsconfig(?:\.[^.]+)?\.json|vitest\.config\.[cm]?[jt]s|vite\.config\.[cm]?[jt]s|jest\.config\.[cm]?[jt]s|pyproject\.toml|setup\.py|setup\.cfg|requirements(?:-[^.]+)?\.txt|go\.mod|go\.sum|Cargo\.toml|Cargo\.lock)$/i;
 const orderedClausePattern = /`([^`]*(?:ASC|DESC|ORDER BY)[^`]*)`/gi;
+const backtickedClausePattern = /`([^`]+)`/g;
 const idempotencyPlanPattern = /\b(?:dedupe|duplicate|idempotent|idempotency|retry|same source|external[_\s-]?ref(?:erence)?)\b/i;
 const endpointPathPattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+(`?)(\/[a-zA-Z0-9_./:-]+)\1/g;
 
@@ -471,8 +472,15 @@ function extractOrderedClauses(text: string): string[][] {
   }
 
   for (const line of text.split("\n")) {
-    const backtickedTerms = [...line.matchAll(/`([^`]+)`/g)]
-      .flatMap((termMatch) => orderedClauseTerms(termMatch[1]));
+    const backtickedTerms: string[] = [];
+    backtickedClausePattern.lastIndex = 0;
+    let termMatch: RegExpExecArray | null;
+    while ((termMatch = backtickedClausePattern.exec(line)) !== null) {
+      for (const term of orderedClauseTerms(termMatch[1])) {
+        backtickedTerms.push(term);
+      }
+    }
+
     if (backtickedTerms.length >= 2) {
       clauses.push(backtickedTerms);
     }
