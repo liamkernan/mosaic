@@ -29,6 +29,30 @@ export interface LLMClientOptions {
   model?: string;
   advisorTool?: AdvisorToolOptions;
   disableUsageTracking?: boolean;
+  authorizeRequest?: (request: LLMRequestAuthorization) => void | Promise<void>;
+  observeUsage?: (event: LLMUsageObservation) => void | Promise<void>;
+}
+
+export interface LLMRequestAuthorization {
+  model: string;
+  advisorModel?: string;
+  estimatedInputTokens: number;
+  maxOutputTokens: number;
+  advisorMaxTokens?: number;
+}
+
+export interface LLMUsageObservation {
+  model: string;
+  advisorModel?: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  latencyMs: number;
+  retries: number;
+  advisorOffered: boolean;
+  advisorUsed: boolean;
+  advisorUnavailable: boolean;
 }
 
 export interface CompletionOptions {
@@ -104,6 +128,15 @@ function isTextContentBlock(item: unknown): item is TextContentBlock {
     typeof item.text === "string";
 }
 
+function isAdvisorUseBlock(item: unknown): boolean {
+  if (typeof item !== "object" || item === null || !("type" in item)) {
+    return false;
+  }
+  const itemType = String(item.type);
+  return (itemType === "server_tool_use" || itemType === "tool_use") &&
+    "name" in item && item.name === ANTHROPIC_ADVISOR_TOOL_NAME;
+}
+
 function getAnthropicErrorDetails(error: unknown): AnthropicErrorDetails {
   const statusValue = typeof error === "object" && error && "status" in error ? Number(error.status) : undefined;
   const nestedError = typeof error === "object" && error && "error" in error && typeof error.error === "object"
@@ -141,9 +174,20 @@ export class LLMClient {
   private readonly defaultModel: string;
   private readonly advisorTool?: AdvisorToolOptions;
   private readonly disableUsageTracking: boolean;
+  private readonly authorizeRequest?: LLMClientOptions["authorizeRequest"];
+  private readonly observeUsage?: LLMClientOptions["observeUsage"];
   private usageContext?: UsageContext;
 
-  constructor({ mode, apiKey, platformApiKey, model, advisorTool, disableUsageTracking = false }: LLMClientOptions) {
+  constructor({
+    mode,
+    apiKey,
+    platformApiKey,
+    model,
+    advisorTool,
+    disableUsageTracking = false,
+    authorizeRequest,
+    observeUsage
+  }: LLMClientOptions) {
     const resolvedApiKey = mode === "byok" ? apiKey : platformApiKey;
     if (!resolvedApiKey) {
       throw new LLMError(`Missing API key for LLM mode: ${mode}`);
@@ -153,6 +197,8 @@ export class LLMClient {
     this.defaultModel = model ?? ANTHROPIC_MODEL_IDS.sonnet;
     this.advisorTool = advisorTool;
     this.disableUsageTracking = disableUsageTracking;
+    this.authorizeRequest = authorizeRequest;
+    this.observeUsage = observeUsage;
   }
 
   setUsageContext(context: UsageContext): void {
@@ -164,6 +210,19 @@ export class LLMClient {
     let attempt = 0;
     const model = this.defaultModel;
     let advisorUnavailable = false;
+    let requestAttempts = 0;
+    const startedAt = Date.now();
+
+    const authorizeApiRequest = async (advisorTool?: AdvisorToolOptions): Promise<void> => {
+      await this.authorizeRequest?.({
+        model,
+        ...(advisorTool ? { advisorModel: advisorTool.model } : {}),
+        ...(advisorTool?.maxTokens === undefined ? {} : { advisorMaxTokens: advisorTool.maxTokens }),
+        estimatedInputTokens: Math.ceil((systemPrompt.length + userMessage.length) / 4),
+        maxOutputTokens: options.maxTokens ?? 4096
+      });
+      requestAttempts += 1;
+    };
 
     while (attempt < maxRetries) {
       try {
@@ -184,6 +243,7 @@ export class LLMClient {
 
         if (advisorTool) {
           try {
+            await authorizeApiRequest(advisorTool);
             const advisorStream = this.client.beta.messages.stream(
               {
                 ...request,
@@ -211,10 +271,12 @@ export class LLMClient {
               "Advisor tool unavailable, retrying Anthropic completion without advisor"
             );
 
+            await authorizeApiRequest();
             const fallbackStream = this.client.messages.stream(request, requestOptions);
             response = await withHardTimeout(fallbackStream.finalMessage(), options.timeoutMs);
           }
         } else {
+          await authorizeApiRequest();
           const stream = this.client.messages.stream(request, requestOptions);
           response = await withHardTimeout(stream.finalMessage(), options.timeoutMs);
         }
@@ -230,6 +292,26 @@ export class LLMClient {
             inputTokens: response.usage.input_tokens ?? 0,
             outputTokens: response.usage.output_tokens ?? 0,
             timestamp: Date.now()
+          });
+        }
+
+        if (response.usage && this.observeUsage) {
+          const usage = response.usage as typeof response.usage & {
+            cache_read_input_tokens?: number;
+            cache_creation_input_tokens?: number;
+          };
+          await this.observeUsage({
+            model,
+            ...(this.advisorTool ? { advisorModel: this.advisorTool.model } : {}),
+            inputTokens: usage.input_tokens ?? 0,
+            outputTokens: usage.output_tokens ?? 0,
+            cacheReadInputTokens: usage.cache_read_input_tokens ?? 0,
+            cacheCreationInputTokens: usage.cache_creation_input_tokens ?? 0,
+            latencyMs: Date.now() - startedAt,
+            retries: Math.max(0, requestAttempts - 1),
+            advisorOffered: this.advisorTool !== undefined,
+            advisorUsed: response.content.some(isAdvisorUseBlock),
+            advisorUnavailable
           });
         }
 

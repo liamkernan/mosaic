@@ -7,3 +7,4 @@ coverage
 .pnpm-store
 private-key.pem
 .feedbackbot
+/evals/runs/

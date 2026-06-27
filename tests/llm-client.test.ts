@@ -174,10 +174,12 @@ describe("LLMClient", () => {
   });
 
   it("can disable Redis-backed rate limits and usage tracking for local evals", async () => {
+    const observeUsage = vi.fn();
     const client = new LLMClient({
       mode: "platform",
       platformApiKey: "test-key",
-      disableUsageTracking: true
+      disableUsageTracking: true,
+      observeUsage
     });
     client.setUsageContext({
       repoFullName: "owner/repo",
@@ -188,6 +190,33 @@ describe("LLMClient", () => {
 
     expect(enforceRepoRateLimitMock).not.toHaveBeenCalled();
     expect(trackUsageMock).not.toHaveBeenCalled();
+    expect(observeUsage).toHaveBeenCalledWith(expect.objectContaining({
+      model: "claude-sonnet-4-6",
+      inputTokens: 1,
+      outputTokens: 1,
+      retries: 0,
+      advisorOffered: false,
+      advisorUsed: false
+    }));
+  });
+
+  it("checks a local budget before starting an API request", async () => {
+    const authorizeRequest = vi.fn(() => {
+      throw new Error("local eval budget exhausted");
+    });
+    const client = new LLMClient({
+      mode: "platform",
+      platformApiKey: "test-key",
+      authorizeRequest
+    });
+
+    await expect(client.complete("system", "user", { maxTokens: 100 })).rejects.toThrow("budget exhausted");
+
+    expect(authorizeRequest).toHaveBeenCalledWith(expect.objectContaining({
+      model: "claude-sonnet-4-6",
+      maxOutputTokens: 100
+    }));
+    expect(streamMock).not.toHaveBeenCalled();
   });
 
   it("rejects when the final streamed message exceeds the hard timeout", async () => {

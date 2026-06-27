@@ -223,6 +223,15 @@ function issueNumberPattern(issueNumber: number): RegExp {
   return new RegExp(`^(?:0*)${issueNumber}(?:[^0-9]|$)`);
 }
 
+function referencedIssueNumber(name: string): number | undefined {
+  const match = name.match(/^(?:(?:test|issue)[_-])?0*(\d+)(?:[^0-9]|$)/i);
+  if (!match) {
+    return undefined;
+  }
+  const value = Number(match[1]);
+  return Number.isSafeInteger(value) ? value : undefined;
+}
+
 function isLikelyReferencePath(lowerPath: string, name: string): boolean {
   return repoReferenceNames.has(name) ||
     lowerPath.startsWith("docs/") ||
@@ -462,6 +471,13 @@ export class RepoIndexer {
     for (const candidate of rankedPaths) {
       if (references.length >= maxReferences || totalBytes >= maxTotalBytes) {
         break;
+      }
+
+      const candidateIssueNumber = referencedIssueNumber(candidate.name);
+      if (options.issueNumber !== undefined &&
+          candidateIssueNumber !== undefined &&
+          candidateIssueNumber !== options.issueNumber) {
+        continue;
       }
 
       const loadedFile = await readContainedRepoFile(

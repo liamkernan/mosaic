@@ -19,6 +19,8 @@
       "issues/001-sla-queue-ordering.md",
       "tests/reported/test_001_sla_sort.py"
     ],
+    "oracleTestPathPrefixes": ["tests/reported/", "tests/smoke/"],
+    "generatedTestPathPrefixes": ["tests/generated/"],
     "requiredChangedFilePatterns": [
       "mosaic_demo/service.py",
       "tests/"
@@ -53,6 +55,8 @@
       "issues/002-idempotent-slack-events.md",
       "tests/reported/test_002_idempotent_external_ref.py"
     ],
+    "oracleTestPathPrefixes": ["tests/reported/", "tests/smoke/"],
+    "generatedTestPathPrefixes": ["tests/generated/"],
     "requiredChangedFilePatterns": [
       "mosaic_demo/service.py",
       "tests/"
@@ -81,6 +85,8 @@
       "issues/003-close-audit-event.md",
       "tests/reported/test_003_close_audit_event.py"
     ],
+    "oracleTestPathPrefixes": ["tests/reported/", "tests/smoke/"],
+    "generatedTestPathPrefixes": ["tests/generated/"],
     "requiredChangedFilePatterns": [
       "mosaic_demo/service.py",
       "tests/"
@@ -115,6 +121,8 @@
       "issues/004-product-request-metrics-endpoint.md",
       "tests/smoke/test_baseline.py"
     ],
+    "oracleTestPathPrefixes": ["tests/reported/", "tests/smoke/"],
+    "generatedTestPathPrefixes": ["tests/generated/"],
     "requiredChangedFilePatterns": [
       "mosaic_demo/service.py",
       "mosaic_demo/web.py",

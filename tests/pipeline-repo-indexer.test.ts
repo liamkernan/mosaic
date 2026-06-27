@@ -125,6 +125,63 @@ describe("RepoIndexer repository references", () => {
     expect(references.find((file) => file.path === "issues/001-sla-queue-ordering.md")?.reason).toContain("issue #1");
   });
 
+  it("does not load sibling issue specs or reported tests for a promoted issue", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
+    tempDirs.push(localPath);
+    await mkdir(join(localPath, "issues"));
+    await mkdir(join(localPath, "tests", "reported"), { recursive: true });
+    const files = [
+      ["issues/001-sla-sort.md", "Sort by SLA deadline.\n"],
+      ["issues/002-deadline-idempotency.md", "Unrelated deadline intake behavior.\n"],
+      ["tests/reported/test_001_sla_sort.py", "def test_sla_sort(): pass\n"],
+      ["tests/reported/test_002_deadline_idempotency.py", "def test_deadline_idempotency(): pass\n"]
+    ] as const;
+    for (const [path, content] of files) {
+      await writeFile(join(localPath, path), content, "utf8");
+    }
+
+    const references = await new RepoIndexer().findRepositoryReferenceFiles(
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        installationId: 1,
+        fileTree: [
+          {
+            path: "issues",
+            type: "directory",
+            children: files.slice(0, 2).map(([path]) => ({ path, type: "file" as const, language: "markdown" }))
+          },
+          {
+            path: "tests/reported",
+            type: "directory",
+            children: files.slice(2).map(([path]) => ({ path, type: "file" as const, language: "python" }))
+          }
+        ]
+      },
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "The SLA sort must order the next deadline first.",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Fix SLA sort order",
+        relevantFiles: [],
+        confidence: 0.8
+      },
+      { issueNumber: 1 }
+    );
+
+    expect(references.map((file) => file.path)).toEqual([
+      "issues/001-sla-sort.md",
+      "tests/reported/test_001_sla_sort.py"
+    ]);
+  });
+
   it("does not read classifier or requested files outside the repository root", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
     const outsidePath = await mkdtemp(join(tmpdir(), "mosaic-repo-outside-"));

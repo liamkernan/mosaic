@@ -1,4 +1,4 @@
-import { exec as execCallback } from "node:child_process";
+import { exec as execCallback, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -16,7 +16,24 @@ import { applyValidationFallbacks } from "../packages/pipeline/src/validation-re
 import { getEnv } from "../packages/core/src/config.js";
 import { LLMError } from "../packages/core/src/errors.js";
 import type { ClassifiedFeedback, ComplexityLevel, FeedbackCategory, FeedbackSource, FileNode, GeneratedChange, RepoContext } from "../packages/core/src/types.js";
-import { ANTHROPIC_MODEL_IDS, LLMClient } from "../packages/llm/src/client.js";
+import {
+  ANTHROPIC_MODEL_IDS,
+  LLMClient,
+  type LLMRequestAuthorization,
+  type LLMUsageObservation
+} from "../packages/llm/src/client.js";
+import {
+  EvalBudget,
+  assertGeneratedPathsAllowed,
+  calculateUsageCostUsd,
+  estimateMaximumCallCostUsd,
+  partitionVisibleContext,
+  runEvalCaseBatch,
+  writeCaseArtifacts,
+  writeEvalReport,
+  type EvalBatchResult,
+  type ModelPricing
+} from "./eval-local-fixes-support.js";
 
 const exec = promisify(execCallback);
 const ignoredNames = new Set(["node_modules", ".git", "dist", "build", "__pycache__", ".next", "vendor"]);
@@ -58,6 +75,9 @@ interface EvalCase {
   runPythonUnitTests?: boolean;
   runChangedPythonTests?: boolean;
   frontendAssertions?: FrontendAssertion[];
+  oracleTestPaths?: string[];
+  oracleTestPathPrefixes?: string[];
+  generatedTestPathPrefixes?: string[];
 }
 
 interface FrontendAssertion {
@@ -80,6 +100,30 @@ interface EvalResult {
   loadedFiles: string[];
   changedFiles: string[];
   errors: string[];
+  artifactPath: string;
+  usage?: EvalUsageSummary;
+}
+
+interface EvalUsageCall extends LLMUsageObservation {
+  phase: string;
+  costUsd: number;
+}
+
+interface EvalUsageSummary {
+  calls: EvalUsageCall[];
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadInputTokens: number;
+  totalCacheCreationInputTokens: number;
+  totalCostUsd: number;
+}
+
+type PricingTable = Record<string, ModelPricing>;
+
+interface EvalTelemetry {
+  authorize: (request: LLMRequestAuthorization) => void;
+  observe: (phase: string, event: LLMUsageObservation) => Promise<void>;
+  snapshot: () => EvalUsageSummary;
 }
 
 function parseArgs(argv: string[]): {
@@ -91,7 +135,13 @@ function parseArgs(argv: string[]): {
   casesPath: string;
   model: keyof typeof ANTHROPIC_MODEL_IDS;
   caseTimeoutMs: number;
+  outputDir: string;
+  internalCase?: string;
+  resultPath?: string;
+  maxCostUsd?: number;
+  pricingPath?: string;
 } {
+  const runTimestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const args = {
     caseIds: [] as string[],
     generate: false,
@@ -100,7 +150,12 @@ function parseArgs(argv: string[]): {
     repoRoot: process.env.MOSAIC_EVAL_REPO_ROOT ?? resolve(process.env.HOME ?? ".", "Documents"),
     casesPath: "evals/local-fix-cases.json",
     model: "sonnet" as keyof typeof ANTHROPIC_MODEL_IDS,
-    caseTimeoutMs: Number(process.env.MOSAIC_EVAL_CASE_TIMEOUT_MS ?? 300_000)
+    caseTimeoutMs: Number(process.env.MOSAIC_EVAL_CASE_TIMEOUT_MS ?? 300_000),
+    outputDir: resolve(process.env.MOSAIC_EVAL_OUTPUT_DIR ?? join("evals", "runs", runTimestamp)),
+    internalCase: undefined as string | undefined,
+    resultPath: undefined as string | undefined,
+    maxCostUsd: undefined as number | undefined,
+    pricingPath: undefined as string | undefined
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -128,6 +183,19 @@ function parseArgs(argv: string[]): {
       if (!Number.isFinite(args.caseTimeoutMs) || args.caseTimeoutMs <= 0) {
         throw new Error("--case-timeout-ms must be a positive number");
       }
+    } else if (arg === "--output-dir") {
+      args.outputDir = resolve(argv[++index]);
+    } else if (arg === "--internal-case") {
+      args.internalCase = argv[++index];
+    } else if (arg === "--result-path") {
+      args.resultPath = resolve(argv[++index]);
+    } else if (arg === "--max-cost-usd") {
+      args.maxCostUsd = Number(argv[++index]);
+      if (!Number.isFinite(args.maxCostUsd) || args.maxCostUsd < 0) {
+        throw new Error("--max-cost-usd must be a non-negative number");
+      }
+    } else if (arg === "--pricing") {
+      args.pricingPath = resolve(argv[++index]);
     } else if (arg === "--") {
       continue;
     } else {
@@ -201,14 +269,94 @@ async function copyRepoAtRef(sourceRepo: string, baseRef: string): Promise<strin
   return worktreePath;
 }
 
-function createEvalLlmClient(model: keyof typeof ANTHROPIC_MODEL_IDS): LLMClient {
+function createEvalLlmClient(
+  model: keyof typeof ANTHROPIC_MODEL_IDS,
+  telemetry?: EvalTelemetry,
+  phase = "unspecified"
+): LLMClient {
   const env = getEnv();
   return new LLMClient({
     mode: "platform",
     platformApiKey: env.ANTHROPIC_API_KEY,
     model: ANTHROPIC_MODEL_IDS[model],
-    disableUsageTracking: true
+    disableUsageTracking: true,
+    authorizeRequest: telemetry?.authorize,
+    observeUsage: telemetry ? (event) => telemetry.observe(phase, event) : undefined
   });
+}
+
+async function createEvalTelemetry(
+  options: ReturnType<typeof parseArgs>,
+  artifactPath: string
+): Promise<EvalTelemetry | undefined> {
+  if (!options.generate && !options.classify) {
+    return undefined;
+  }
+  if (options.maxCostUsd === undefined || !options.pricingPath) {
+    throw new Error("Paid evaluation requires both --max-cost-usd and --pricing");
+  }
+
+  const pricing = JSON.parse(await readFile(options.pricingPath, "utf8")) as PricingTable;
+  const budget = new EvalBudget(options.maxCostUsd);
+  const calls: EvalUsageCall[] = [];
+  let writeQueue = Promise.resolve();
+
+  const snapshot = (): EvalUsageSummary => calls.reduce<EvalUsageSummary>((summary, call) => ({
+    calls,
+    totalInputTokens: summary.totalInputTokens + call.inputTokens,
+    totalOutputTokens: summary.totalOutputTokens + call.outputTokens,
+    totalCacheReadInputTokens: summary.totalCacheReadInputTokens + call.cacheReadInputTokens,
+    totalCacheCreationInputTokens: summary.totalCacheCreationInputTokens + call.cacheCreationInputTokens,
+    totalCostUsd: summary.totalCostUsd + call.costUsd
+  }), {
+    calls,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCacheReadInputTokens: 0,
+    totalCacheCreationInputTokens: 0,
+    totalCostUsd: 0
+  });
+
+  return {
+    authorize: (request) => {
+      const modelPricing = pricing[request.model];
+      if (!modelPricing) {
+        throw new Error(`Missing pricing for model: ${request.model}`);
+      }
+      let estimatedMaxCostUsd = estimateMaximumCallCostUsd(
+        request.estimatedInputTokens,
+        request.maxOutputTokens,
+        modelPricing
+      );
+      if (request.advisorModel) {
+        const advisorPricing = pricing[request.advisorModel];
+        if (!advisorPricing) {
+          throw new Error(`Missing pricing for advisor model: ${request.advisorModel}`);
+        }
+        estimatedMaxCostUsd += estimateMaximumCallCostUsd(
+          request.estimatedInputTokens,
+          request.advisorMaxTokens ?? request.maxOutputTokens,
+          advisorPricing
+        );
+      }
+      budget.authorize({ estimatedMaxCostUsd });
+    },
+    observe: async (phase, event) => {
+      const modelPricing = pricing[event.model];
+      if (!modelPricing) {
+        throw new Error(`Missing pricing for model: ${event.model}`);
+      }
+      const costUsd = calculateUsageCostUsd(event, modelPricing);
+      budget.record({ ...event, costUsd });
+      calls.push({ ...event, phase, costUsd });
+      writeQueue = writeQueue.then(async () => {
+        await mkdir(artifactPath, { recursive: true });
+        await writeFile(join(artifactPath, "usage.json"), `${JSON.stringify(snapshot(), null, 2)}\n`, "utf8");
+      });
+      await writeQueue;
+    },
+    snapshot
+  };
 }
 
 function mergeFiles<T extends { path: string }>(left: T[], right: T[]): T[] {
@@ -543,6 +691,8 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
 async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>): Promise<EvalResult> {
   const sourceRepo = resolve(options.repoRoot, evalCase.repoDirName);
   const repoPath = await copyRepoAtRef(sourceRepo, evalCase.baseRef);
+  const artifactPath = join(options.outputDir, evalCase.id);
+  const telemetry = await createEvalTelemetry(options, artifactPath);
   const repoIndexer = new RepoIndexer();
   const repoContext: RepoContext = {
     fullName: evalCase.repoFullName,
@@ -561,7 +711,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   };
 
   if (options.classify) {
-    const classifier = new FeedbackClassifier(createEvalLlmClient("haiku"));
+    const classifier = new FeedbackClassifier(createEvalLlmClient("haiku", telemetry, "classification"));
     classifiedFeedback = await classifier.classify(classifiedFeedback, repoIndexer.fileTreeToPaths(repoContext));
   }
 
@@ -569,40 +719,88 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   const referenceFiles = await repoIndexer.findRepositoryReferenceFiles(repoContext, classifiedFeedback, {
     issueNumber: evalCase.issueNumber
   });
-  relevantFiles = mergeFiles(relevantFiles, referenceFiles);
+  const partitionedReferences = partitionVisibleContext(
+    referenceFiles,
+    evalCase.oracleTestPaths ?? [],
+    evalCase.oracleTestPathPrefixes ?? []
+  );
+  relevantFiles = mergeFiles(relevantFiles, partitionedReferences.visible);
 
   let changes: GeneratedChange[] = [];
   let generated = false;
   const errors: string[] = [];
+  let implementationPlan: ImplementationPlan | undefined;
+  const validationHistory: Array<{ stage: string; errors: string[] }> = [];
+  const verificationHistory: Array<{ stage: string; errors: string[] }> = [];
+  const persistArtifacts = async (): Promise<void> => writeCaseArtifacts(artifactPath, {
+    plan: implementationPlan ?? null,
+    selectedContext: relevantFiles.map(({ path, reason }) => ({ path, reason })),
+    changes,
+    validationHistory,
+    verificationHistory
+  });
+  await persistArtifacts();
 
   if (options.generate) {
     generated = true;
     const fileTree = repoIndexer.fileTreeToPaths(repoContext);
-    const planner = new ImplementationPlanner(createEvalLlmClient(options.model));
-    const implementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
-    const plannedFiles = await repoIndexer.readFiles(repoContext, implementationPlan.requiredFiles);
+    const planner = new ImplementationPlanner(createEvalLlmClient(options.model, telemetry, "planning"));
+    const plannedImplementation = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
+    implementationPlan = plannedImplementation;
+    const plannedFiles = await repoIndexer.readFiles(repoContext, plannedImplementation.requiredFiles);
     relevantFiles = mergeFiles(relevantFiles, plannedFiles);
-    const generator = new CodeGenerator(createEvalLlmClient(options.model));
-    changes = await generateValidatedChanges(generator, classifiedFeedback, relevantFiles, fileTree, implementationPlan, repoContext);
+    const partitionedPlannedFiles = partitionVisibleContext(
+      relevantFiles,
+      evalCase.oracleTestPaths ?? [],
+      evalCase.oracleTestPathPrefixes ?? []
+    );
+    relevantFiles = partitionedPlannedFiles.visible;
+    await persistArtifacts();
+    const generator = new CodeGenerator(createEvalLlmClient(options.model, telemetry, "generation-and-repair"));
+    changes = await generateValidatedChanges(
+      generator,
+      classifiedFeedback,
+      relevantFiles,
+      fileTree,
+      plannedImplementation,
+      repoContext,
+      (stage, validationErrors) => validationHistory.push({ stage, errors: validationErrors })
+    );
+    assertGeneratedPathsAllowed(changes.map((change) => change.filePath), {
+      oraclePaths: evalCase.oracleTestPaths ?? [],
+      oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
+      generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
+    });
+    await persistArtifacts();
     await writeGeneratedChanges(repoPath, changes);
     repoContext.fileTree = await buildFileTree(repoPath);
     let verificationErrors = await runVerification(evalCase, repoPath, changes);
+    verificationHistory.push({ stage: "initial", errors: verificationErrors });
+    await persistArtifacts();
     if (verificationErrors.length > 0) {
       const repairedChanges = await repairVerificationFailure(
         generator,
         classifiedFeedback,
         relevantFiles,
         fileTree,
-        implementationPlan,
+        plannedImplementation,
         repoContext,
         changes,
-        verificationErrors
+        verificationErrors,
+        (stage, validationErrors) => validationHistory.push({ stage, errors: validationErrors })
       );
       if (repairedChanges.length > 0) {
         changes = repairedChanges;
+        assertGeneratedPathsAllowed(changes.map((change) => change.filePath), {
+          oraclePaths: evalCase.oracleTestPaths ?? [],
+          oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
+          generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
+        });
         await writeGeneratedChanges(repoPath, changes);
         repoContext.fileTree = await buildFileTree(repoPath);
         verificationErrors = await runVerification(evalCase, repoPath, changes);
+        verificationHistory.push({ stage: "verification-repair", errors: verificationErrors });
+        await persistArtifacts();
       }
     }
     errors.push(...verificationErrors);
@@ -619,24 +817,34 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
 
   if (options.generate && checkErrors.length > 0) {
     const fileTree = repoIndexer.fileTreeToPaths(repoContext);
-    const planner = new ImplementationPlanner(createEvalLlmClient(options.model));
-    const implementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
-    const generator = new CodeGenerator(createEvalLlmClient(options.model));
+    const planner = new ImplementationPlanner(createEvalLlmClient(options.model, telemetry, "check-repair-planning"));
+    const repairedImplementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
+    implementationPlan = repairedImplementationPlan;
+    await persistArtifacts();
+    const generator = new CodeGenerator(createEvalLlmClient(options.model, telemetry, "check-repair"));
     const repairedChanges = await repairVerificationFailure(
       generator,
       classifiedFeedback,
       relevantFiles,
       fileTree,
-      implementationPlan,
+      repairedImplementationPlan,
       repoContext,
       changes,
-      checkErrors
+      checkErrors,
+      (stage, validationErrors) => validationHistory.push({ stage, errors: validationErrors })
     );
     if (repairedChanges.length > 0) {
       changes = repairedChanges;
+      assertGeneratedPathsAllowed(changes.map((change) => change.filePath), {
+        oraclePaths: evalCase.oracleTestPaths ?? [],
+        oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
+        generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
+      });
       await writeGeneratedChanges(repoPath, changes);
       repoContext.fileTree = await buildFileTree(repoPath);
       const repairedVerificationErrors = await runVerification(evalCase, repoPath, changes);
+      verificationHistory.push({ stage: "check-repair", errors: repairedVerificationErrors });
+      await persistArtifacts();
       errors.push(...repairedVerificationErrors);
       checkErrors = repairedVerificationErrors.length > 0
         ? checkErrors
@@ -652,6 +860,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   }
 
   errors.push(...checkErrors);
+  await persistArtifacts();
 
   return {
     id: evalCase.id,
@@ -661,7 +870,9 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     references: referenceFiles.map((file) => file.path),
     loadedFiles: relevantFiles.map((file) => file.path),
     changedFiles: changes.map((change) => change.filePath),
-    errors
+    errors,
+    artifactPath,
+    usage: telemetry?.snapshot()
   };
 }
 
@@ -671,7 +882,8 @@ async function generateValidatedChanges(
   relevantFiles: Array<{ path: string; content: string; reason: string }>,
   fileTree: string[],
   implementationPlan: ImplementationPlan,
-  repoContext: RepoContext
+  repoContext: RepoContext,
+  recordValidation: (stage: string, errors: string[]) => void = () => {}
 ): Promise<GeneratedChange[]> {
   let changes = await generator.generate(feedback, relevantFiles, fileTree, implementationPlan, {
     completeSolution: true
@@ -685,6 +897,7 @@ async function generateValidatedChanges(
       errors: [...validation.errors, ...planErrors]
     };
   }
+  recordValidation("initial", validation.errors);
 
   for (let attempt = 0; !validation.valid && attempt < validationRecoveryAttempts; attempt += 1) {
     if (validation.errors.some((error) => scopeValidationPattern.test(error))) {
@@ -699,6 +912,7 @@ async function generateValidatedChanges(
             errors: [...validation.errors, ...scopedPlanErrors]
           };
         }
+        recordValidation(`scope-prune-${attempt + 1}`, validation.errors);
 
         if (validation.valid) {
           break;
@@ -732,6 +946,7 @@ async function generateValidatedChanges(
             errors: [...validation.errors, ...repairedPlanErrors]
           };
         }
+        recordValidation(`model-repair-${attempt + 1}`, validation.errors);
       }
     } catch (error) {
       if (!isRecoverableLlmFailure(error)) {
@@ -752,6 +967,7 @@ async function generateValidatedChanges(
             errors: [...validation.errors, ...completedPlanErrors]
           };
         }
+        recordValidation(`deterministic-repair-${attempt + 1}`, validation.errors);
       }
     }
 
@@ -775,7 +991,8 @@ async function repairVerificationFailure(
   implementationPlan: ImplementationPlan,
   repoContext: RepoContext,
   currentChanges: GeneratedChange[],
-  verificationErrors: string[]
+  verificationErrors: string[],
+  recordValidation: (stage: string, errors: string[]) => void = () => {}
 ): Promise<GeneratedChange[]> {
   let repairedChanges: GeneratedChange[];
   try {
@@ -812,6 +1029,7 @@ async function repairVerificationFailure(
       errors: [...validation.errors, ...planErrors]
     };
   }
+  recordValidation("verification-model-repair", validation.errors);
 
   if (!validation.valid) {
     const completedChanges = await applyValidationFallbacks(repairedChanges, repoContext, validation.errors);
@@ -824,6 +1042,7 @@ async function repairVerificationFailure(
           errors: [...validation.errors, ...completedPlanErrors]
         };
       }
+      recordValidation("verification-deterministic-repair", validation.errors);
 
       if (validation.valid) {
         return completedChanges;
@@ -834,9 +1053,123 @@ async function repairVerificationFailure(
   return validation.valid ? repairedChanges : [];
 }
 
+function childArguments(options: ReturnType<typeof parseArgs>, evalCase: EvalCase, resultPath: string): string[] {
+  return [
+    resolve("scripts/eval-local-fixes.ts"),
+    "--internal-case", evalCase.id,
+    "--result-path", resultPath,
+    "--cases", options.casesPath,
+    "--repo-root", options.repoRoot,
+    "--model", options.model,
+    "--case-timeout-ms", String(options.caseTimeoutMs),
+    "--output-dir", options.outputDir,
+    ...(options.maxCostUsd === undefined ? [] : ["--max-cost-usd", String(options.maxCostUsd)]),
+    ...(options.pricingPath ? ["--pricing", options.pricingPath] : []),
+    ...(options.generate ? ["--generate"] : []),
+    ...(options.classify ? ["--classify"] : []),
+    ...(options.keep ? ["--keep"] : [])
+  ];
+}
+
+async function runCaseInChild(
+  evalCase: EvalCase,
+  options: ReturnType<typeof parseArgs>,
+  signal: AbortSignal
+): Promise<EvalResult> {
+  const resultPath = join(options.outputDir, evalCase.id, "result.json");
+
+  return new Promise<EvalResult>((resolveResult, rejectResult) => {
+    const child = spawn(process.execPath, [...process.execArgv, ...childArguments(options, evalCase, resultPath)], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.stdout.pipe(process.stdout);
+
+    const abort = (): void => {
+      child.kill("SIGTERM");
+      rejectResult(signal.reason ?? new Error(`Eval case aborted: ${evalCase.id}`));
+    };
+    signal.addEventListener("abort", abort, { once: true });
+
+    child.once("error", (error) => {
+      signal.removeEventListener("abort", abort);
+      rejectResult(error);
+    });
+    child.once("close", async (code) => {
+      signal.removeEventListener("abort", abort);
+      if (signal.aborted) {
+        return;
+      }
+      try {
+        const result = JSON.parse(await readFile(resultPath, "utf8")) as EvalResult;
+        resolveResult(result);
+      } catch (error) {
+        const details = stderr.trim();
+        rejectResult(new Error(
+          `Eval child exited with code ${String(code)} without a result${details ? `: ${details}` : ""}`,
+          { cause: error }
+        ));
+      }
+    });
+  });
+}
+
+function failedResult(evalCase: EvalCase, options: ReturnType<typeof parseArgs>, error: unknown): EvalResult {
+  return {
+    id: evalCase.id,
+    passed: false,
+    tempPath: "",
+    generated: options.generate,
+    references: [],
+    loadedFiles: [],
+    changedFiles: [],
+    errors: [error instanceof Error ? error.message : String(error)],
+    artifactPath: join(options.outputDir, evalCase.id)
+  };
+}
+
+async function runInternalCase(
+  evalCase: EvalCase,
+  options: ReturnType<typeof parseArgs>
+): Promise<void> {
+  if (!options.resultPath) {
+    throw new Error("--result-path is required with --internal-case");
+  }
+
+  let result: EvalResult;
+  try {
+    result = await runCase(evalCase, options);
+  } catch (error) {
+    result = failedResult(evalCase, options, error);
+    result.usage = await readFile(join(result.artifactPath, "usage.json"), "utf8")
+      .then((content) => JSON.parse(content) as EvalUsageSummary)
+      .catch(() => undefined);
+  }
+  await mkdir(dirname(options.resultPath), { recursive: true });
+  await writeFile(options.resultPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+  if ((options.generate || options.classify) && (options.maxCostUsd === undefined || !options.pricingPath)) {
+    throw new Error("Paid evaluation requires both --max-cost-usd and --pricing");
+  }
   const cases = JSON.parse(await readFile(options.casesPath, "utf8")) as EvalCase[];
+  if (options.internalCase) {
+    const evalCase = cases.find((candidate) => candidate.id === options.internalCase);
+    if (!evalCase) {
+      throw new Error(`Unknown eval case: ${options.internalCase}`);
+    }
+    await runInternalCase(evalCase, options);
+    return;
+  }
+
   const selectedCases = options.caseIds.length > 0
     ? cases.filter((evalCase) => options.caseIds.includes(evalCase.id))
     : cases;
@@ -845,30 +1178,36 @@ async function main(): Promise<void> {
     throw new Error("No eval cases selected");
   }
 
-  const results: EvalResult[] = [];
-  for (const evalCase of selectedCases) {
-    let timedOut = false;
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      console.error(`Eval case timed out after ${options.caseTimeoutMs}ms: ${evalCase.id}`);
-      process.exit(124);
-    }, options.caseTimeoutMs);
-
-    try {
-      const result = await runCase(evalCase, options);
-      results.push(result);
-      if (!options.keep) {
-        await rm(dirname(result.tempPath), { recursive: true, force: true });
+  const startedAt = Date.now();
+  let remainingBudgetUsd = options.maxCostUsd;
+  const results = await runEvalCaseBatch(selectedCases, {
+    timeoutMs: options.caseTimeoutMs,
+    getId: (evalCase) => evalCase.id,
+    runCase: async (evalCase, signal) => {
+      const result = await runCaseInChild(evalCase, {
+        ...options,
+        maxCostUsd: remainingBudgetUsd
+      }, signal);
+      if (remainingBudgetUsd !== undefined) {
+        remainingBudgetUsd = Math.max(0, remainingBudgetUsd - (result.usage?.totalCostUsd ?? 0));
       }
-    } finally {
-      if (!timedOut) {
-        clearTimeout(timeout);
-      }
+      return result;
     }
+  });
+  const finishedAt = Date.now();
+  await writeEvalReport(join(options.outputDir, "results.json"), results, { startedAt, finishedAt });
+
+  if (!options.keep) {
+    await Promise.all(results.map(async (result) => {
+      const tempPath = typeof result.tempPath === "string" ? result.tempPath : "";
+      if (tempPath) {
+        await rm(dirname(tempPath), { recursive: true, force: true });
+      }
+    }));
   }
 
   const passed = results.filter((result) => result.passed).length;
-  for (const result of results) {
+  for (const result of results as Array<EvalBatchResult & Partial<EvalResult>>) {
     const status = result.passed ? "PASS" : "FAIL";
     console.log(`${status} ${result.id}`);
     console.log(`  references: ${result.references.join(", ") || "(none)"}`);
@@ -882,11 +1221,13 @@ async function main(): Promise<void> {
       }
     }
     if (options.keep) {
-      console.log(`  temp: ${result.tempPath}`);
+      console.log(`  temp: ${result.tempPath ?? "(unavailable)"}`);
     }
+    console.log(`  artifacts: ${result.artifactPath ?? join(options.outputDir, result.id)}`);
   }
 
   console.log(`\n${passed}/${results.length} evals passed`);
+  console.log(`JSON report: ${join(options.outputDir, "results.json")}`);
   if (passed !== results.length) {
     process.exitCode = 1;
   }
