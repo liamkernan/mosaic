@@ -137,6 +137,20 @@ function isAdvisorUseBlock(item: unknown): boolean {
     "name" in item && item.name === ANTHROPIC_ADVISOR_TOOL_NAME;
 }
 
+function extractTextContent(content: unknown[]): string {
+  let text = "";
+
+  for (const item of content) {
+    if (!isTextContentBlock(item)) {
+      continue;
+    }
+
+    text = text.length === 0 ? item.text : `${text}\n${item.text}`;
+  }
+
+  return text;
+}
+
 function getAnthropicErrorDetails(error: unknown): AnthropicErrorDetails {
   const statusValue = typeof error === "object" && error && "status" in error ? Number(error.status) : undefined;
   const nestedError = typeof error === "object" && error && "error" in error && typeof error.error === "object"
@@ -281,9 +295,7 @@ export class LLMClient {
           response = await withHardTimeout(stream.finalMessage(), options.timeoutMs);
         }
 
-        const text = response.content
-          .flatMap((item) => isTextContentBlock(item) ? [item.text] : [])
-          .join("\n");
+        const text = extractTextContent(response.content);
 
         if (this.usageContext && response.usage && !this.disableUsageTracking) {
           await trackUsage({

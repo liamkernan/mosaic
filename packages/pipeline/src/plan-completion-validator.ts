@@ -9,8 +9,10 @@ const sourcePathPattern = /\.(?:[cm]?[jt]sx?|tsx?|py|rb|go|rs|java|kt|php|cs|swi
 const staticAssetPathPattern = /\.(?:html?|css|[cm]?js)$/i;
 const companionConfigPathPattern = /(?:^|\/)(?:package\.json|pnpm-workspace\.ya?ml|tsconfig(?:\.[^.]+)?\.json|jsconfig(?:\.[^.]+)?\.json|vitest\.config\.[cm]?[jt]s|vite\.config\.[cm]?[jt]s|jest\.config\.[cm]?[jt]s|pyproject\.toml|setup\.py|setup\.cfg|requirements(?:-[^.]+)?\.txt|go\.mod|go\.sum|Cargo\.toml|Cargo\.lock)$/i;
 const orderedClausePattern = /`([^`]*(?:ASC|DESC|ORDER BY)[^`]*)`/gi;
+const backtickedClausePattern = /`([^`]+)`/g;
 const idempotencyPlanPattern = /\b(?:dedupe|duplicate|idempotent|idempotency|retry|same source|external[_\s-]?ref(?:erence)?)\b/i;
 const endpointPathPattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+(`?)(\/[a-zA-Z0-9_./:-]+)\1/g;
+const quotedEndpointPathPattern = /["'`](\/[a-zA-Z0-9_./:-]+)["'`]/g;
 
 interface PlannedScope {
   requiredPaths: PathFacts[];
@@ -36,7 +38,13 @@ interface PathFacts {
 
 interface RuntimeChangeFacts {
   change: GeneratedChange;
-  compactContent: string;
+  compactContent?: string;
+}
+
+interface CompletionChangeGroups {
+  testChanges: GeneratedChange[];
+  runtimeChanges: GeneratedChange[];
+  runtimeChangeFacts: RuntimeChangeFacts[];
 }
 
 function planText(plan: ImplementationPlan, sourceText = ""): string {
@@ -57,6 +65,26 @@ function changedRuntimeFiles(changes: GeneratedChange[]): GeneratedChange[] {
     !testPathPattern.test(change.filePath) &&
     !documentationPathPattern.test(change.filePath)
   );
+}
+
+function collectCompletionChangeGroups(changes: GeneratedChange[]): CompletionChangeGroups {
+  const testChanges: GeneratedChange[] = [];
+  const runtimeChanges: GeneratedChange[] = [];
+  const runtimeChangeFacts: RuntimeChangeFacts[] = [];
+
+  for (const change of changes) {
+    const isTest = testPathPattern.test(change.filePath);
+    if (isTest) {
+      testChanges.push(change);
+    }
+
+    if (!isTest && !documentationPathPattern.test(change.filePath)) {
+      runtimeChanges.push(change);
+      runtimeChangeFacts.push({ change });
+    }
+  }
+
+  return { testChanges, runtimeChanges, runtimeChangeFacts };
 }
 
 function normalizeRepoPath(path: string): string {
@@ -203,13 +231,33 @@ function isAllowedPlannedCompanionChange(change: GeneratedChange, changedPath: P
 }
 
 function createPlannedScope(plan: ImplementationPlan, sourceText: string): PlannedScope | null {
-  const requiredPathList = [...new Set(plan.requiredFiles.map((file) => normalizeRepoPath(file.path)).filter(Boolean))];
+  const requiredPathList: string[] = [];
+  const requiredPathSet = new Set<string>();
+  for (const file of plan.requiredFiles) {
+    const normalizedPath = normalizeRepoPath(file.path);
+    if (normalizedPath.length > 0 && !requiredPathSet.has(normalizedPath)) {
+      requiredPathSet.add(normalizedPath);
+      requiredPathList.push(normalizedPath);
+    }
+  }
+
   if (requiredPathList.length === 0) {
     return null;
   }
 
-  const requiredPaths = requiredPathList.map(pathFacts);
-  if (!requiredPaths.some((path) => !path.isTest && !path.isDocumentation)) {
+  const requiredPaths: PathFacts[] = [];
+  const requiredDirSet = new Set<string>();
+  let hasRuntimePath = false;
+  for (const path of requiredPathList) {
+    const facts = pathFacts(path);
+    requiredPaths.push(facts);
+    requiredDirSet.add(facts.dir);
+    if (!facts.isTest && !facts.isDocumentation) {
+      hasRuntimePath = true;
+    }
+  }
+
+  if (!hasRuntimePath) {
     return null;
   }
 
@@ -217,8 +265,8 @@ function createPlannedScope(plan: ImplementationPlan, sourceText: string): Plann
     requiredPaths,
     requiredPathList,
     requiredPathText: requiredPathList.join(", "),
-    requiredPathSet: new Set(requiredPathList),
-    requiredDirSet: new Set(requiredPaths.map((path) => path.dir)),
+    requiredPathSet,
+    requiredDirSet,
     requiresBehavioralTests: planRequiresBehavioralTests(plan, sourceText)
   };
 }
@@ -260,9 +308,15 @@ function validatePlannedChangeScope(changes: GeneratedChange[], plan: Implementa
     return [];
   }
 
-  return changes
-    .map((change) => plannedChangeScopeError(change, scope))
-    .filter((error): error is string => Boolean(error));
+  const errors: string[] = [];
+  for (const change of changes) {
+    const error = plannedChangeScopeError(change, scope);
+    if (error) {
+      errors.push(error);
+    }
+  }
+
+  return errors;
 }
 
 export function pruneChangesToPlanScope(changes: GeneratedChange[], plan: ImplementationPlan | undefined, sourceText = ""): GeneratedChange[] {
@@ -306,7 +360,11 @@ function extractPythonListFunctionFields(content: string): Map<string, Set<strin
 
 function generatedTestListFieldErrors(changes: GeneratedChange[]): string[] {
   const fieldsByFunction = new Map<string, Set<string>>();
-  for (const change of changes.filter((item) => !testPathPattern.test(item.filePath))) {
+  for (const change of changes) {
+    if (testPathPattern.test(change.filePath) || !/\.py$/i.test(change.filePath)) {
+      continue;
+    }
+
     for (const [functionName, fields] of extractPythonListFunctionFields(change.modifiedContent)) {
       fieldsByFunction.set(functionName, fields);
     }
@@ -317,7 +375,11 @@ function generatedTestListFieldErrors(changes: GeneratedChange[]): string[] {
   }
 
   const errors: string[] = [];
-  for (const testChange of changedTestFiles(changes)) {
+  for (const testChange of changes) {
+    if (!testPathPattern.test(testChange.filePath)) {
+      continue;
+    }
+
     const variablesByFunction = new Map<string, string[]>();
     for (const assignmentMatch of testChange.modifiedContent.matchAll(/\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(list_[a-zA-Z0-9_]*)\s*\(/g)) {
       const functionName = assignmentMatch[2];
@@ -383,21 +445,28 @@ function planRequiresRuntimeChange(plan: ImplementationPlan): boolean {
 }
 
 function orderedClauseTerms(clause: string): string[] {
-  return clause
+  const normalized = clause
     .replace(/\bORDER\s+BY\b/gi, "")
-    .replace(/\bthen\b/gi, ",")
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const match = part.match(/([a-zA-Z_][a-zA-Z0-9_.]*)\s+(ASC|DESC)\b/i);
-      if (!match) {
-        return "";
-      }
+    .replace(/\bthen\b/gi, ",");
 
-      return `${match[1].split(".").pop()} ${match[2].toUpperCase()}`;
-    })
-    .filter(Boolean);
+  const terms: string[] = [];
+  for (const rawPart of normalized.split(",")) {
+    const part = rawPart.trim();
+    if (part.length === 0) {
+      continue;
+    }
+
+    const match = part.match(/([a-zA-Z_][a-zA-Z0-9_.]*)\s+(ASC|DESC)\b/i);
+    if (!match) {
+      continue;
+    }
+
+    const field = match[1];
+    const dotIndex = field.lastIndexOf(".");
+    terms.push(`${dotIndex >= 0 ? field.slice(dotIndex + 1) : field} ${match[2].toUpperCase()}`);
+  }
+
+  return terms;
 }
 
 function extractOrderedClauses(text: string): string[][] {
@@ -412,8 +481,15 @@ function extractOrderedClauses(text: string): string[][] {
   }
 
   for (const line of text.split("\n")) {
-    const backtickedTerms = [...line.matchAll(/`([^`]+)`/g)]
-      .flatMap((termMatch) => orderedClauseTerms(termMatch[1]));
+    const backtickedTerms: string[] = [];
+    backtickedClausePattern.lastIndex = 0;
+    let termMatch: RegExpExecArray | null;
+    while ((termMatch = backtickedClausePattern.exec(line)) !== null) {
+      for (const term of orderedClauseTerms(termMatch[1])) {
+        backtickedTerms.push(term);
+      }
+    }
+
     if (backtickedTerms.length >= 2) {
       clauses.push(backtickedTerms);
     }
@@ -426,11 +502,19 @@ function compactContent(content: string): string {
   return content.toLowerCase().replace(/\s+/g, " ");
 }
 
+function runtimeCompactContent(facts: RuntimeChangeFacts): string {
+  facts.compactContent ??= compactContent(facts.change.modifiedContent);
+  return facts.compactContent;
+}
+
 function contentContainsTermsInOrder(compact: string, terms: string[]): boolean {
   let cursor = 0;
 
   for (const term of terms) {
-    const [field, direction] = term.toLowerCase().split(" ");
+    const lowerTerm = term.toLowerCase();
+    const separatorIndex = lowerTerm.lastIndexOf(" ");
+    const field = separatorIndex >= 0 ? lowerTerm.slice(0, separatorIndex) : lowerTerm;
+    const direction = separatorIndex >= 0 ? lowerTerm.slice(separatorIndex + 1) : "";
     const fieldIndex = compact.indexOf(field, cursor);
     if (fieldIndex < 0) {
       return false;
@@ -460,8 +544,11 @@ function extractEndpointPaths(text: string): string[] {
 
 function collectQuotedEndpointPaths(changes: GeneratedChange[]): Set<string> {
   const paths = new Set<string>();
+  let match: RegExpExecArray | null;
+
   for (const change of changes) {
-    for (const match of change.modifiedContent.matchAll(/["'`](\/[a-zA-Z0-9_./:-]+)["'`]/g)) {
+    quotedEndpointPathPattern.lastIndex = 0;
+    while ((match = quotedEndpointPathPattern.exec(change.modifiedContent)) !== null) {
       paths.add(match[1]);
     }
   }
@@ -475,10 +562,10 @@ function planRequiresIdempotencyUpdate(text: string): boolean {
 }
 
 function contentHasIdempotencyUpdatePath(content: string): boolean {
-  const blocks = content.split(/\n(?=(?:async\s+)?(?:def|function)\s+|(?:export\s+)?(?:async\s+)?function\s+|class\s+)/i);
+  const blocks = content.toLowerCase().split(/\n(?=(?:async\s+)?(?:def|function)\s+|(?:export\s+)?(?:async\s+)?function\s+|class\s+)/i);
 
   return blocks.some((block) => {
-    const compact = block.toLowerCase().replace(/\s+/g, " ");
+    const compact = block.replace(/\s+/g, " ");
     const identifiesRequest = /\b(?:external_ref|externalref|external reference|idempotency|dedupe|duplicate|source)\b/.test(compact);
     const createsRequest = /(?:\b|_)(?:insert|create|add|save)(?:\b|_)/.test(compact);
     const findsExisting = /(?:\b|_)(?:select|where|find|lookup|get_or_create|existing|on conflict|upsert|merge)(?:\b|_)/.test(compact);
@@ -497,24 +584,22 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
   errors.push(...generatedTestListFieldErrors(changes));
   errors.push(...validatePlannedChangeScope(changes, plan, sourceText));
 
-  const testChanges = changedTestFiles(changes);
+  const { testChanges, runtimeChanges, runtimeChangeFacts } = collectCompletionChangeGroups(changes);
   if (planRequiresBehavioralTests(plan, text) && testChanges.length === 0) {
     errors.push("Implementation plan requires behavioral test coverage, but the generated change does not modify any test/spec file");
   }
 
-  const runtimeChanges = changedRuntimeFiles(changes);
-  const runtimeChangeFacts: RuntimeChangeFacts[] = runtimeChanges.map((change) => ({
-    change,
-    compactContent: compactContent(change.modifiedContent)
-  }));
   if (planRequiresRuntimeChange(plan) && runtimeChanges.length === 0) {
     errors.push("Implementation plan requires runtime/source changes, but the generated change only modifies tests or documentation");
   }
 
-  const runtimeEndpointPaths = collectQuotedEndpointPaths(runtimeChanges);
-  for (const endpointPath of extractEndpointPaths(text)) {
-    if (!runtimeEndpointPaths.has(endpointPath)) {
-      errors.push(`Acceptance criteria require endpoint path ${endpointPath}, but no implementation change appears to route or handle that path`);
+  const requiredEndpointPaths = extractEndpointPaths(text);
+  if (requiredEndpointPaths.length > 0) {
+    const runtimeEndpointPaths = collectQuotedEndpointPaths(runtimeChanges);
+    for (const endpointPath of requiredEndpointPaths) {
+      if (!runtimeEndpointPaths.has(endpointPath)) {
+        errors.push(`Acceptance criteria require endpoint path ${endpointPath}, but no implementation change appears to route or handle that path`);
+      }
     }
   }
 
@@ -523,7 +608,7 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
   }
 
   for (const terms of extractOrderedClauses(text)) {
-    const matched = runtimeChangeFacts.some((facts) => contentContainsTermsInOrder(facts.compactContent, terms));
+    const matched = runtimeChangeFacts.some((facts) => contentContainsTermsInOrder(runtimeCompactContent(facts), terms));
     if (!matched) {
       errors.push(`Acceptance criteria require ordered clause ${terms.join(", ")}, but no implementation change contains those terms in that order`);
     }

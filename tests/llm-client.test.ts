@@ -219,6 +219,27 @@ describe("LLMClient", () => {
     expect(streamMock).not.toHaveBeenCalled();
   });
 
+  it("joins text response blocks while ignoring non-text blocks", async () => {
+    finalMessageMock.mockResolvedValueOnce({
+      content: [
+        { type: "text", text: "first" },
+        { type: "tool_use", id: "tool-1", name: "advisor", input: {} },
+        { type: "text", text: "second" }
+      ],
+      usage: {
+        input_tokens: 1,
+        output_tokens: 2
+      }
+    });
+    const client = new LLMClient({
+      mode: "platform",
+      platformApiKey: "test-key",
+      disableUsageTracking: true
+    });
+
+    await expect(client.complete("system", "user")).resolves.toBe("first\nsecond");
+  });
+
   it("rejects when the final streamed message exceeds the hard timeout", async () => {
     finalMessageMock.mockReturnValue(new Promise(() => {}));
     const client = new LLMClient({

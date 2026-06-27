@@ -143,32 +143,66 @@ function pythonModuleForPath(path: string): string {
   return path.replace(/\.py$/, "").replace(/\//g, ".");
 }
 
-function inferredChangedTestCommands(changes: GeneratedChange[]): string[] {
-  const pythonModules = changes
-    .map((change) => change.filePath)
-    .filter((path) => path.startsWith("tests/") && path.endsWith(".py"))
-    .map(pythonModuleForPath)
-    .sort();
+function inferredChangedTestCommand(changes: GeneratedChange[]): string | undefined {
+  const pythonModules: string[] = [];
+  for (const change of changes) {
+    if (change.filePath.startsWith("tests/") && change.filePath.endsWith(".py")) {
+      pythonModules.push(pythonModuleForPath(change.filePath));
+    }
+  }
 
-  return pythonModules.length > 0
-    ? [`python3 -m unittest ${pythonModules.map((module) => JSON.stringify(module)).join(" ")}`]
-    : [];
+  if (pythonModules.length === 0) {
+    return undefined;
+  }
+
+  pythonModules.sort();
+  return `python3 -m unittest ${pythonModules.map((module) => JSON.stringify(module)).join(" ")}`;
+}
+
+function addVerificationCommand(commands: string[], seen: Set<string>, command: string): void {
+  const trimmed = command.trim();
+  if (trimmed.length === 0 || seen.has(trimmed) || !isAllowedVerificationCommand(trimmed)) {
+    return;
+  }
+
+  seen.add(trimmed);
+  commands.push(trimmed);
 }
 
 function collectVerificationCommands(changes: GeneratedChange[], implementationPlan?: ImplementationPlan): string[] {
-  const plannedCommands = implementationPlan?.verificationCommands ?? [];
-  const commands = [...plannedCommands, ...inferredChangedTestCommands(changes)]
-    .map((command) => command.trim())
-    .filter((command) => command.length > 0)
-    .filter(isAllowedVerificationCommand);
+  const commands: string[] = [];
+  const seen = new Set<string>();
 
-  return [...new Set(commands)].slice(0, maxCommands);
+  for (const command of implementationPlan?.verificationCommands ?? []) {
+    addVerificationCommand(commands, seen, command);
+    if (commands.length >= maxCommands) {
+      return commands;
+    }
+  }
+
+  const inferredCommand = inferredChangedTestCommand(changes);
+  if (inferredCommand) {
+    addVerificationCommand(commands, seen, inferredCommand);
+  }
+
+  return commands;
 }
 
 function unsupportedPlannedVerificationCommands(implementationPlan?: ImplementationPlan): string[] {
-  return (implementationPlan?.verificationCommands ?? [])
-    .map((command) => command.trim())
-    .filter((command) => command.length > 0 && !isAllowedVerificationCommand(command));
+  const commands = implementationPlan?.verificationCommands;
+  if (!commands) {
+    return [];
+  }
+
+  const unsupported: string[] = [];
+  for (const command of commands) {
+    const trimmed = command.trim();
+    if (trimmed.length > 0 && !isAllowedVerificationCommand(trimmed)) {
+      unsupported.push(trimmed);
+    }
+  }
+
+  return unsupported;
 }
 
 async function writeChanges(repoPath: string, changes: GeneratedChange[]): Promise<string[]> {

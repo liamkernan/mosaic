@@ -56,6 +56,22 @@ describe("pipeline prompts", () => {
     expect(compacted.paths).toEqual(["src/target.ts", "src/neighbor.ts"]);
   });
 
+  it("keeps nested nearby files from directly relevant directories", () => {
+    const compacted = compactPromptFileTree(
+      [
+        "packages/app/src/target.ts",
+        "packages/app/src/neighbor.ts",
+        ...Array.from({ length: 20 }, (_, index) => `unrelated/path-${index}.ts`)
+      ],
+      {
+        maxPaths: 2,
+        relevantPaths: ["packages/app/src/target.ts"]
+      }
+    );
+
+    expect(compacted.paths).toEqual(["packages/app/src/target.ts", "packages/app/src/neighbor.ts"]);
+  });
+
   it("includes relevant file contents in the generation prompt", () => {
     const prompt = buildGenerationPrompt(
       "Update header",
@@ -283,6 +299,8 @@ describe("pipeline prompts", () => {
     );
 
     expect(prompt).toContain("invalid generated index.html omitted from repair prompt");
+    expect(prompt).toContain("1702 middle line(s)");
+    expect(prompt).toContain("<article>0</article>");
     expect(prompt).toContain("<article>1999</article>");
     expect(prompt).not.toContain("<article>1000</article>");
   });

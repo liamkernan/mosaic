@@ -15,6 +15,7 @@ const unlinkedStaticAssetPattern = /New static asset ([^\s]+) is not linked from
 const missingHtmlIdPattern = /queries missing HTML id\(s\): (.+)$/;
 const missingHtmlSelectorPattern = /queries selector\(s\) with no matching HTML: (.+)$/;
 const missingPythonImportPattern = /Change for ([^\s]+\.py) calls (.+) from ([^\s]+)\.py but does not import or define (.+)$/;
+const filePathByNameCache = new WeakMap<RepoContext["fileTree"], Map<string, string | null>>();
 
 function createChangeUpdater(changes: GeneratedChange[]): ChangeUpdater {
   const indexesByPath = new Map<string, number[]>();
@@ -134,8 +135,22 @@ function buildModalStyleFallback(tokens: string[]): string {
     .join("\n\n");
 }
 
+function cachedFilePathByName(nodes: RepoContext["fileTree"], fileName: string): string | null {
+  let lookup = filePathByNameCache.get(nodes);
+  if (!lookup) {
+    lookup = new Map();
+    filePathByNameCache.set(nodes, lookup);
+  }
+
+  if (!lookup.has(fileName)) {
+    lookup.set(fileName, findFilePathByName(nodes, fileName));
+  }
+
+  return lookup.get(fileName) ?? null;
+}
+
 function findHtmlInsertTarget(nodes: RepoContext["fileTree"], htmlPath: string): string | null {
-  return findFilePathByName(nodes, htmlPath);
+  return cachedFilePathByName(nodes, htmlPath);
 }
 
 function extractUnlinkedStaticAssets(validationErrors: string[]): Array<{ assetPath: string; htmlPath: string }> {
@@ -261,11 +276,23 @@ function extractMissingPythonImports(validationErrors: string[]): Array<{ filePa
     imports.push({
       filePath: match[1],
       moduleName: match[3],
-      names: match[4].split(",").map((name) => name.trim()).filter(Boolean)
+      names: splitCommaSeparatedNames(match[4])
     });
   }
 
   return imports;
+}
+
+function splitCommaSeparatedNames(text: string): string[] {
+  const names: string[] = [];
+  for (const rawName of text.split(",")) {
+    const name = rawName.trim();
+    if (name.length > 0) {
+      names.push(name);
+    }
+  }
+
+  return names;
 }
 
 function addPythonImport(content: string, moduleName: string, names: string[]): string {
@@ -374,16 +401,6 @@ function tagClassValues(tag: string): string[] {
   return match[1].split(/\s+/).filter(Boolean);
 }
 
-function tagSemanticallyMatchesClass(tag: string, missingClassName: string): boolean {
-  const missingTokens = classTokens(missingClassName);
-  if (missingTokens.length === 0) {
-    return false;
-  }
-
-  const existingTokens = new Set(tagClassValues(tag).flatMap(classTokens));
-  return missingTokens.every((token) => existingTokens.has(token));
-}
-
 function addClassToTag(tag: string, className: string): string {
   if (tagHasClass(tag, className)) {
     return tag;
@@ -442,13 +459,50 @@ function addAttributesToClassSelector(html: string, className: string, attrNames
   });
 }
 
-function addClassToSemanticMatches(html: string, className: string): string {
+function htmlClassNames(html: string): Set<string> {
+  const classNames = new Set<string>();
+
+  for (const match of html.matchAll(/<[^>]+>/g)) {
+    for (const className of tagClassValues(match[0])) {
+      classNames.add(className);
+    }
+  }
+
+  return classNames;
+}
+
+function addClassesToSemanticMatches(html: string, classNames: string[]): string {
+  const existingClassNames = htmlClassNames(html);
+  const missingClassNames: Array<{ className: string; tokens: string[] }> = [];
+  const seenMissingClassNames = new Set<string>();
+
+  for (const className of classNames) {
+    if (!existingClassNames.has(className) && !seenMissingClassNames.has(className)) {
+      seenMissingClassNames.add(className);
+      const tokens = classTokens(className);
+      if (tokens.length > 0) {
+        missingClassNames.push({ className, tokens });
+      }
+    }
+  }
+
+  if (missingClassNames.length === 0) {
+    return html;
+  }
+
   return html.replace(/<[a-z][a-z0-9-]*(?:\s[^<>]*)?>/gi, (tag) => {
-    if (!tagSemanticallyMatchesClass(tag, className)) {
-      return tag;
+    const tagTokens = new Set(tagClassValues(tag).flatMap(classTokens));
+    let updatedTag = tag;
+    for (const { className, tokens } of missingClassNames) {
+      if (tokens.every((token) => tagTokens.has(token))) {
+        updatedTag = addClassToTag(updatedTag, className);
+        for (const token of tokens) {
+          tagTokens.add(token);
+        }
+      }
     }
 
-    return addClassToTag(tag, className);
+    return updatedTag;
   });
 }
 
@@ -481,11 +535,7 @@ function applySelectorHookFallbacks(html: string, selectors: string[]): string {
       : addAttributesToClassSelector(completedHtml, className, attrNames);
   }
 
-  for (const className of missingClasses) {
-    if (!htmlHasClass(completedHtml, className)) {
-      completedHtml = addClassToSemanticMatches(completedHtml, className);
-    }
-  }
+  completedHtml = addClassesToSemanticMatches(completedHtml, missingClasses);
 
   return completedHtml;
 }
@@ -555,7 +605,7 @@ export async function completeMissingModalStyles(
     return changes;
   }
 
-  const stylePath = findFilePathByName(repoContext.fileTree, "styles.css");
+  const stylePath = cachedFilePathByName(repoContext.fileTree, "styles.css");
   if (!stylePath) {
     return changes;
   }
@@ -676,7 +726,7 @@ export async function completeMissingHtmlHooks(
     return changes;
   }
 
-  const htmlPath = findFilePathByName(repoContext.fileTree, "index.html");
+  const htmlPath = cachedFilePathByName(repoContext.fileTree, "index.html");
   if (!htmlPath) {
     return changes;
   }

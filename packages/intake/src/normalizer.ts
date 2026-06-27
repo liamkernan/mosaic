@@ -17,6 +17,10 @@ interface BaseAdapterOutput {
 }
 
 function stripHtml(input: string): string {
+  if (!/[<&]/.test(input)) {
+    return input.trim();
+  }
+
   return sanitizeHtml(input, { allowedTags: [], allowedAttributes: {} }).trim();
 }
 
