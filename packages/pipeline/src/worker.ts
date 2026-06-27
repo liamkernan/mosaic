@@ -24,6 +24,7 @@ import {
 } from "./staged-issues.js";
 import { selectGenerationModelTier, selectPlanningModelTier, shouldEscalateClassification, shouldUseAdvisorTool } from "./model-routing.js";
 import { pruneChangesToPlanScope, validatePlanCompletion } from "./plan-completion-validator.js";
+import { assessRepairProgress } from "./repair-progress.js";
 import { buildLlmRetryFeedbackItem, canRetryLlmOverload, getLlmRetryDelayMs, isRetryableLlmOverload } from "./transient-llm.js";
 import { validate } from "./validator.js";
 import { applyValidationFallbacks } from "./validation-repair.js";
@@ -301,9 +302,20 @@ export class FeedbackPipelineWorker {
           ? repairedChanges
           : mergeGeneratedChanges(changes, repairedChanges);
         if (repairedChanges.length > 0 && candidateChanges.length <= repoConfig.security.max_files_changed) {
-          changes = candidateChanges;
-          madeProgress = true;
-          validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan, feedbackText);
+          const candidateValidation = await validateGeneratedChanges(
+            candidateChanges,
+            repoContext,
+            repoConfig,
+            implementationPlan,
+            feedbackText
+          );
+          const progress = assessRepairProgress(changes, candidateChanges, validation.errors, candidateValidation.errors);
+          logger.info({ repairProgress: progress, feedbackId: classifiedFeedback.id }, "Assessed validation repair progress");
+          if (progress.accepted) {
+            changes = candidateChanges;
+            madeProgress = true;
+            validation = candidateValidation;
+          }
         }
       } catch (error) {
         if (!(error instanceof LLMError)) {
@@ -314,9 +326,20 @@ export class FeedbackPipelineWorker {
       if (!validation.valid) {
         const completedChanges = await applyValidationFallbacks(changes, repoContext, validation.errors);
         if (completedChanges !== changes && completedChanges.length <= repoConfig.security.max_files_changed) {
-          changes = completedChanges;
-          madeProgress = true;
-          validation = await validateGeneratedChanges(changes, repoContext, repoConfig, implementationPlan, feedbackText);
+          const completedValidation = await validateGeneratedChanges(
+            completedChanges,
+            repoContext,
+            repoConfig,
+            implementationPlan,
+            feedbackText
+          );
+          const progress = assessRepairProgress(changes, completedChanges, validation.errors, completedValidation.errors);
+          logger.info({ repairProgress: progress, feedbackId: classifiedFeedback.id }, "Assessed deterministic repair progress");
+          if (progress.accepted) {
+            changes = completedChanges;
+            madeProgress = true;
+            validation = completedValidation;
+          }
         }
       }
 
@@ -355,9 +378,13 @@ export class FeedbackPipelineWorker {
 
           if (completeRepairedValidation.valid) {
             const repairedVerification = await runVerificationCommands(candidateChanges, repoContext, implementationPlan);
-            changes = candidateChanges;
-            validation = completeRepairedValidation;
-            verification = repairedVerification;
+            const progress = assessRepairProgress(changes, candidateChanges, verification.errors, repairedVerification.errors);
+            logger.info({ repairProgress: progress, feedbackId: classifiedFeedback.id }, "Assessed verification repair progress");
+            if (progress.accepted) {
+              changes = candidateChanges;
+              validation = completeRepairedValidation;
+              verification = repairedVerification;
+            }
           }
         }
       } catch (error) {

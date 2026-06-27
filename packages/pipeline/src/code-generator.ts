@@ -501,7 +501,7 @@ const VALIDATION_REPAIR_ROUTES: ValidationRepairRoute[] = [
   },
   {
     match: hasFrontendVerificationFailure,
-    instruction: "Return only a repaired <changes> payload focused on the failing frontend verification assertions. Treat the reported selectors, ids, classes, text, attributes, counts, and runtime errors as binding executable contracts; update the smallest matching HTML, CSS, and JS hooks needed.",
+    instruction: "Return only a repaired <changes> payload focused on the failing frontend verification assertions. Treat the reported selectors, ids, classes, text, attributes, counts, and runtime errors as binding executable contracts. Map existing generated elements to the required selector alternatives before redesigning the implementation; update the smallest matching HTML, CSS, and JS hooks needed and preserve unrelated page content.",
     maxTokens: focusedValidationRepairMaxTokens,
     timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
   },

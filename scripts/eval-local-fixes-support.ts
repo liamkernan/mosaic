@@ -75,6 +75,23 @@ export interface GeneratedPathPolicy {
   generatedTestPathPrefixes: string[];
 }
 
+export interface FrontendRepairRequirement {
+  assertion: string;
+  action: "click" | "keyboard_activate" | "assert" | "runtime";
+  selectorAlternatives: string[];
+  expectation: {
+    kind: "exists" | "text_includes" | "attribute_equals" | "class_any" | "min_count" | "no_runtime_errors";
+    value?: string | number;
+    attribute?: string;
+    values?: string[];
+  };
+  actual: Record<string, unknown>;
+}
+
+export function formatFrontendRepairRequirement(requirement: FrontendRepairRequirement): string {
+  return `Frontend repair requirement: ${JSON.stringify(requirement)}`;
+}
+
 function pathMatches(path: string, exactPaths: Set<string>, prefixes: string[]): boolean {
   return exactPaths.has(path) || prefixes.some((prefix) => path.startsWith(prefix));
 }

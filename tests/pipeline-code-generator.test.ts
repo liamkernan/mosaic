@@ -537,11 +537,13 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
   });
 
   it("uses focused frontend verification repair instructions for selector assertion failures", async () => {
+    let capturedSystemPrompt = "";
     let capturedUserMessage = "";
     let capturedTimeoutMs = 0;
     const fakeClient = {
       setUsageContext: () => {},
-      complete: async (_systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
+      complete: async (systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
+        capturedSystemPrompt = systemPrompt;
         capturedUserMessage = userMessage;
         capturedTimeoutMs = options.timeoutMs ?? 0;
         return `<changes>
@@ -583,13 +585,25 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
         {
           filePath: "index.html",
           originalContent: "<main></main>",
-          modifiedContent: "<main></main>",
+          modifiedContent: '<main><div id="colModalOverlay"></div></main>',
           explanation: "incomplete modal"
         }
       ],
       [
-        "Verification failed: Kitchen collection opens a populated modal: expected element not found: #collectionModalOverlay",
-        "Verification failed: Kitchen collection opens a populated modal: expected at least 2 matches for #collectionModalProducts > *, found 0"
+        "Verification failed: Frontend repair requirement: " + JSON.stringify({
+          assertion: "Kitchen collection opens a populated modal",
+          action: "assert",
+          selectorAlternatives: ["#collectionModalOverlay", "#modal-kitchen"],
+          expectation: { kind: "class_any", values: ["is-open", "active"] },
+          actual: { matchCount: 0 }
+        }),
+        "Verification failed: Frontend repair requirement: " + JSON.stringify({
+          assertion: "Kitchen collection opens a populated modal",
+          action: "assert",
+          selectorAlternatives: ["#collectionModalProducts > *"],
+          expectation: { kind: "min_count", value: 2 },
+          actual: { matchCount: 0 }
+        })
       ],
       undefined,
       { completeSolution: true }
@@ -597,6 +611,9 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
 
     expect(capturedUserMessage).toContain("failing frontend verification assertions");
     expect(capturedUserMessage).toContain("selectors, ids, classes, text, attributes, counts");
+    expect(capturedUserMessage).toContain("Map existing generated elements to the required selector alternatives");
+    expect(capturedSystemPrompt).toContain('id="colModalOverlay"');
+    expect(capturedSystemPrompt).toContain('"selectorAlternatives":["#collectionModalOverlay","#modal-kitchen"]');
     expect(capturedTimeoutMs).toBe(120_000);
   });
 

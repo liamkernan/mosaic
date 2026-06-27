@@ -8,6 +8,7 @@ import {
   EvalBudget,
   assertGeneratedPathsAllowed,
   calculateUsageCostUsd,
+  formatFrontendRepairRequirement,
   partitionVisibleContext,
   runEvalCaseBatch,
   validateUnchangedPythonSymbols,
@@ -195,5 +196,37 @@ describe("local fix evaluation harness", () => {
     }, ["list_requests", "close_request"])).toEqual([
       "Unrelated protected symbol changed in service.py: list_requests"
     ]);
+  });
+
+  it("serializes frontend selector failures as a typed repair requirement", () => {
+    const error = formatFrontendRepairRequirement({
+      assertion: "Kitchen collection opens a populated modal",
+      action: "assert",
+      selectorAlternatives: ["#collectionModalOverlay", "#modal-kitchen"],
+      expectation: {
+        kind: "class_any",
+        values: ["is-open", "active"]
+      },
+      actual: {
+        matchCount: 1,
+        classes: ["col-modal-overlay"]
+      }
+    });
+
+    expect(error).toBe(
+      "Frontend repair requirement: " + JSON.stringify({
+        assertion: "Kitchen collection opens a populated modal",
+        action: "assert",
+        selectorAlternatives: ["#collectionModalOverlay", "#modal-kitchen"],
+        expectation: {
+          kind: "class_any",
+          values: ["is-open", "active"]
+        },
+        actual: {
+          matchCount: 1,
+          classes: ["col-modal-overlay"]
+        }
+      })
+    );
   });
 });

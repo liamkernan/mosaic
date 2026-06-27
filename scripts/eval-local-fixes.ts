@@ -15,6 +15,7 @@ import {
   shouldUseAdvisorTool
 } from "../packages/pipeline/src/model-routing.js";
 import { pruneChangesToPlanScope, validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
+import { assessRepairProgress } from "../packages/pipeline/src/repair-progress.js";
 import { RepoIndexer } from "../packages/pipeline/src/repo-indexer.js";
 import { validate } from "../packages/pipeline/src/validator.js";
 import { applyValidationFallbacks } from "../packages/pipeline/src/validation-repair.js";
@@ -34,11 +35,13 @@ import {
   assertGeneratedPathsAllowed,
   calculateUsageCostUsd,
   estimateMaximumCallCostUsd,
+  formatFrontendRepairRequirement,
   partitionVisibleContext,
   runEvalCaseBatch,
   writeCaseArtifacts,
   writeEvalReport,
   type EvalBatchResult,
+  type FrontendRepairRequirement,
   type ModelPricing,
   validateUnchangedPythonSymbols
 } from "./eval-local-fixes-support.js";
@@ -550,6 +553,10 @@ function selectorLabel(selector: string | string[]): string {
   return Array.isArray(selector) ? selector.join(" OR ") : selector;
 }
 
+function selectorAlternatives(selector: string | string[]): string[] {
+  return Array.isArray(selector) ? selector : [selector];
+}
+
 function querySelector(document: Document, selector: string | string[]): Element | null {
   const selectors = Array.isArray(selector) ? selector : [selector];
   for (const candidate of selectors) {
@@ -651,34 +658,79 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
   }
   await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
 
-  const assertExpectations = (assertion: FrontendAssertion, label: string): void => {
+  const addRequirement = (requirement: FrontendRepairRequirement): void => {
+    errors.push(formatFrontendRepairRequirement(requirement));
+  };
+
+  const assertExpectations = (
+    assertion: FrontendAssertion,
+    action: "assert" | "keyboard_activate"
+  ): void => {
     for (const expectation of assertion.expect) {
       const elements = querySelectorAll(dom.window.document, expectation.selector);
+      const selectors = selectorAlternatives(expectation.selector);
       if (isCountExpectation(expectation)) {
         if (elements.length < expectation.minCount) {
-          errors.push(`${label}: expected at least ${expectation.minCount} matches for ${selectorLabel(expectation.selector)}, found ${elements.length}`);
+          addRequirement({
+            assertion: assertion.name,
+            action,
+            selectorAlternatives: selectors,
+            expectation: { kind: "min_count", value: expectation.minCount },
+            actual: { matchCount: elements.length }
+          });
         }
         continue;
       }
 
       const element = elements[0];
       if (!element) {
-        errors.push(`${label}: expected element not found: ${selectorLabel(expectation.selector)}`);
+        addRequirement({
+          assertion: assertion.name,
+          action,
+          selectorAlternatives: selectors,
+          expectation: { kind: "exists" },
+          actual: { matchCount: 0 }
+        });
         continue;
       }
 
       if (isTextExpectation(expectation)) {
         const text = element.textContent ?? "";
         if (!text.includes(expectation.textIncludes)) {
-          errors.push(`${label}: ${selectorLabel(expectation.selector)} text did not include ${JSON.stringify(expectation.textIncludes)}`);
+          addRequirement({
+            assertion: assertion.name,
+            action,
+            selectorAlternatives: selectors,
+            expectation: { kind: "text_includes", value: expectation.textIncludes },
+            actual: { matchCount: elements.length, text }
+          });
         }
       } else if (isAttributeExpectation(expectation)) {
         const actual = element.getAttribute(expectation.attribute);
         if (actual !== expectation.equals) {
-          errors.push(`${label}: ${selectorLabel(expectation.selector)} expected ${expectation.attribute}=${JSON.stringify(expectation.equals)}, got ${JSON.stringify(actual)}`);
+          addRequirement({
+            assertion: assertion.name,
+            action,
+            selectorAlternatives: selectors,
+            expectation: {
+              kind: "attribute_equals",
+              attribute: expectation.attribute,
+              value: expectation.equals
+            },
+            actual: { matchCount: elements.length, value: actual }
+          });
         }
       } else if (isClassExpectation(expectation) && !hasExpectedClass(element, expectation.hasClass)) {
-        errors.push(`${label}: ${selectorLabel(expectation.selector)} missing class ${selectorLabel(expectation.hasClass)}`);
+        addRequirement({
+          assertion: assertion.name,
+          action,
+          selectorAlternatives: selectors,
+          expectation: {
+            kind: "class_any",
+            values: selectorAlternatives(expectation.hasClass)
+          },
+          actual: { matchCount: elements.length, classes: [...element.classList] }
+        });
       }
     }
   };
@@ -687,26 +739,44 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
     try {
       const clickable = querySelector(dom.window.document, assertion.click);
       if (!clickable) {
-        errors.push(`${assertion.name}: click target not found: ${selectorLabel(assertion.click)}`);
+        addRequirement({
+          assertion: assertion.name,
+          action: "click",
+          selectorAlternatives: selectorAlternatives(assertion.click),
+          expectation: { kind: "exists" },
+          actual: { matchCount: 0 }
+        });
         continue;
       }
 
       if (shouldAssertKeyboardActivation(clickable)) {
         clickable.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
         await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
-        assertExpectations(assertion, `${assertion.name} keyboard activation`);
+        assertExpectations(assertion, "keyboard_activate");
       }
 
       clickable.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
       await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
-      assertExpectations(assertion, assertion.name);
+      assertExpectations(assertion, "assert");
     } catch (error) {
-      errors.push(`${assertion.name}: frontend assertion crashed: ${error instanceof Error ? error.message : String(error)}`);
+      addRequirement({
+        assertion: assertion.name,
+        action: "runtime",
+        selectorAlternatives: [],
+        expectation: { kind: "no_runtime_errors" },
+        actual: { error: error instanceof Error ? error.message : String(error) }
+      });
     }
   }
 
   if (runtimeErrors.length > 0) {
-    errors.push(`Frontend runtime errors: ${runtimeErrors.join("; ")}`);
+    addRequirement({
+      assertion: "Frontend runtime",
+      action: "runtime",
+      selectorAlternatives: [],
+      expectation: { kind: "no_runtime_errors" },
+      actual: { errors: runtimeErrors }
+    });
   }
 
   dom.window.close();
@@ -816,6 +886,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     verificationHistory.push({ stage: "initial", errors: verificationErrors });
     await persistArtifacts();
     if (verificationErrors.length > 0) {
+      const preRepairChanges = changes;
       const repairedChanges = await repairVerificationFailure(
         generator,
         classifiedFeedback,
@@ -828,16 +899,31 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
         (stage, validationErrors) => validationHistory.push({ stage, errors: validationErrors })
       );
       if (repairedChanges.length > 0) {
-        changes = repairedChanges;
-        assertGeneratedPathsAllowed(changes.map((change) => change.filePath), {
+        assertGeneratedPathsAllowed(repairedChanges.map((change) => change.filePath), {
           oraclePaths: evalCase.oracleTestPaths ?? [],
           oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
           generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
         });
-        await writeGeneratedChanges(repoPath, changes);
+        await writeGeneratedChanges(repoPath, repairedChanges);
         repoContext.fileTree = await buildFileTree(repoPath);
-        verificationErrors = await runVerification(evalCase, repoPath, changes);
-        verificationHistory.push({ stage: "verification-repair", errors: verificationErrors });
+        const repairedVerificationErrors = await runVerification(evalCase, repoPath, repairedChanges);
+        const progress = assessRepairProgress(
+          preRepairChanges,
+          repairedChanges,
+          verificationErrors,
+          repairedVerificationErrors
+        );
+        verificationHistory.push({
+          stage: `verification-repair-${progress.trend}`,
+          errors: repairedVerificationErrors
+        });
+        if (progress.accepted) {
+          changes = repairedChanges;
+          verificationErrors = repairedVerificationErrors;
+        } else {
+          await writeGeneratedChanges(repoPath, preRepairChanges);
+          repoContext.fileTree = await buildFileTree(repoPath);
+        }
         await persistArtifacts();
       }
     }
@@ -854,6 +940,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   );
 
   if (options.generate && checkErrors.length > 0) {
+    const preRepairChanges = changes;
     const fileTree = repoIndexer.fileTreeToPaths(repoContext);
     const planner = new ImplementationPlanner(createEvalLlmClient(planningModel, telemetry, "check-repair-planning", advisorTool));
     const repairedImplementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
@@ -872,28 +959,43 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
       (stage, validationErrors) => validationHistory.push({ stage, errors: validationErrors })
     );
     if (repairedChanges.length > 0) {
-      changes = repairedChanges;
-      assertGeneratedPathsAllowed(changes.map((change) => change.filePath), {
+      assertGeneratedPathsAllowed(repairedChanges.map((change) => change.filePath), {
         oraclePaths: evalCase.oracleTestPaths ?? [],
         oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
         generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
       });
-      await writeGeneratedChanges(repoPath, changes);
+      await writeGeneratedChanges(repoPath, repairedChanges);
       repoContext.fileTree = await buildFileTree(repoPath);
-      const repairedVerificationErrors = await runVerification(evalCase, repoPath, changes);
-      verificationHistory.push({ stage: "check-repair", errors: repairedVerificationErrors });
-      await persistArtifacts();
-      errors.push(...repairedVerificationErrors);
-      checkErrors = repairedVerificationErrors.length > 0
+      const repairedVerificationErrors = await runVerification(evalCase, repoPath, repairedChanges);
+      const repairedCheckErrors = repairedVerificationErrors.length > 0
         ? checkErrors
         : await evaluateChecks(
             evalCase,
             repoPath,
             referenceFiles.map((file) => file.path),
             relevantFiles.map((file) => file.path),
-            changes,
+            repairedChanges,
             generated
           );
+      const progress = assessRepairProgress(
+        preRepairChanges,
+        repairedChanges,
+        checkErrors,
+        [...repairedVerificationErrors, ...repairedCheckErrors]
+      );
+      verificationHistory.push({
+        stage: `check-repair-${progress.trend}`,
+        errors: [...repairedVerificationErrors, ...repairedCheckErrors]
+      });
+      await persistArtifacts();
+      if (progress.accepted) {
+        changes = repairedChanges;
+        errors.push(...repairedVerificationErrors);
+        checkErrors = repairedCheckErrors;
+      } else {
+        await writeGeneratedChanges(repoPath, preRepairChanges);
+        repoContext.fileTree = await buildFileTree(repoPath);
+      }
     }
   }
 
@@ -973,19 +1075,24 @@ async function generateValidatedChanges(
         }
       );
       if (repairedChanges.length > 0) {
-        changes = validation.errors.some((error) => oversizedPatchPattern.test(error) || scopeValidationPattern.test(error))
+        const candidateChanges = validation.errors.some((error) => oversizedPatchPattern.test(error) || scopeValidationPattern.test(error))
           ? repairedChanges
           : mergeGeneratedChanges(changes, repairedChanges);
-        madeProgress = true;
-        validation = await validate(changes, repoContext);
-        const repairedPlanErrors = validatePlanCompletion(changes, implementationPlan, feedbackText);
+        let candidateValidation = await validate(candidateChanges, repoContext);
+        const repairedPlanErrors = validatePlanCompletion(candidateChanges, implementationPlan, feedbackText);
         if (repairedPlanErrors.length > 0) {
-          validation = {
+          candidateValidation = {
             valid: false,
-            errors: [...validation.errors, ...repairedPlanErrors]
+            errors: [...candidateValidation.errors, ...repairedPlanErrors]
           };
         }
-        recordValidation(`model-repair-${attempt + 1}`, validation.errors);
+        const progress = assessRepairProgress(changes, candidateChanges, validation.errors, candidateValidation.errors);
+        recordValidation(`model-repair-${progress.trend}-${attempt + 1}`, candidateValidation.errors);
+        if (progress.accepted) {
+          changes = candidateChanges;
+          madeProgress = true;
+          validation = candidateValidation;
+        }
       }
     } catch (error) {
       if (!isRecoverableLlmFailure(error)) {
@@ -996,17 +1103,21 @@ async function generateValidatedChanges(
     if (!validation.valid) {
       const completedChanges = await applyValidationFallbacks(changes, repoContext, validation.errors);
       if (completedChanges !== changes) {
-        changes = completedChanges;
-        madeProgress = true;
-        validation = await validate(changes, repoContext);
-        const completedPlanErrors = validatePlanCompletion(changes, implementationPlan, feedbackText);
+        let completedValidation = await validate(completedChanges, repoContext);
+        const completedPlanErrors = validatePlanCompletion(completedChanges, implementationPlan, feedbackText);
         if (completedPlanErrors.length > 0) {
-          validation = {
+          completedValidation = {
             valid: false,
-            errors: [...validation.errors, ...completedPlanErrors]
+            errors: [...completedValidation.errors, ...completedPlanErrors]
           };
         }
-        recordValidation(`deterministic-repair-${attempt + 1}`, validation.errors);
+        const progress = assessRepairProgress(changes, completedChanges, validation.errors, completedValidation.errors);
+        recordValidation(`deterministic-repair-${progress.trend}-${attempt + 1}`, completedValidation.errors);
+        if (progress.accepted) {
+          changes = completedChanges;
+          madeProgress = true;
+          validation = completedValidation;
+        }
       }
     }
 
@@ -1058,6 +1169,16 @@ async function repairVerificationFailure(
   }
 
   repairedChanges = mergeGeneratedChanges(currentChanges, repairedChanges);
+  const scopeProgress = assessRepairProgress(
+    currentChanges,
+    repairedChanges,
+    verificationErrors,
+    verificationErrors
+  );
+  if (!scopeProgress.accepted) {
+    recordValidation(`verification-repair-${scopeProgress.trend}`, verificationErrors);
+    return [];
+  }
 
   const feedbackText = `${feedback.summary}\n${feedback.rawContent}`;
   let validation = await validate(repairedChanges, repoContext);
