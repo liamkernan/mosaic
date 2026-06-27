@@ -24,6 +24,7 @@ does not claim that a generated fix passes its product oracle.
 | Exact local usage telemetry | Disabled | Enabled; dry-run totals are 0 tokens / $0 |
 | SLA case visible context | 9 files in the pre-fix smoke measurement | 3 files (66.7% reduction) |
 | All-case visible context | Not recorded | 26 files total, 3.7 per case average |
+| Medium/large repository coverage | Unavailable | Storybook pinned case completes offline; 7 visible files |
 
 ## Changes kept
 
@@ -52,6 +53,9 @@ does not claim that a generated fix passes its product oracle.
 - Generated tests are restricted to approved `tests/generated/` paths.
 - Promoted issues no longer retrieve sibling numbered issue specifications or
   their reported tests.
+- Promoted issues in large monorepos restrict nested references to the relevant
+  package scope or top-level conventions. The pinned Storybook case dropped
+  from 12 visible files to 7 (41.7%) without losing its four required files.
 - Configured protected Python functions reject unrelated semantic changes even
   when the changed file itself is allowed. The four backend cases protect the
   known unrelated request-creation, sorting, closing, and metrics behaviors.
@@ -86,7 +90,7 @@ The final full local gate run passed:
 ```text
 pnpm lint       PASS
 pnpm typecheck  PASS
-pnpm test       PASS: 229 tests, 3 pre-existing skips
+pnpm test       PASS: 230 tests, 3 pre-existing skips
 pnpm build      PASS: all workspace packages
 ```
 
@@ -137,8 +141,8 @@ maximum would exceed the remaining authorization.
    done, improvement over 2/7 is not proven.
 2. Generalize protected-symbol semantic scope checks beyond the configured
    Python baseline cases.
-3. Restore or replace the pinned medium/large repository case before drawing
-   conclusions about production-scale retrieval or cost.
+3. Include the now-available pinned Storybook case in both paid routing modes;
+   its offline retrieval is verified, but generated-fix quality and cost are not.
 4. Run repeated trials after the first pinned comparison passes local gates;
    report raw trials, pass@1, scope violations, latency, advisor use, and cost.
 

@@ -51,6 +51,7 @@ const stopWords = new Set([
   "while",
   "would"
 ]);
+const genericPathTerms = new Set(["addon", "addons", "code", "lib", "package", "packages", "src", "test", "tests"]);
 
 function detectLanguage(filePath: string): string | undefined {
   const dotIndex = filePath.lastIndexOf(".");
@@ -239,6 +240,22 @@ function referencedIssueNumber(name: string): number | undefined {
   }
   const value = Number(match[1]);
   return Number.isSafeInteger(value) ? value : undefined;
+}
+
+function sharesRelevantPackageScope(candidatePath: string, relevantPaths: string[]): boolean {
+  const candidateSegments = candidatePath.toLowerCase().split("/");
+  return relevantPaths.some((relevantPath) => {
+    const relevantSegments = relevantPath.toLowerCase().split("/");
+    const requiredSegments = relevantSegments[0] === "packages"
+      ? 2
+      : relevantSegments[0] === "code" && relevantSegments.length >= 4
+        ? 3
+        : Math.min(2, Math.max(1, relevantSegments.length - 1));
+    if (candidateSegments.length < requiredSegments || relevantSegments.length < requiredSegments) {
+      return false;
+    }
+    return relevantSegments.slice(0, requiredSegments).every((segment, index) => candidateSegments[index] === segment);
+  });
 }
 
 function isLikelyReferencePath(lowerPath: string, name: string): boolean {
@@ -475,7 +492,9 @@ export class RepoIndexer {
     options: { issueNumber?: number } = {}
   ): Promise<RelevantFile[]> {
     const fileTree = this.fileTreeToPaths(context);
-    const terms = tokenizeForSearch(`${classified.rawContent}\n${classified.summary}`);
+    const repositoryNameTerms = new Set(tokenizeForSearch(context.fullName.replace("/", " ")));
+    const terms = tokenizeForSearch(`${classified.rawContent}\n${classified.summary}`)
+      .filter((term) => !repositoryNameTerms.has(term));
     const issuePattern = options.issueNumber ? issueNumberPattern(options.issueNumber) : undefined;
     const rankedPaths = rankReferencePaths(fileTree, terms, issuePattern);
 
@@ -503,7 +522,22 @@ export class RepoIndexer {
       );
 
       if (loadedFile) {
-        const exactIssueMatch = issuePattern?.test(candidate.name) ?? false;
+        const exactIssueMatch = (issuePattern?.test(candidate.name) ?? false) ||
+          (options.issueNumber !== undefined && candidateIssueNumber === options.issueNumber);
+        const topLevelConvention = repoReferenceNames.has(candidate.name) && !candidate.path.includes("/");
+        if (options.issueNumber !== undefined &&
+            !exactIssueMatch &&
+            !topLevelConvention &&
+            !sharesRelevantPackageScope(candidate.path, classified.relevantFiles)) {
+          continue;
+        }
+        const genericNestedReadme = repoReferenceNames.has(candidate.name) && candidate.path.includes("/");
+        const pathMatches = terms.some((term) =>
+          !genericPathTerms.has(term) && candidate.path.toLowerCase().includes(term)
+        );
+        if (genericNestedReadme && !pathMatches) {
+          continue;
+        }
         const contentMatchRequired = !exactIssueMatch && !repoReferenceNames.has(candidate.name) && candidate.score < 10;
         if (contentMatchRequired) {
           const lowerContent = loadedFile.content.toLowerCase();

@@ -227,6 +227,60 @@ describe("RepoIndexer repository references", () => {
     expect(references[0]?.reason).toContain("issue #42");
   });
 
+  it("excludes generic nested READMEs while retaining path-relevant package documentation", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
+    tempDirs.push(localPath);
+    await mkdir(join(localPath, "docs", "react"), { recursive: true });
+    await mkdir(join(localPath, "code", "addons", "vitest"), { recursive: true });
+    await writeFile(join(localPath, "README.md"), "# Storybook\n", "utf8");
+    await writeFile(join(localPath, "docs", "react", "README.md"), "# Storybook React documentation\n", "utf8");
+    await writeFile(
+      join(localPath, "docs", "react", "Files.tsx"),
+      "export const note = 'browser context';\n",
+      "utf8"
+    );
+    await writeFile(
+      join(localPath, "code", "addons", "vitest", "README.md"),
+      "# Vitest addon browser context\n",
+      "utf8"
+    );
+
+    const references = await new RepoIndexer().findRepositoryReferenceFiles(
+      {
+        fullName: "storybookjs/storybook",
+        defaultBranch: "main",
+        localPath,
+        installationId: 1,
+        fileTree: [
+          { path: "README.md", type: "file", language: "markdown" },
+          { path: "docs/react/README.md", type: "file", language: "markdown" },
+          { path: "docs/react/Files.tsx", type: "file", language: "typescript" },
+          { path: "code/addons/vitest/README.md", type: "file", language: "markdown" }
+        ]
+      },
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "The Storybook Vitest addon imports browser context outside browser mode.",
+        senderIdentifier: "user@example.com",
+        repoFullName: "storybookjs/storybook",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Fix Storybook Vitest browser context loading",
+        relevantFiles: ["code/addons/vitest/src/test-utils.ts"],
+        confidence: 0.8
+      },
+      { issueNumber: 32444 }
+    );
+
+    expect(references.map((file) => file.path)).toEqual([
+      "code/addons/vitest/README.md",
+      "README.md"
+    ]);
+  });
+
   it("does not read classifier or requested files outside the repository root", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
     const outsidePath = await mkdtemp(join(tmpdir(), "mosaic-repo-outside-"));
