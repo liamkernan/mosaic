@@ -70,6 +70,14 @@ does not claim that a generated fix passes its product oracle.
 - Existing accessibility validation was not weakened. Current generation and
   repair prompts continue to prefer native controls and require complete
   keyboard behavior for non-native interactive elements.
+- Production and eval repair loops now classify repair progress as reduced,
+  preserved, or increased. Repairs that add files, introduce validation/error
+  categories, or increase error counts are rejected; failed verification
+  repairs restore the prior candidate.
+- Frontend assertion failures now emit compact JSON repair requirements with
+  the action, selector alternatives, expected state/text/class/attribute/count,
+  and actual observations. Focused repair maps existing generated elements to
+  those selectors before redesigning and preserves unrelated page content.
 
 ## Deterministic verification
 
@@ -78,7 +86,7 @@ The final full local gate run passed:
 ```text
 pnpm lint       PASS
 pnpm typecheck  PASS
-pnpm test       PASS: 216 tests, 3 pre-existing skips
+pnpm test       PASS: 229 tests, 3 pre-existing skips
 pnpm build      PASS: all workspace packages
 ```
 
@@ -86,7 +94,8 @@ Focused regressions cover case exception continuation, timeout continuation,
 JSON reporting, artifact persistence, immutable/hidden oracles, approved
 generated-test paths, local usage observation, budget preauthorization, exact
 token-cost calculation, sibling issue exclusion, endpoint plan repair,
-protected-symbol scope violations, and zero/multiple-match edit re-anchoring.
+protected-symbol scope violations, zero/multiple-match edit re-anchoring,
+repair convergence rejection, and typed frontend selector adaptation.
 
 Milestones:
 
@@ -100,7 +109,7 @@ Milestones:
 | SLA repair wandered and retained a failing patch | Sibling context excluded; unrelated functions protected | Needs paid rerun |
 | Passing backend patches changed unrelated behaviors | Protected-symbol scope oracle rejects the observed cross-fixes | Needs paid rerun |
 | Metrics test fell outside planner scope | Endpoint preflight and one plan repair require unit/handler test work | Needs paid rerun |
-| Collections repair missed DOM contract | Existing focused frontend verification repair remains; no new live evidence | Unresolved live |
+| Collections repair missed DOM contract | Typed selector/state/count repair payload and existing-element adaptation added | Needs paid rerun |
 | Journal cards violated keyboard accessibility | Strict validation and native-control generation contract preserved | Unresolved live |
 | Product-details edit had zero exact matches | Bounded structured-edit re-anchoring added | Needs paid rerun |
 | Aggregate run aborted | Per-case child isolation and structured failures added | Resolved offline |
@@ -127,15 +136,10 @@ maximum would exceed the remaining authorization.
    identical direct-Sonnet and production-quality/advisor trials. Until this is
    done, improvement over 2/7 is not proven.
 2. Generalize protected-symbol semantic scope checks beyond the configured
-   Python baseline cases and reject repairs that introduce new error categories
-   or unjustified planned files.
-3. Convert frontend assertion output into a typed repair payload and add a
-   deterministic selector-adaptation fixture for the collections case.
-4. Add explicit repair convergence scoring and restart from the base candidate
-   when validation error classes or semantic scope increase.
-5. Restore or replace the pinned medium/large repository case before drawing
+   Python baseline cases.
+3. Restore or replace the pinned medium/large repository case before drawing
    conclusions about production-scale retrieval or cost.
-6. Run repeated trials after the first pinned comparison passes local gates;
+4. Run repeated trials after the first pinned comparison passes local gates;
    report raw trials, pass@1, scope violations, latency, advisor use, and cost.
 
 The highest-value immediate step is the budget-authorized pinned comparison.
