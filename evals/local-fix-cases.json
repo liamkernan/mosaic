@@ -21,6 +21,9 @@
     ],
     "oracleTestPathPrefixes": ["tests/reported/", "tests/smoke/"],
     "generatedTestPathPrefixes": ["tests/generated/"],
+    "unchangedPythonSymbols": {
+      "mosaic_demo/service.py": ["create_request", "close_request"]
+    },
     "requiredChangedFilePatterns": [
       "mosaic_demo/service.py",
       "tests/"
@@ -57,6 +60,9 @@
     ],
     "oracleTestPathPrefixes": ["tests/reported/", "tests/smoke/"],
     "generatedTestPathPrefixes": ["tests/generated/"],
+    "unchangedPythonSymbols": {
+      "mosaic_demo/service.py": ["list_requests", "close_request"]
+    },
     "requiredChangedFilePatterns": [
       "mosaic_demo/service.py",
       "tests/"
@@ -87,6 +93,9 @@
     ],
     "oracleTestPathPrefixes": ["tests/reported/", "tests/smoke/"],
     "generatedTestPathPrefixes": ["tests/generated/"],
+    "unchangedPythonSymbols": {
+      "mosaic_demo/service.py": ["create_request", "list_requests"]
+    },
     "requiredChangedFilePatterns": [
       "mosaic_demo/service.py",
       "tests/"
@@ -123,6 +132,9 @@
     ],
     "oracleTestPathPrefixes": ["tests/reported/", "tests/smoke/"],
     "generatedTestPathPrefixes": ["tests/generated/"],
+    "unchangedPythonSymbols": {
+      "mosaic_demo/service.py": ["create_request", "list_requests", "close_request"]
+    },
     "requiredChangedFilePatterns": [
       "mosaic_demo/service.py",
       "mosaic_demo/web.py",

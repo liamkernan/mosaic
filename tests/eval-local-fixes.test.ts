@@ -10,6 +10,7 @@ import {
   calculateUsageCostUsd,
   partitionVisibleContext,
   runEvalCaseBatch,
+  validateUnchangedPythonSymbols,
   writeCaseArtifacts,
   writeEvalReport
 } from "../scripts/eval-local-fixes-support.js";
@@ -169,5 +170,30 @@ describe("local fix evaluation harness", () => {
       cacheReadUsdPerMillion: 0.3,
       cacheCreationUsdPerMillion: 3.75
     })).toBeCloseTo(5.4, 10);
+  });
+
+  it("rejects unrelated Python behavior changes inside an allowed file", () => {
+    const originalContent = [
+      "def create_request():",
+      "    return 'created'",
+      "",
+      "def list_requests():",
+      "    return 'created_at'",
+      "",
+      "def close_request():",
+      "    return 'updated'",
+      ""
+    ].join("\n");
+    const modifiedContent = originalContent
+      .replace("return 'created'", "return 'idempotent'")
+      .replace("return 'created_at'", "return 'sla_due_at'");
+
+    expect(validateUnchangedPythonSymbols({
+      filePath: "service.py",
+      originalContent,
+      modifiedContent
+    }, ["list_requests", "close_request"])).toEqual([
+      "Unrelated protected symbol changed in service.py: list_requests"
+    ]);
   });
 });

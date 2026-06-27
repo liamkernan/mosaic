@@ -9,6 +9,11 @@ import { CodeGenerator, scopeValidationPattern } from "../packages/pipeline/src/
 import { mergeGeneratedChanges } from "../packages/pipeline/src/change-set.js";
 import { FeedbackClassifier } from "../packages/pipeline/src/classifier.js";
 import { ImplementationPlanner, type ImplementationPlan } from "../packages/pipeline/src/implementation-planner.js";
+import {
+  selectGenerationModelTier,
+  selectPlanningModelTier,
+  shouldUseAdvisorTool
+} from "../packages/pipeline/src/model-routing.js";
 import { pruneChangesToPlanScope, validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
 import { RepoIndexer } from "../packages/pipeline/src/repo-indexer.js";
 import { validate } from "../packages/pipeline/src/validator.js";
@@ -18,7 +23,9 @@ import { LLMError } from "../packages/core/src/errors.js";
 import type { ClassifiedFeedback, ComplexityLevel, FeedbackCategory, FeedbackSource, FileNode, GeneratedChange, RepoContext } from "../packages/core/src/types.js";
 import {
   ANTHROPIC_MODEL_IDS,
+  ANTHROPIC_ADVISOR_MODEL_ID,
   LLMClient,
+  type AdvisorToolOptions,
   type LLMRequestAuthorization,
   type LLMUsageObservation
 } from "../packages/llm/src/client.js";
@@ -32,7 +39,8 @@ import {
   writeCaseArtifacts,
   writeEvalReport,
   type EvalBatchResult,
-  type ModelPricing
+  type ModelPricing,
+  validateUnchangedPythonSymbols
 } from "./eval-local-fixes-support.js";
 
 const exec = promisify(execCallback);
@@ -78,6 +86,7 @@ interface EvalCase {
   oracleTestPaths?: string[];
   oracleTestPathPrefixes?: string[];
   generatedTestPathPrefixes?: string[];
+  unchangedPythonSymbols?: Record<string, string[]>;
 }
 
 interface FrontendAssertion {
@@ -102,6 +111,7 @@ interface EvalResult {
   errors: string[];
   artifactPath: string;
   usage?: EvalUsageSummary;
+  scopeViolations?: string[];
 }
 
 interface EvalUsageCall extends LLMUsageObservation {
@@ -140,6 +150,7 @@ function parseArgs(argv: string[]): {
   resultPath?: string;
   maxCostUsd?: number;
   pricingPath?: string;
+  preset: "direct" | "balanced" | "quality";
 } {
   const runTimestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const args = {
@@ -155,7 +166,8 @@ function parseArgs(argv: string[]): {
     internalCase: undefined as string | undefined,
     resultPath: undefined as string | undefined,
     maxCostUsd: undefined as number | undefined,
-    pricingPath: undefined as string | undefined
+    pricingPath: undefined as string | undefined,
+    preset: "direct" as "direct" | "balanced" | "quality"
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -196,6 +208,12 @@ function parseArgs(argv: string[]): {
       }
     } else if (arg === "--pricing") {
       args.pricingPath = resolve(argv[++index]);
+    } else if (arg === "--preset") {
+      const preset = argv[++index];
+      if (preset !== "direct" && preset !== "balanced" && preset !== "quality") {
+        throw new Error("--preset must be direct, balanced, or quality");
+      }
+      args.preset = preset;
     } else if (arg === "--") {
       continue;
     } else {
@@ -272,13 +290,15 @@ async function copyRepoAtRef(sourceRepo: string, baseRef: string): Promise<strin
 function createEvalLlmClient(
   model: keyof typeof ANTHROPIC_MODEL_IDS,
   telemetry?: EvalTelemetry,
-  phase = "unspecified"
+  phase = "unspecified",
+  advisorTool?: AdvisorToolOptions
 ): LLMClient {
   const env = getEnv();
   return new LLMClient({
     mode: "platform",
     platformApiKey: env.ANTHROPIC_API_KEY,
     model: ANTHROPIC_MODEL_IDS[model],
+    advisorTool,
     disableUsageTracking: true,
     authorizeRequest: telemetry?.authorize,
     observeUsage: telemetry ? (event) => telemetry.observe(phase, event) : undefined
@@ -472,6 +492,11 @@ async function evaluateChecks(
   }
 
   if (generated) {
+    for (const change of changes) {
+      const unchangedSymbols = evalCase.unchangedPythonSymbols?.[change.filePath] ?? [];
+      errors.push(...validateUnchangedPythonSymbols(change, unchangedSymbols));
+    }
+
     for (const pattern of evalCase.requiredChangedFilePatterns ?? []) {
       const patterns = Array.isArray(pattern) ? pattern : [pattern];
       const matched = [...changedFiles].some((filePath) =>
@@ -715,7 +740,20 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     classifiedFeedback = await classifier.classify(classifiedFeedback, repoIndexer.fileTreeToPaths(repoContext));
   }
 
+  const planningModel = options.preset === "direct" ? options.model : selectPlanningModelTier();
+  const generationModel = options.preset === "direct"
+    ? options.model
+    : selectGenerationModelTier(classifiedFeedback, options.preset);
+  const advisorTool = options.preset !== "direct" && shouldUseAdvisorTool(classifiedFeedback, options.preset)
+    ? { model: ANTHROPIC_ADVISOR_MODEL_ID, maxUses: 1 }
+    : undefined;
+
   let relevantFiles = await repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
+  relevantFiles = partitionVisibleContext(
+    relevantFiles,
+    evalCase.oracleTestPaths ?? [],
+    evalCase.oracleTestPathPrefixes ?? []
+  ).visible;
   const referenceFiles = await repoIndexer.findRepositoryReferenceFiles(repoContext, classifiedFeedback, {
     issueNumber: evalCase.issueNumber
   });
@@ -744,7 +782,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   if (options.generate) {
     generated = true;
     const fileTree = repoIndexer.fileTreeToPaths(repoContext);
-    const planner = new ImplementationPlanner(createEvalLlmClient(options.model, telemetry, "planning"));
+    const planner = new ImplementationPlanner(createEvalLlmClient(planningModel, telemetry, "planning", advisorTool));
     const plannedImplementation = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
     implementationPlan = plannedImplementation;
     const plannedFiles = await repoIndexer.readFiles(repoContext, plannedImplementation.requiredFiles);
@@ -756,7 +794,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     );
     relevantFiles = partitionedPlannedFiles.visible;
     await persistArtifacts();
-    const generator = new CodeGenerator(createEvalLlmClient(options.model, telemetry, "generation-and-repair"));
+    const generator = new CodeGenerator(createEvalLlmClient(generationModel, telemetry, "generation-and-repair", advisorTool));
     changes = await generateValidatedChanges(
       generator,
       classifiedFeedback,
@@ -817,11 +855,11 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
 
   if (options.generate && checkErrors.length > 0) {
     const fileTree = repoIndexer.fileTreeToPaths(repoContext);
-    const planner = new ImplementationPlanner(createEvalLlmClient(options.model, telemetry, "check-repair-planning"));
+    const planner = new ImplementationPlanner(createEvalLlmClient(planningModel, telemetry, "check-repair-planning", advisorTool));
     const repairedImplementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
     implementationPlan = repairedImplementationPlan;
     await persistArtifacts();
-    const generator = new CodeGenerator(createEvalLlmClient(options.model, telemetry, "check-repair"));
+    const generator = new CodeGenerator(createEvalLlmClient(generationModel, telemetry, "check-repair", advisorTool));
     const repairedChanges = await repairVerificationFailure(
       generator,
       classifiedFeedback,
@@ -872,7 +910,8 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     changedFiles: changes.map((change) => change.filePath),
     errors,
     artifactPath,
-    usage: telemetry?.snapshot()
+    usage: telemetry?.snapshot(),
+    scopeViolations: errors.filter((error) => error.startsWith("Unrelated protected symbol changed"))
   };
 }
 
@@ -1061,6 +1100,7 @@ function childArguments(options: ReturnType<typeof parseArgs>, evalCase: EvalCas
     "--cases", options.casesPath,
     "--repo-root", options.repoRoot,
     "--model", options.model,
+    "--preset", options.preset,
     "--case-timeout-ms", String(options.caseTimeoutMs),
     "--output-dir", options.outputDir,
     ...(options.maxCostUsd === undefined ? [] : ["--max-cost-usd", String(options.maxCostUsd)]),
@@ -1130,7 +1170,8 @@ function failedResult(evalCase: EvalCase, options: ReturnType<typeof parseArgs>,
     loadedFiles: [],
     changedFiles: [],
     errors: [error instanceof Error ? error.message : String(error)],
-    artifactPath: join(options.outputDir, evalCase.id)
+    artifactPath: join(options.outputDir, evalCase.id),
+    scopeViolations: []
   };
 }
 

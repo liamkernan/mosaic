@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { LLMError } from "../packages/core/src/errors.js";
 import type { LLMClient } from "../packages/llm/src/client.js";
@@ -170,6 +170,57 @@ export const target = "new";
         explanation: "Replace static copy with an interactive control."
       }
     ]);
+  });
+
+  it.each([
+    ["zero matches", "<p>Stale</p>"],
+    ["multiple matches", "<p>Repeated</p>"]
+  ])("re-anchors structured edits after %s", async (_label, failedSearch) => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce(`<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[${failedSearch}]]></search>
+    <replace><![CDATA[<button>Open</button>]]></replace>
+    <explanation>Initial edit.</explanation>
+  </edit>
+</changes>`)
+      .mockResolvedValueOnce(`<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<main><p>Repeated</p><p>Repeated</p></main>]]></search>
+    <replace><![CDATA[<main><button>Open</button></main>]]></replace>
+    <explanation>Re-anchor against unique current context.</explanation>
+  </edit>
+</changes>`);
+    const fakeClient = {
+      setUsageContext: () => {},
+      complete
+    } as unknown as LLMClient;
+
+    const changes = await new CodeGenerator(fakeClient).generate(
+      {
+        id: "01TEST",
+        source: "web_form",
+        rawContent: "Add product details",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "feature_request",
+        complexity: "complex",
+        summary: "Add product details",
+        relevantFiles: ["index.html"],
+        confidence: 0.8
+      },
+      [{ path: "index.html", content: "<main><p>Repeated</p><p>Repeated</p></main>", reason: "markup" }],
+      ["index.html"]
+    );
+
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1]?.[0]).toContain("STRUCTURED EDIT APPLICATION ERROR");
+    expect(complete.mock.calls[1]?.[0]).toContain("<main><p>Repeated</p><p>Repeated</p></main>");
+    expect(changes[0]?.modifiedContent).toBe("<main><button>Open</button></main>");
   });
 
   it("retries static frontend generation with a lean prompt after an LLM timeout", async () => {

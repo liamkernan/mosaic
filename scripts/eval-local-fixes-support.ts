@@ -193,6 +193,45 @@ export function calculateUsageCostUsd(usage: UsageTokenCounts, pricing: ModelPri
   ) / 1_000_000;
 }
 
+function extractTopLevelPythonSymbols(content: string): Map<string, string> {
+  const lines = content.split("\n");
+  const symbols = new Map<string, string>();
+  let currentName: string | undefined;
+  let currentLines: string[] = [];
+
+  const finish = (): void => {
+    if (currentName) {
+      symbols.set(currentName, currentLines.join("\n").trimEnd());
+    }
+  };
+
+  for (const line of lines) {
+    const match = line.match(/^(?:async\s+)?def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
+    if (match) {
+      finish();
+      currentName = match[1];
+      currentLines = [line];
+    } else if (currentName) {
+      currentLines.push(line);
+    }
+  }
+  finish();
+  return symbols;
+}
+
+export function validateUnchangedPythonSymbols(
+  change: { filePath: string; originalContent: string; modifiedContent: string },
+  unchangedSymbols: string[]
+): string[] {
+  const originalSymbols = extractTopLevelPythonSymbols(change.originalContent);
+  const modifiedSymbols = extractTopLevelPythonSymbols(change.modifiedContent);
+  return unchangedSymbols.flatMap((symbol) =>
+    originalSymbols.get(symbol) === modifiedSymbols.get(symbol)
+      ? []
+      : [`Unrelated protected symbol changed in ${change.filePath}: ${symbol}`]
+  );
+}
+
 export function estimateMaximumCallCostUsd(
   estimatedInputTokens: number,
   maxOutputTokens: number,

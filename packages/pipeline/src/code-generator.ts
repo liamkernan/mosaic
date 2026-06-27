@@ -18,6 +18,7 @@ const COMPACT_CONTEXT_TOTAL_BYTES = 80_000;
 const STATIC_FRONTEND_RETRY_MAX_TOKENS = 8_192;
 const VALIDATION_REPAIR_TIMEOUT_MS = 120_000;
 const VALIDATION_REPAIR_MAX_TOKENS = 12_288;
+const EDIT_REANCHOR_EXCERPT_CHARS = 12_000;
 export const scopeValidationPattern = /outside the implementation plan scope/i;
 
 interface GenerationOptions {
@@ -41,6 +42,28 @@ function fileContentByteLength(file: RelevantFile): number {
   const byteLength = Buffer.byteLength(file.content);
   fileByteLengthCache.set(file, { content: file.content, byteLength });
   return byteLength;
+}
+
+function buildEditReanchorPrompt(
+  response: string,
+  error: LLMError,
+  relevantFiles: RelevantFile[]
+): string {
+  const excerpts = relevantFiles.map((file) =>
+    `--- CURRENT ${file.path} ---\n${file.content.slice(0, EDIT_REANCHOR_EXCERPT_CHARS)}\n--- END ${file.path} ---`
+  ).join("\n\n");
+  return `A structured edit could not be applied atomically.
+
+STRUCTURED EDIT APPLICATION ERROR:
+${error.message}
+
+REJECTED PAYLOAD:
+${response}
+
+CURRENT BOUNDED FILE EXCERPTS:
+${excerpts}
+
+Return a corrected <changes> payload. Every search block must match current content exactly once. Use a larger unique anchor when the old search matched multiple locations. If a bounded excerpt contains the whole file, a complete modifiedContent replacement is allowed. Preserve all unrelated content and changes.`;
 }
 
 function estimateGenerationMaxTokens(relevantFiles: RelevantFile[], options: GenerationOptions = {}): number {
@@ -564,7 +587,24 @@ export class CodeGenerator {
       parsed = parseGeneratedChanges(repairedResponse);
     }
 
-    return this.toGeneratedChanges(parsed, relevantFiles);
+    try {
+      return this.toGeneratedChanges(parsed, relevantFiles);
+    } catch (error) {
+      if (!(error instanceof LLMError) || !error.message.startsWith("Search block for ")) {
+        throw error;
+      }
+
+      const reanchoredResponse = await this.llmClient.complete(
+        buildEditReanchorPrompt(response, error, relevantFiles),
+        "Return only the corrected <changes> payload with uniquely anchored edits or validated complete file contents.",
+        {
+          temperature: 0,
+          maxTokens,
+          timeoutMs: GENERATION_TIMEOUT_MS
+        }
+      );
+      return this.toGeneratedChanges(parseGeneratedChanges(reanchoredResponse), relevantFiles);
+    }
   }
 
   async repairValidationFailure(
