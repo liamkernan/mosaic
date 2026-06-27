@@ -1114,7 +1114,8 @@ function childArguments(options: ReturnType<typeof parseArgs>, evalCase: EvalCas
 async function runCaseInChild(
   evalCase: EvalCase,
   options: ReturnType<typeof parseArgs>,
-  signal: AbortSignal
+  signal: AbortSignal,
+  recordInterruptedUsage: (usage: EvalUsageSummary) => void = () => {}
 ): Promise<EvalResult> {
   const resultPath = join(options.outputDir, evalCase.id, "result.json");
 
@@ -1125,6 +1126,7 @@ async function runCaseInChild(
       stdio: ["ignore", "pipe", "pipe"]
     });
     let stderr = "";
+    let forceKillTimeout: NodeJS.Timeout | undefined;
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
@@ -1133,17 +1135,30 @@ async function runCaseInChild(
 
     const abort = (): void => {
       child.kill("SIGTERM");
-      rejectResult(signal.reason ?? new Error(`Eval case aborted: ${evalCase.id}`));
+      forceKillTimeout = setTimeout(() => child.kill("SIGKILL"), 1_000);
     };
     signal.addEventListener("abort", abort, { once: true });
 
     child.once("error", (error) => {
+      if (forceKillTimeout) {
+        clearTimeout(forceKillTimeout);
+      }
       signal.removeEventListener("abort", abort);
       rejectResult(error);
     });
     child.once("close", async (code) => {
+      if (forceKillTimeout) {
+        clearTimeout(forceKillTimeout);
+      }
       signal.removeEventListener("abort", abort);
       if (signal.aborted) {
+        const usage = await readFile(join(options.outputDir, evalCase.id, "usage.json"), "utf8")
+          .then((content) => JSON.parse(content) as EvalUsageSummary)
+          .catch(() => undefined);
+        if (usage) {
+          recordInterruptedUsage(usage);
+        }
+        rejectResult(signal.reason ?? new Error(`Eval case aborted: ${evalCase.id}`));
         return;
       }
       try {
@@ -1225,10 +1240,16 @@ async function main(): Promise<void> {
     timeoutMs: options.caseTimeoutMs,
     getId: (evalCase) => evalCase.id,
     runCase: async (evalCase, signal) => {
+      let interruptedCostUsd = 0;
       const result = await runCaseInChild(evalCase, {
         ...options,
         maxCostUsd: remainingBudgetUsd
-      }, signal);
+      }, signal, (usage) => {
+        interruptedCostUsd = usage.totalCostUsd;
+        if (remainingBudgetUsd !== undefined) {
+          remainingBudgetUsd = Math.max(0, remainingBudgetUsd - interruptedCostUsd);
+        }
+      });
       if (remainingBudgetUsd !== undefined) {
         remainingBudgetUsd = Math.max(0, remainingBudgetUsd - (result.usage?.totalCostUsd ?? 0));
       }
