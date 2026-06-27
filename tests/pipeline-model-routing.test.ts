@@ -80,7 +80,7 @@ describe("model routing", () => {
       })
     ).toBe("sonnet");
     expect(shouldEscalateClassification(moderateFeedback)).toBe(true);
-    expect(shouldUseAdvisorTool(moderateFeedback)).toBe(false);
+    expect(shouldUseAdvisorTool(moderateFeedback)).toBe(true);
   });
 
   it("escalates low-confidence classifications", () => {
@@ -157,13 +157,19 @@ describe("model routing", () => {
       category: "feature_request",
       complexity: "complex"
     } as const;
+    const moderateFeedback = {
+      ...complexFeedback,
+      complexity: "moderate"
+    } as const;
 
     expect(selectGenerationModelTier(complexFeedback, "balanced")).toBe("sonnet");
     expect(selectPlanningModelTier()).toBe("sonnet");
     expect(shouldUseAdvisorTool(complexFeedback, "balanced")).toBe(false);
+    expect(shouldUseAdvisorTool(moderateFeedback, "balanced")).toBe(false);
 
     expect(selectGenerationModelTier(complexFeedback, "quality")).toBe("sonnet");
     expect(selectPlanningModelTier()).toBe("sonnet");
     expect(shouldUseAdvisorTool(complexFeedback, "quality")).toBe(true);
+    expect(shouldUseAdvisorTool(moderateFeedback, "quality")).toBe(true);
   });
 });

@@ -130,7 +130,7 @@ export const llmModelPresetOptions = [
   {
     value: "quality",
     label: "Quality (Recommended)",
-    description: "Uses automatic Haiku/Sonnet routing and enables the Opus advisor for complex work."
+    description: "Uses automatic Haiku/Sonnet routing and enables the Opus advisor for moderate and complex work."
   },
   {
     value: "balanced",

@@ -321,7 +321,7 @@ Use these values for a segmented control or select:
 
 | Value | Label | Behavior |
 | --- | --- | --- |
-| `quality` | Quality (Recommended) | Default. Uses automatic Haiku/Sonnet routing and enables the Opus advisor for complex work. |
+| `quality` | Quality (Recommended) | Default. Uses automatic Haiku/Sonnet routing and enables the Opus advisor for moderate and complex work. |
 | `balanced` | Balanced | Uses automatic Haiku/Sonnet routing and disables the advisor. |
 
 ## Scripts

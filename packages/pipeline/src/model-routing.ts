@@ -70,5 +70,6 @@ export function shouldUseAdvisorTool(
   classifiedFeedback: ClassifiedFeedback,
   modelPreset: LLMModelPreset = "quality"
 ): boolean {
-  return modelPreset === "quality" && classifiedFeedback.complexity === "complex";
+  return modelPreset === "quality" &&
+    (classifiedFeedback.complexity === "moderate" || classifiedFeedback.complexity === "complex");
 }
