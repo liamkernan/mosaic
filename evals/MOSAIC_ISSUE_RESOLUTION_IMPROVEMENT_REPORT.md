@@ -60,6 +60,9 @@ does not claim that a generated fix passes its product oracle.
 - Configured protected Python functions reject unrelated semantic changes even
   when the changed file itself is allowed. The four backend cases protect the
   known unrelated request-creation, sorting, closing, and metrics behaviors.
+- Protected-symbol scope checks also cover JavaScript and TypeScript named
+  functions/bindings. The journal, product-details, and Storybook cases now
+  preserve unrelated existing modal/article/path-conversion behavior.
 
 ### Planner and edit recovery
 
@@ -94,7 +97,7 @@ The final full local gate run passed:
 ```text
 pnpm lint       PASS
 pnpm typecheck  PASS
-pnpm test       PASS: 232 tests, 3 pre-existing skips
+pnpm test       PASS: 233 tests, 3 pre-existing skips
 pnpm build      PASS: all workspace packages
 ```
 
@@ -146,8 +149,8 @@ maximum would exceed the remaining authorization.
 1. Authorize a numeric API budget and reviewed current model pricing, then run
    identical direct-Sonnet and production-quality/advisor trials. Until this is
    done, improvement over 2/7 is not proven.
-2. Generalize protected-symbol semantic scope checks beyond the configured
-   Python baseline cases.
+2. Extend semantic scope checks to languages and anonymous callback-heavy files
+   that do not expose stable Python/JavaScript/TypeScript symbol boundaries.
 3. Include the now-available pinned Storybook case in both paid routing modes;
    its offline retrieval is verified, but generated-fix quality and cost are not.
 4. Use the implemented `--trials` mode after the first pinned comparison;

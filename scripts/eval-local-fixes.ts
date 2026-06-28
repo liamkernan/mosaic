@@ -46,7 +46,7 @@ import {
   type EvalTrialRun,
   type FrontendRepairRequirement,
   type ModelPricing,
-  validateUnchangedPythonSymbols
+  validateUnchangedSymbols
 } from "./eval-local-fixes-support.js";
 
 const exec = promisify(execCallback);
@@ -93,6 +93,7 @@ interface EvalCase {
   oracleTestPathPrefixes?: string[];
   generatedTestPathPrefixes?: string[];
   unchangedPythonSymbols?: Record<string, string[]>;
+  unchangedSymbols?: Record<string, string[]>;
 }
 
 interface FrontendAssertion {
@@ -522,8 +523,11 @@ async function evaluateChecks(
 
   if (generated) {
     for (const change of changes) {
-      const unchangedSymbols = evalCase.unchangedPythonSymbols?.[change.filePath] ?? [];
-      errors.push(...validateUnchangedPythonSymbols(change, unchangedSymbols));
+      const unchangedSymbols = [
+        ...(evalCase.unchangedPythonSymbols?.[change.filePath] ?? []),
+        ...(evalCase.unchangedSymbols?.[change.filePath] ?? [])
+      ];
+      errors.push(...validateUnchangedSymbols(change, unchangedSymbols));
     }
 
     for (const pattern of evalCase.requiredChangedFilePatterns ?? []) {

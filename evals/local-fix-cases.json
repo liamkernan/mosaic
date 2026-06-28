@@ -241,6 +241,9 @@
       "confidence": 0.72
     },
     "expectedReferenceFiles": ["README.md"],
+    "unchangedSymbols": {
+      "script.js": ["openCollectionModal", "closeCollectionModal"]
+    },
     "requiredChangedFilePatterns": [[".js"], [".css"]],
     "requiredFileContains": [
       {
@@ -289,6 +292,15 @@
       "confidence": 0.72
     },
     "expectedReferenceFiles": ["README.md"],
+    "unchangedSymbols": {
+      "script.js": [
+        "openCollectionModal",
+        "closeCollectionModal",
+        "buildArticleHTML",
+        "openArticleModal",
+        "closeArticleModal"
+      ]
+    },
     "requiredChangedFilePatterns": ["index.html", [".js"], [".css"]],
     "requiredFileContains": [
       {

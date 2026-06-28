@@ -13,6 +13,7 @@ import {
   partitionVisibleContext,
   runEvalCaseBatch,
   summarizeEvalTrials,
+  validateUnchangedSymbols,
   validateUnchangedPythonSymbols,
   writeCaseArtifacts,
   writeEvalReport
@@ -233,6 +234,36 @@ describe("local fix evaluation harness", () => {
     }, ["list_requests", "close_request"])).toEqual([
       "Unrelated protected symbol changed in service.py: list_requests"
     ]);
+  });
+
+  it("rejects unrelated JavaScript and TypeScript symbol changes inside allowed files", () => {
+    const originalContent = [
+      "export const convertToFilePath = (url: string): string => {",
+      "  return url.replace('file://', '');",
+      "};",
+      "",
+      "export const testStory = (story: Story) => {",
+      "  return runStory(story);",
+      "};",
+      ""
+    ].join("\n");
+    const modifiedContent = originalContent
+      .replace("url.replace('file://', '')", "url.replace('https://', '')")
+      .replace("runStory(story)", "runStoryWithFallback(story)");
+
+    expect(validateUnchangedSymbols({
+      filePath: "test-utils.ts",
+      originalContent,
+      modifiedContent
+    }, ["convertToFilePath"])).toEqual([
+      "Unrelated protected symbol changed in test-utils.ts: convertToFilePath"
+    ]);
+
+    expect(validateUnchangedSymbols({
+      filePath: "test-utils.ts",
+      originalContent,
+      modifiedContent: originalContent.replace("runStory(story)", "runStoryWithFallback(story)")
+    }, ["convertToFilePath"])).toEqual([]);
   });
 
   it("serializes frontend selector failures as a typed repair requirement", () => {

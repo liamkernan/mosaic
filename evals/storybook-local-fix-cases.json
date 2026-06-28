@@ -24,6 +24,9 @@
       "code/addons/vitest/src/vitest-plugin/test-utils.ts",
       "code/addons/vitest/src/vitest-plugin/viewports.ts"
     ],
+    "unchangedSymbols": {
+      "code/addons/vitest/src/vitest-plugin/test-utils.ts": ["convertToFilePath"]
+    },
     "requiredChangedFilePatterns": [
       "code/addons/vitest/src/vitest-plugin/test-utils.ts"
     ],

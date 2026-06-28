@@ -318,17 +318,71 @@ function extractTopLevelPythonSymbols(content: string): Map<string, string> {
   return symbols;
 }
 
-export function validateUnchangedPythonSymbols(
+function extractTopLevelJavaScriptSymbols(content: string): Map<string, string> {
+  const lines = content.split("\n");
+  const symbols = new Map<string, string>();
+
+  for (let start = 0; start < lines.length; start += 1) {
+    const line = lines[start];
+    const declaration = line.match(
+      /^(?:(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\b|(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=)/
+    );
+    const name = declaration?.[1] ?? declaration?.[2];
+    if (!name) {
+      continue;
+    }
+
+    const symbolLines: string[] = [];
+    let braceDepth = 0;
+    let sawBrace = false;
+    let end = start;
+    for (; end < lines.length; end += 1) {
+      const symbolLine = lines[end];
+      symbolLines.push(symbolLine);
+      for (const character of symbolLine) {
+        if (character === "{") {
+          braceDepth += 1;
+          sawBrace = true;
+        } else if (character === "}") {
+          braceDepth -= 1;
+        }
+      }
+
+      if ((sawBrace && braceDepth === 0) || (!sawBrace && /;\s*$/.test(symbolLine))) {
+        break;
+      }
+    }
+
+    symbols.set(name, symbolLines.join("\n").trimEnd());
+    start = end;
+  }
+
+  return symbols;
+}
+
+export function validateUnchangedSymbols(
   change: { filePath: string; originalContent: string; modifiedContent: string },
   unchangedSymbols: string[]
 ): string[] {
-  const originalSymbols = extractTopLevelPythonSymbols(change.originalContent);
-  const modifiedSymbols = extractTopLevelPythonSymbols(change.modifiedContent);
+  const isPython = change.filePath.toLowerCase().endsWith(".py");
+  const originalSymbols = isPython
+    ? extractTopLevelPythonSymbols(change.originalContent)
+    : extractTopLevelJavaScriptSymbols(change.originalContent);
+  const modifiedSymbols = isPython
+    ? extractTopLevelPythonSymbols(change.modifiedContent)
+    : extractTopLevelJavaScriptSymbols(change.modifiedContent);
   return unchangedSymbols.flatMap((symbol) =>
     originalSymbols.get(symbol) === modifiedSymbols.get(symbol)
       ? []
       : [`Unrelated protected symbol changed in ${change.filePath}: ${symbol}`]
   );
+}
+
+export function validateUnchangedPythonSymbols(
+  change: { filePath: string; originalContent: string; modifiedContent: string },
+  unchangedSymbols: string[]
+): string[] {
+  return validateUnchangedSymbols(change, unchangedSymbols);
 }
 
 export function estimateMaximumCallCostUsd(
