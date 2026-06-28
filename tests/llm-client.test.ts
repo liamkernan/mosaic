@@ -281,6 +281,32 @@ describe("LLMClient", () => {
     }));
   });
 
+  it("fails closed when advisor use has no billable usage iteration", async () => {
+    finalMessageMock.mockResolvedValueOnce({
+      content: [
+        { type: "tool_use", id: "tool-1", name: "advisor", input: {} },
+        { type: "text", text: "ok" }
+      ],
+      usage: {
+        input_tokens: 412,
+        output_tokens: 531
+      }
+    });
+    const client = new LLMClient({
+      mode: "platform",
+      platformApiKey: "test-key",
+      advisorTool: {
+        model: ANTHROPIC_ADVISOR_MODEL_ID,
+        maxUses: 1,
+        maxTokens: 2_048
+      },
+      disableUsageTracking: true,
+      observeUsage: vi.fn()
+    });
+
+    await expect(client.complete("system", "user")).rejects.toThrow("omitted advisor usage iterations");
+  });
+
   it("checks a local budget before starting an API request", async () => {
     const authorizeRequest = vi.fn(() => {
       throw new Error("local eval budget exhausted");

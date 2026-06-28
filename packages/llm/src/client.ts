@@ -168,10 +168,14 @@ function usageTokenCount(value: unknown): number {
 function extractUsageIterations(
   usage: AnthropicCompletionResponse["usage"],
   executorModel: string,
-  advisorModel?: string
+  advisorModel?: string,
+  advisorUsed = false
 ): LLMUsageIteration[] {
   const extendedUsage = usage as typeof usage & { iterations?: unknown };
   if (!Array.isArray(extendedUsage.iterations) || extendedUsage.iterations.length === 0) {
+    if (advisorUsed) {
+      throw new LLMError("Anthropic omitted advisor usage iterations from an advisor-assisted response");
+    }
     return [{
       type: "message",
       model: executorModel,
@@ -182,7 +186,7 @@ function extractUsageIterations(
     }];
   }
 
-  return extendedUsage.iterations.map((rawIteration, index) => {
+  const iterations = extendedUsage.iterations.map((rawIteration: unknown, index: number): LLMUsageIteration => {
     if (typeof rawIteration !== "object" || rawIteration === null || !("type" in rawIteration)) {
       throw new LLMError(`Anthropic returned malformed usage iteration at index ${index}`);
     }
@@ -207,6 +211,10 @@ function extractUsageIterations(
       cacheCreationInputTokens: usageTokenCount(iteration.cache_creation_input_tokens)
     };
   });
+  if (advisorUsed && !iterations.some((iteration: LLMUsageIteration) => iteration.type === "advisor_message")) {
+    throw new LLMError("Anthropic omitted advisor usage iterations from an advisor-assisted response");
+  }
+  return iterations;
 }
 
 function getAnthropicErrorDetails(error: unknown): AnthropicErrorDetails {
@@ -370,6 +378,7 @@ export class LLMClient {
             cache_read_input_tokens?: number;
             cache_creation_input_tokens?: number;
           };
+          const advisorUsed = response.content.some(isAdvisorUseBlock);
           await this.observeUsage({
             model,
             ...(this.advisorTool ? { advisorModel: this.advisorTool.model } : {}),
@@ -380,9 +389,9 @@ export class LLMClient {
             latencyMs: Date.now() - startedAt,
             retries: Math.max(0, requestAttempts - 1),
             advisorOffered: this.advisorTool !== undefined,
-            advisorUsed: response.content.some(isAdvisorUseBlock),
+            advisorUsed,
             advisorUnavailable,
-            iterations: extractUsageIterations(usage, model, this.advisorTool?.model)
+            iterations: extractUsageIterations(usage, model, this.advisorTool?.model, advisorUsed)
           });
         }
 
