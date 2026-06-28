@@ -825,7 +825,8 @@ async function validateStaticAssetLinks(changes: GeneratedChange[], repoContext:
   const htmlAssetReferences = collectHtmlAssetReferences(effectiveHtml);
 
   for (const change of changes) {
-    if (change.originalContent.length > 0 || (!isScript(change.filePath) && !isStylesheet(change.filePath))) {
+    if (change.originalContent.length > 0 || testFilePathPattern.test(change.filePath) ||
+        (!isScript(change.filePath) && !isStylesheet(change.filePath))) {
       continue;
     }
 

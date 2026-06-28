@@ -810,6 +810,32 @@ describe("validate", () => {
     expect(result.errors.join("\n")).toContain("New static asset collection-modal.js is not linked from index.html");
   });
 
+  it("does not require TypeScript test modules to be linked from html", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
+    tempDirs.push(localPath);
+    await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "src/vitest-plugin/test-utils.test.ts",
+          originalContent: "",
+          modifiedContent: "import { expect, test } from 'vitest';\ntest('works', () => expect(true).toBe(true));\n",
+          explanation: "cover non-browser Vitest behavior"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [{ path: "index.html", type: "file" }],
+        installationId: 1
+      }
+    );
+
+    expect(result.errors.join("\n")).not.toContain("New static asset");
+  });
+
   it("rejects changed static scripts that query missing html hooks", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
     tempDirs.push(localPath);
