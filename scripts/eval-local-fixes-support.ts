@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 
 export type EvalOutcome = "completed" | "error" | "timeout";
 
@@ -204,6 +204,57 @@ export function partitionVisibleContext<T extends { path: string }>(
     (pathMatches(file.path, immutablePaths, oraclePathPrefixes) ? oracles : visible).push(file);
   }
   return { visible, oracles };
+}
+
+interface PlanWithRequiredFiles {
+  requiredFiles: Array<{ path: string; reason: string }>;
+  acceptanceCriteria: string[];
+  implementationChecklist: string[];
+  verificationChecklist: string[];
+  verificationCommands: string[];
+}
+
+export function sanitizePlanForImmutablePaths<T extends PlanWithRequiredFiles>(
+  plan: T,
+  policy: GeneratedPathPolicy
+): T {
+  const oraclePaths = new Set(policy.oraclePaths);
+  const replacements = new Map<string, string>();
+  const requiredFiles: Array<{ path: string; reason: string }> = [];
+
+  for (const file of plan.requiredFiles) {
+    if (!pathMatches(file.path, oraclePaths, policy.oraclePathPrefixes ?? [])) {
+      requiredFiles.push(file);
+      continue;
+    }
+
+    const generatedPrefix = policy.generatedTestPathPrefixes[0];
+    if (!generatedPrefix) {
+      continue;
+    }
+    const replacementPath = `${generatedPrefix}${basename(file.path)}`;
+    replacements.set(file.path, replacementPath);
+    if (!requiredFiles.some((requiredFile) => requiredFile.path === replacementPath)) {
+      requiredFiles.push({
+        path: replacementPath,
+        reason: "Add independent generated regression coverage; the reported oracle remains verification-only"
+      });
+    }
+  }
+
+  const replaceImmutablePaths = (text: string): string => {
+    let sanitized = text;
+    for (const [oraclePath, replacementPath] of replacements) {
+      sanitized = sanitized.replaceAll(oraclePath, replacementPath);
+    }
+    return sanitized;
+  };
+
+  return {
+    ...plan,
+    requiredFiles,
+    implementationChecklist: plan.implementationChecklist.map(replaceImmutablePaths)
+  };
 }
 
 interface CaseArtifactChange {

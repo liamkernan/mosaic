@@ -149,7 +149,8 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("Extract every explicit acceptance criterion");
     expect(prompt).toContain("Translate loaded tests into acceptance criteria");
     expect(prompt).toContain("adversarial cases");
-    expect(prompt).toContain("reported/regression test already exists");
+    expect(prompt).toContain("Do not plan edits to existing reported/regression tests");
+    expect(prompt).toContain("independent companion test");
     expect(prompt).toContain("implementationChecklist");
     expect(prompt).toContain("acceptanceCriteria");
     expect(prompt).toContain("verificationCommands");

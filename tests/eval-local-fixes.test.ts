@@ -12,6 +12,7 @@ import {
   createEvalTrialRuns,
   formatFrontendRepairRequirement,
   partitionVisibleContext,
+  sanitizePlanForImmutablePaths,
   runEvalCaseBatch,
   summarizeEvalTrials,
   validateUnchangedSymbols,
@@ -156,6 +157,41 @@ describe("local fix evaluation harness", () => {
     expect(partitionVisibleContext(files, ["tests/oracles/test_sla.py"])).toEqual({
       visible: [files[0]],
       oracles: [files[1]]
+    });
+  });
+
+  it("replaces immutable planned test edits with independent generated coverage", () => {
+    expect(sanitizePlanForImmutablePaths({
+      requiredFiles: [
+        { path: "mosaic_demo/service.py", reason: "fix behavior" },
+        { path: "tests/reported/test_001_sla_sort.py", reason: "extend the reported oracle" }
+      ],
+      acceptanceCriteria: ["SLA ordering is correct"],
+      implementationChecklist: [
+        "Fix mosaic_demo/service.py",
+        "Extend tests/reported/test_001_sla_sort.py with a tie-breaker"
+      ],
+      verificationChecklist: ["Run tests/reported/test_001_sla_sort.py"],
+      verificationCommands: ["python3 -m unittest tests.reported.test_001_sla_sort"]
+    }, {
+      oraclePaths: [],
+      oraclePathPrefixes: ["tests/reported/", "tests/smoke/"],
+      generatedTestPathPrefixes: ["tests/generated/"]
+    })).toEqual({
+      requiredFiles: [
+        { path: "mosaic_demo/service.py", reason: "fix behavior" },
+        {
+          path: "tests/generated/test_001_sla_sort.py",
+          reason: "Add independent generated regression coverage; the reported oracle remains verification-only"
+        }
+      ],
+      acceptanceCriteria: ["SLA ordering is correct"],
+      implementationChecklist: [
+        "Fix mosaic_demo/service.py",
+        "Extend tests/generated/test_001_sla_sort.py with a tie-breaker"
+      ],
+      verificationChecklist: ["Run tests/reported/test_001_sla_sort.py"],
+      verificationCommands: ["python3 -m unittest tests.reported.test_001_sla_sort"]
     });
   });
 

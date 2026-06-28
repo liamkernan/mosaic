@@ -40,7 +40,7 @@ Rules:
 - If a source states a sequence, ordering, tie-breaker, fallback, validation rule, or exact field/key, preserve it exactly. Do not substitute a merely stable or plausible alternative.
 - Include markup/view files, stylesheets, scripts/state files, routing files, data/content files, tests, and config when they are needed.
 - Include tests when the repository has a relevant test pattern and the change affects behavior, especially sort/order/filter/ranking logic, persistence, validation, permissions, or API responses.
-- When a relevant reported/regression test already exists, plan a concrete test edit that extends it with a missing edge case or adds a companion test rather than only listing it as a command to run.
+- Do not plan edits to existing reported/regression tests; treat them as immutable verification oracles. Plan an independent companion test in the repository's normal generated or non-reported test location for any missing edge case.
 - For sort/order/filter/ranking bugs, verification must include adversarial cases for the primary condition and every stated tie-breaker.
 - For dedupe/idempotency/retry bugs, acceptance criteria and verification must include both the duplicate/update path and the non-duplicate path where records should remain distinct.
 - For API/HTTP endpoint requests, required files and checklist items must include the route/handler surface, backing service/data surface, and a verification step that calls the public path.

@@ -400,4 +400,37 @@ def test_list_body(conn):
 
     expect(errors.join("\n")).toContain("endpoint path /metrics");
   });
+
+  it("does not require an unchanged existing route mentioned only by the plan", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "mosaic_demo/service.py",
+          originalContent: 'order_by = "sr.created_at ASC"\n',
+          modifiedContent: 'order_by = "sr.sla_due_at ASC, sr.created_at ASC"\n',
+          explanation: "fix SLA ordering behind the existing requests route"
+        },
+        {
+          filePath: "tests/generated/test_sla_sort.py",
+          originalContent: "",
+          modifiedContent: "def test_sla_sort(): assert True\n",
+          explanation: "cover the corrected ordering"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "mosaic_demo/service.py", reason: "fix list_requests ordering" },
+          { path: "tests/generated/test_sla_sort.py", reason: "add regression coverage" }
+        ],
+        acceptanceCriteria: [
+          "GET /requests?sort=sla must use sla_due_at ASC, then created_at ASC"
+        ],
+        verificationChecklist: ["Add a unittest covering the SLA tie-breaker."]
+      },
+      "The support queue should show the next SLA breach first when sort=sla."
+    );
+
+    expect(errors).toEqual([]);
+  });
 });

@@ -593,7 +593,7 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
     errors.push("Implementation plan requires runtime/source changes, but the generated change only modifies tests or documentation");
   }
 
-  const requiredEndpointPaths = extractEndpointPaths(text);
+  const requiredEndpointPaths = extractEndpointPaths(sourceText);
   if (requiredEndpointPaths.length > 0) {
     const runtimeEndpointPaths = collectQuotedEndpointPaths(runtimeChanges);
     for (const endpointPath of requiredEndpointPaths) {

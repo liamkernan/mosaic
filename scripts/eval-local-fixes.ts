@@ -41,6 +41,7 @@ import {
   formatFrontendRepairRequirement,
   partitionVisibleContext,
   runEvalCaseBatch,
+  sanitizePlanForImmutablePaths,
   summarizeEvalTrials,
   writeCaseArtifacts,
   writeEvalReport,
@@ -419,6 +420,14 @@ function mergeFiles<T extends { path: string }>(left: T[], right: T[]): T[] {
     merged.set(file.path, file);
   }
   return [...merged.values()];
+}
+
+function visibleFileTreePaths(repoIndexer: RepoIndexer, repoContext: RepoContext, evalCase: EvalCase): string[] {
+  return partitionVisibleContext(
+    repoIndexer.fileTreeToPaths(repoContext).map((path) => ({ path })),
+    evalCase.oracleTestPaths ?? [],
+    evalCase.oracleTestPathPrefixes ?? []
+  ).visible.map(({ path }) => path);
 }
 
 async function writeGeneratedChanges(repoPath: string, changes: GeneratedChange[]): Promise<void> {
@@ -842,7 +851,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
 
   if (options.classify) {
     const classifier = new FeedbackClassifier(createEvalLlmClient("haiku", telemetry, "classification"));
-    classifiedFeedback = await classifier.classify(classifiedFeedback, repoIndexer.fileTreeToPaths(repoContext));
+    classifiedFeedback = await classifier.classify(classifiedFeedback, visibleFileTreePaths(repoIndexer, repoContext, evalCase));
   }
 
   const planningModel = options.preset === "direct" ? options.model : selectPlanningModelTier();
@@ -886,11 +895,15 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
 
   if (options.generate) {
     generated = true;
-    const fileTree = repoIndexer.fileTreeToPaths(repoContext);
+    const fileTree = visibleFileTreePaths(repoIndexer, repoContext, evalCase);
     const planner = new ImplementationPlanner(createEvalLlmClient(planningModel, telemetry, "planning", advisorTool));
     const plannedImplementation = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
-    implementationPlan = plannedImplementation;
-    const plannedFiles = await repoIndexer.readFiles(repoContext, plannedImplementation.requiredFiles);
+    implementationPlan = sanitizePlanForImmutablePaths(plannedImplementation, {
+      oraclePaths: evalCase.oracleTestPaths ?? [],
+      oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
+      generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
+    });
+    const plannedFiles = await repoIndexer.readFiles(repoContext, implementationPlan.requiredFiles);
     relevantFiles = mergeFiles(relevantFiles, plannedFiles);
     const partitionedPlannedFiles = partitionVisibleContext(
       relevantFiles,
@@ -905,7 +918,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
       classifiedFeedback,
       relevantFiles,
       fileTree,
-      plannedImplementation,
+      implementationPlan,
       repoContext,
       (stage, validationErrors) => validationHistory.push({ stage, errors: validationErrors })
     );
@@ -927,7 +940,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
         classifiedFeedback,
         relevantFiles,
         fileTree,
-        plannedImplementation,
+        implementationPlan,
         repoContext,
         changes,
         verificationErrors,
@@ -976,10 +989,14 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
 
   if (options.generate && checkErrors.length > 0) {
     const preRepairChanges = changes;
-    const fileTree = repoIndexer.fileTreeToPaths(repoContext);
+    const fileTree = visibleFileTreePaths(repoIndexer, repoContext, evalCase);
     const planner = new ImplementationPlanner(createEvalLlmClient(planningModel, telemetry, "check-repair-planning", advisorTool));
     const repairedImplementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
-    implementationPlan = repairedImplementationPlan;
+    implementationPlan = sanitizePlanForImmutablePaths(repairedImplementationPlan, {
+      oraclePaths: evalCase.oracleTestPaths ?? [],
+      oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
+      generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
+    });
     await persistArtifacts();
     const generator = new CodeGenerator(createEvalLlmClient(generationModel, telemetry, "check-repair", advisorTool));
     const repairedChanges = await repairVerificationFailure(
@@ -987,7 +1004,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
       classifiedFeedback,
       relevantFiles,
       fileTree,
-      repairedImplementationPlan,
+      implementationPlan,
       repoContext,
       changes,
       checkErrors,
