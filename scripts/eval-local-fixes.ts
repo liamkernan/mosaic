@@ -28,12 +28,14 @@ import {
   LLMClient,
   type AdvisorToolOptions,
   type LLMRequestAuthorization,
+  type LLMUsageIteration,
   type LLMUsageObservation
 } from "../packages/llm/src/client.js";
 import {
   EvalBudget,
   assertGeneratedPathsAllowed,
   calculateUsageCostUsd,
+  calculateUsageIterationsCostUsd,
   createEvalTrialRuns,
   estimateMaximumCallCostUsd,
   formatFrontendRepairRequirement,
@@ -53,6 +55,7 @@ const exec = promisify(execCallback);
 const ignoredNames = new Set(["node_modules", ".git", "dist", "build", "__pycache__", ".next", "vendor"]);
 const validationRecoveryAttempts = 3;
 const oversizedPatchPattern = /too large|exceeds limit|total new code added/i;
+const evalAdvisorMaxTokens = 2_048;
 
 function isRecoverableLlmFailure(error: unknown): boolean {
   const maybeError = error as { code?: unknown; name?: unknown; message?: unknown };
@@ -123,9 +126,10 @@ interface EvalResult {
   scopeViolations?: string[];
 }
 
-interface EvalUsageCall extends LLMUsageObservation {
+interface EvalUsageCall extends Omit<LLMUsageObservation, "iterations"> {
   phase: string;
   costUsd: number;
+  iterations: Array<LLMUsageIteration & { costUsd: number }>;
 }
 
 interface EvalUsageSummary {
@@ -353,10 +357,10 @@ async function createEvalTelemetry(
 
   const snapshot = (): EvalUsageSummary => calls.reduce<EvalUsageSummary>((summary, call) => ({
     calls,
-    totalInputTokens: summary.totalInputTokens + call.inputTokens,
-    totalOutputTokens: summary.totalOutputTokens + call.outputTokens,
-    totalCacheReadInputTokens: summary.totalCacheReadInputTokens + call.cacheReadInputTokens,
-    totalCacheCreationInputTokens: summary.totalCacheCreationInputTokens + call.cacheCreationInputTokens,
+    totalInputTokens: summary.totalInputTokens + call.iterations.reduce((total, iteration) => total + iteration.inputTokens, 0),
+    totalOutputTokens: summary.totalOutputTokens + call.iterations.reduce((total, iteration) => total + iteration.outputTokens, 0),
+    totalCacheReadInputTokens: summary.totalCacheReadInputTokens + call.iterations.reduce((total, iteration) => total + iteration.cacheReadInputTokens, 0),
+    totalCacheCreationInputTokens: summary.totalCacheCreationInputTokens + call.iterations.reduce((total, iteration) => total + iteration.cacheCreationInputTokens, 0),
     totalCostUsd: summary.totalCostUsd + call.costUsd
   }), {
     calls,
@@ -392,13 +396,13 @@ async function createEvalTelemetry(
       budget.authorize({ estimatedMaxCostUsd });
     },
     observe: async (phase, event) => {
-      const modelPricing = pricing[event.model];
-      if (!modelPricing) {
-        throw new Error(`Missing pricing for model: ${event.model}`);
-      }
-      const costUsd = calculateUsageCostUsd(event, modelPricing);
+      const costUsd = calculateUsageIterationsCostUsd(event.iterations, pricing);
+      const iterations = event.iterations.map((iteration) => ({
+        ...iteration,
+        costUsd: calculateUsageCostUsd(iteration, pricing[iteration.model])
+      }));
       budget.record({ ...event, costUsd });
-      calls.push({ ...event, phase, costUsd });
+      calls.push({ ...event, iterations, phase, costUsd });
       writeQueue = writeQueue.then(async () => {
         await mkdir(artifactPath, { recursive: true });
         await writeFile(join(artifactPath, "usage.json"), `${JSON.stringify(snapshot(), null, 2)}\n`, "utf8");
@@ -846,7 +850,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     ? options.model
     : selectGenerationModelTier(classifiedFeedback, options.preset);
   const advisorTool = options.preset !== "direct" && shouldUseAdvisorTool(classifiedFeedback, options.preset)
-    ? { model: ANTHROPIC_ADVISOR_MODEL_ID, maxUses: 1 }
+    ? { model: ANTHROPIC_ADVISOR_MODEL_ID, maxUses: 1, maxTokens: evalAdvisorMaxTokens }
     : undefined;
 
   let relevantFiles = await repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);

@@ -8,6 +8,7 @@ import {
   EvalBudget,
   assertGeneratedPathsAllowed,
   calculateUsageCostUsd,
+  calculateUsageIterationsCostUsd,
   createEvalTrialRuns,
   formatFrontendRepairRequirement,
   partitionVisibleContext,
@@ -209,6 +210,40 @@ describe("local fix evaluation harness", () => {
       cacheReadUsdPerMillion: 0.3,
       cacheCreationUsdPerMillion: 3.75
     })).toBeCloseTo(5.4, 10);
+  });
+
+  it("calculates executor and advisor iterations at their exact model rates", () => {
+    expect(calculateUsageIterationsCostUsd([
+      {
+        type: "message",
+        model: "claude-sonnet-4-6",
+        inputTokens: 1_000_000,
+        outputTokens: 100_000,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0
+      },
+      {
+        type: "advisor_message",
+        model: "claude-opus-4-8",
+        inputTokens: 500_000,
+        outputTokens: 20_000,
+        cacheReadInputTokens: 100_000,
+        cacheCreationInputTokens: 0
+      }
+    ], {
+      "claude-sonnet-4-6": {
+        inputUsdPerMillion: 3,
+        outputUsdPerMillion: 15,
+        cacheReadUsdPerMillion: 0.3,
+        cacheCreationUsdPerMillion: 3.75
+      },
+      "claude-opus-4-8": {
+        inputUsdPerMillion: 5,
+        outputUsdPerMillion: 25,
+        cacheReadUsdPerMillion: 0.5,
+        cacheCreationUsdPerMillion: 6.25
+      }
+    })).toBeCloseTo(7.55, 10);
   });
 
   it("rejects unrelated Python behavior changes inside an allowed file", () => {

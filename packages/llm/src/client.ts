@@ -53,6 +53,16 @@ export interface LLMUsageObservation {
   advisorOffered: boolean;
   advisorUsed: boolean;
   advisorUnavailable: boolean;
+  iterations: LLMUsageIteration[];
+}
+
+export interface LLMUsageIteration {
+  type: "message" | "advisor_message";
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
 }
 
 export interface CompletionOptions {
@@ -149,6 +159,54 @@ function extractTextContent(content: unknown[]): string {
   }
 
   return text;
+}
+
+function usageTokenCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function extractUsageIterations(
+  usage: AnthropicCompletionResponse["usage"],
+  executorModel: string,
+  advisorModel?: string
+): LLMUsageIteration[] {
+  const extendedUsage = usage as typeof usage & { iterations?: unknown };
+  if (!Array.isArray(extendedUsage.iterations) || extendedUsage.iterations.length === 0) {
+    return [{
+      type: "message",
+      model: executorModel,
+      inputTokens: usageTokenCount(usage.input_tokens),
+      outputTokens: usageTokenCount(usage.output_tokens),
+      cacheReadInputTokens: usageTokenCount("cache_read_input_tokens" in usage ? usage.cache_read_input_tokens : 0),
+      cacheCreationInputTokens: usageTokenCount("cache_creation_input_tokens" in usage ? usage.cache_creation_input_tokens : 0)
+    }];
+  }
+
+  return extendedUsage.iterations.map((rawIteration, index) => {
+    if (typeof rawIteration !== "object" || rawIteration === null || !("type" in rawIteration)) {
+      throw new LLMError(`Anthropic returned malformed usage iteration at index ${index}`);
+    }
+    const iteration = rawIteration as Record<string, unknown>;
+    if (iteration.type !== "message" && iteration.type !== "advisor_message") {
+      throw new LLMError(`Anthropic returned unknown usage iteration type at index ${index}`);
+    }
+    const model = iteration.type === "message"
+      ? executorModel
+      : typeof iteration.model === "string" && iteration.model.length > 0
+        ? iteration.model
+        : advisorModel;
+    if (!model) {
+      throw new LLMError(`Anthropic omitted the advisor model from usage iteration ${index}`);
+    }
+    return {
+      type: iteration.type,
+      model,
+      inputTokens: usageTokenCount(iteration.input_tokens),
+      outputTokens: usageTokenCount(iteration.output_tokens),
+      cacheReadInputTokens: usageTokenCount(iteration.cache_read_input_tokens),
+      cacheCreationInputTokens: usageTokenCount(iteration.cache_creation_input_tokens)
+    };
+  });
 }
 
 function getAnthropicErrorDetails(error: unknown): AnthropicErrorDetails {
@@ -323,7 +381,8 @@ export class LLMClient {
             retries: Math.max(0, requestAttempts - 1),
             advisorOffered: this.advisorTool !== undefined,
             advisorUsed: response.content.some(isAdvisorUseBlock),
-            advisorUnavailable
+            advisorUnavailable,
+            iterations: extractUsageIterations(usage, model, this.advisorTool?.model)
           });
         }
 

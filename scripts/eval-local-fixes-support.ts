@@ -283,6 +283,11 @@ export interface UsageTokenCounts {
   cacheCreationInputTokens: number;
 }
 
+export interface ModelUsageIteration extends UsageTokenCounts {
+  type: "message" | "advisor_message";
+  model: string;
+}
+
 export function calculateUsageCostUsd(usage: UsageTokenCounts, pricing: ModelPricing): number {
   return (
     usage.inputTokens * pricing.inputUsdPerMillion +
@@ -290,6 +295,19 @@ export function calculateUsageCostUsd(usage: UsageTokenCounts, pricing: ModelPri
     usage.cacheReadInputTokens * pricing.cacheReadUsdPerMillion +
     usage.cacheCreationInputTokens * pricing.cacheCreationUsdPerMillion
   ) / 1_000_000;
+}
+
+export function calculateUsageIterationsCostUsd(
+  iterations: ModelUsageIteration[],
+  pricing: Record<string, ModelPricing>
+): number {
+  return iterations.reduce((total, iteration) => {
+    const modelPricing = pricing[iteration.model];
+    if (!modelPricing) {
+      throw new Error(`Missing pricing for model: ${iteration.model}`);
+    }
+    return total + calculateUsageCostUsd(iteration, modelPricing);
+  }, 0);
 }
 
 function extractTopLevelPythonSymbols(content: string): Map<string, string> {

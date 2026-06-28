@@ -200,6 +200,87 @@ describe("LLMClient", () => {
     }));
   });
 
+  it("reports executor and advisor usage iterations with their billed models", async () => {
+    finalMessageMock.mockResolvedValueOnce({
+      content: [
+        { type: "tool_use", id: "tool-1", name: "advisor", input: {} },
+        { type: "text", text: "ok" }
+      ],
+      usage: {
+        input_tokens: 412,
+        output_tokens: 531,
+        iterations: [
+          {
+            type: "message",
+            input_tokens: 412,
+            output_tokens: 89,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 31
+          },
+          {
+            type: "advisor_message",
+            model: ANTHROPIC_ADVISOR_MODEL_ID,
+            input_tokens: 823,
+            output_tokens: 1_612,
+            cache_read_input_tokens: 17,
+            cache_creation_input_tokens: 0
+          },
+          {
+            type: "message",
+            input_tokens: 1_348,
+            output_tokens: 442,
+            cache_read_input_tokens: 412,
+            cache_creation_input_tokens: 0
+          }
+        ]
+      }
+    });
+    const observeUsage = vi.fn();
+    const client = new LLMClient({
+      mode: "platform",
+      platformApiKey: "test-key",
+      advisorTool: {
+        model: ANTHROPIC_ADVISOR_MODEL_ID,
+        maxUses: 1,
+        maxTokens: 2_048
+      },
+      disableUsageTracking: true,
+      observeUsage
+    });
+
+    await client.complete("system", "user");
+
+    expect(observeUsage).toHaveBeenCalledWith(expect.objectContaining({
+      advisorUsed: true,
+      iterations: [
+        {
+          type: "message",
+          model: "claude-sonnet-4-6",
+          inputTokens: 412,
+          outputTokens: 89,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 31
+        },
+        {
+          type: "advisor_message",
+          model: ANTHROPIC_ADVISOR_MODEL_ID,
+          inputTokens: 823,
+          outputTokens: 1_612,
+          cacheReadInputTokens: 17,
+          cacheCreationInputTokens: 0
+        },
+        {
+          type: "message",
+          model: "claude-sonnet-4-6",
+          inputTokens: 1_348,
+          outputTokens: 442,
+          cacheReadInputTokens: 412,
+          cacheCreationInputTokens: 0
+        }
+      ]
+    }));
+  });
+
   it("checks a local budget before starting an API request", async () => {
     const authorizeRequest = vi.fn(() => {
       throw new Error("local eval budget exhausted");
