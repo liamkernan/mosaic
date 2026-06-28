@@ -8,9 +8,11 @@ import {
   EvalBudget,
   assertGeneratedPathsAllowed,
   calculateUsageCostUsd,
+  createEvalTrialRuns,
   formatFrontendRepairRequirement,
   partitionVisibleContext,
   runEvalCaseBatch,
+  summarizeEvalTrials,
   validateUnchangedPythonSymbols,
   writeCaseArtifacts,
   writeEvalReport
@@ -79,6 +81,41 @@ describe("local fix evaluation harness", () => {
       startedAt: 10,
       finishedAt: 20,
       results
+    });
+  });
+
+  it("creates round-robin trial runs with isolated identities", () => {
+    expect(createEvalTrialRuns(["case-a", "case-b"], 3)).toEqual([
+      { caseId: "case-a", trial: 1, runId: "case-a--trial-1" },
+      { caseId: "case-b", trial: 1, runId: "case-b--trial-1" },
+      { caseId: "case-a", trial: 2, runId: "case-a--trial-2" },
+      { caseId: "case-b", trial: 2, runId: "case-b--trial-2" },
+      { caseId: "case-a", trial: 3, runId: "case-a--trial-3" },
+      { caseId: "case-b", trial: 3, runId: "case-b--trial-3" }
+    ]);
+    expect(createEvalTrialRuns(["case-a"], 1)).toEqual([
+      { caseId: "case-a", trial: 1, runId: "case-a" }
+    ]);
+  });
+
+  it("summarizes raw trials, pass@1, and pass@k by pinned case", () => {
+    const summary = summarizeEvalTrials([
+      { id: "a--trial-1", caseId: "a", trial: 1, passed: false, outcome: "completed", errors: ["failed"] },
+      { id: "b--trial-1", caseId: "b", trial: 1, passed: true, outcome: "completed", errors: [] },
+      { id: "a--trial-2", caseId: "a", trial: 2, passed: true, outcome: "completed", errors: [] },
+      { id: "b--trial-2", caseId: "b", trial: 2, passed: false, outcome: "completed", errors: ["failed"] }
+    ]);
+
+    expect(summary).toEqual({
+      totalTrials: 4,
+      passedTrials: 2,
+      trialPassRate: 0.5,
+      passAt1: { passedCases: 1, totalCases: 2, rate: 0.5 },
+      passAtK: { passedCases: 2, totalCases: 2, rate: 1 },
+      cases: [
+        { caseId: "a", passedTrials: 1, totalTrials: 2, passAt1: false, passAtK: true },
+        { caseId: "b", passedTrials: 1, totalTrials: 2, passAt1: true, passAtK: true }
+      ]
     });
   });
 

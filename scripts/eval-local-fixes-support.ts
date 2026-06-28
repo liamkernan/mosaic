@@ -11,6 +11,87 @@ export interface EvalBatchResult {
   [key: string]: unknown;
 }
 
+export interface EvalTrialRun {
+  caseId: string;
+  trial: number;
+  runId: string;
+}
+
+export interface EvalTrialSummary {
+  totalTrials: number;
+  passedTrials: number;
+  trialPassRate: number;
+  passAt1: { passedCases: number; totalCases: number; rate: number };
+  passAtK: { passedCases: number; totalCases: number; rate: number };
+  cases: Array<{
+    caseId: string;
+    passedTrials: number;
+    totalTrials: number;
+    passAt1: boolean;
+    passAtK: boolean;
+  }>;
+}
+
+export function createEvalTrialRuns(caseIds: string[], trials: number): EvalTrialRun[] {
+  const runs: EvalTrialRun[] = [];
+  for (let trial = 1; trial <= trials; trial += 1) {
+    for (const caseId of caseIds) {
+      runs.push({
+        caseId,
+        trial,
+        runId: trials === 1 ? caseId : `${caseId}--trial-${trial}`
+      });
+    }
+  }
+  return runs;
+}
+
+export function summarizeEvalTrials(results: EvalBatchResult[]): EvalTrialSummary {
+  const grouped = new Map<string, EvalBatchResult[]>();
+  for (const result of results) {
+    const caseId = typeof result.caseId === "string" ? result.caseId : result.id;
+    const current = grouped.get(caseId) ?? [];
+    current.push(result);
+    grouped.set(caseId, current);
+  }
+
+  const cases = [...grouped.entries()].map(([caseId, caseResults]) => {
+    const sorted = [...caseResults].sort((left, right) =>
+      Number(left.trial ?? 1) - Number(right.trial ?? 1)
+    );
+    const passedTrials = sorted.filter((result) => result.passed).length;
+    return {
+      caseId,
+      passedTrials,
+      totalTrials: sorted.length,
+      passAt1: sorted[0]?.passed ?? false,
+      passAtK: passedTrials > 0
+    };
+  });
+  const totalTrials = results.length;
+  const passedTrials = results.filter((result) => result.passed).length;
+  const totalCases = cases.length;
+  const passAt1Cases = cases.filter((result) => result.passAt1).length;
+  const passAtKCases = cases.filter((result) => result.passAtK).length;
+
+  return {
+    totalTrials,
+    passedTrials,
+    trialPassRate: totalTrials === 0 ? 0 : passedTrials / totalTrials,
+    passAt1: {
+      passedCases: passAt1Cases,
+      totalCases,
+      rate: totalCases === 0 ? 0 : passAt1Cases / totalCases
+    },
+    passAtK: {
+      passedCases: passAtKCases,
+      totalCases,
+      rate: totalCases === 0 ? 0 : passAtKCases / totalCases
+    },
+    cases
+  };
+}
+
 interface EvalCaseBatchOptions<T> {
   timeoutMs: number;
   runCase: (evalCase: T, signal: AbortSignal) => Promise<{ id: string; passed: boolean; errors?: string[] }>;
@@ -63,10 +144,11 @@ export async function runEvalCaseBatch<T>(
 export async function writeEvalReport(
   outputPath: string,
   results: EvalBatchResult[],
-  timing: { startedAt: number; finishedAt: number }
+  timing: { startedAt: number; finishedAt: number },
+  summary?: EvalTrialSummary
 ): Promise<void> {
   await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, `${JSON.stringify({ ...timing, results }, null, 2)}\n`, "utf8");
+  await writeFile(outputPath, `${JSON.stringify({ ...timing, ...(summary ? { summary } : {}), results }, null, 2)}\n`, "utf8");
 }
 
 export interface GeneratedPathPolicy {

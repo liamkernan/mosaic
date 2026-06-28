@@ -34,13 +34,16 @@ import {
   EvalBudget,
   assertGeneratedPathsAllowed,
   calculateUsageCostUsd,
+  createEvalTrialRuns,
   estimateMaximumCallCostUsd,
   formatFrontendRepairRequirement,
   partitionVisibleContext,
   runEvalCaseBatch,
+  summarizeEvalTrials,
   writeCaseArtifacts,
   writeEvalReport,
   type EvalBatchResult,
+  type EvalTrialRun,
   type FrontendRepairRequirement,
   type ModelPricing,
   validateUnchangedPythonSymbols
@@ -105,6 +108,8 @@ interface FrontendAssertion {
 
 interface EvalResult {
   id: string;
+  caseId: string;
+  trial: number;
   passed: boolean;
   tempPath: string;
   generated: boolean;
@@ -154,6 +159,9 @@ function parseArgs(argv: string[]): {
   maxCostUsd?: number;
   pricingPath?: string;
   preset: "direct" | "balanced" | "quality";
+  trials: number;
+  trial: number;
+  runId?: string;
 } {
   const runTimestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const args = {
@@ -170,7 +178,10 @@ function parseArgs(argv: string[]): {
     resultPath: undefined as string | undefined,
     maxCostUsd: undefined as number | undefined,
     pricingPath: undefined as string | undefined,
-    preset: "direct" as "direct" | "balanced" | "quality"
+    preset: "direct" as "direct" | "balanced" | "quality",
+    trials: 1,
+    trial: 1,
+    runId: undefined as string | undefined
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -217,6 +228,21 @@ function parseArgs(argv: string[]): {
         throw new Error("--preset must be direct, balanced, or quality");
       }
       args.preset = preset;
+    } else if (arg === "--trials") {
+      args.trials = Number(argv[++index]);
+      if (!Number.isSafeInteger(args.trials) || args.trials <= 0) {
+        throw new Error("--trials must be a positive integer");
+      }
+    } else if (arg === "--trial") {
+      args.trial = Number(argv[++index]);
+      if (!Number.isSafeInteger(args.trial) || args.trial <= 0) {
+        throw new Error("--trial must be a positive integer");
+      }
+    } else if (arg === "--run-id") {
+      args.runId = argv[++index];
+      if (!args.runId) {
+        throw new Error("--run-id must not be empty");
+      }
     } else if (arg === "--") {
       continue;
     } else {
@@ -786,7 +812,8 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
 async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>): Promise<EvalResult> {
   const sourceRepo = resolve(options.repoRoot, evalCase.repoDirName);
   const repoPath = await copyRepoAtRef(sourceRepo, evalCase.baseRef);
-  const artifactPath = join(options.outputDir, evalCase.id);
+  const runId = options.runId ?? evalCase.id;
+  const artifactPath = join(options.outputDir, runId);
   const telemetry = await createEvalTelemetry(options, artifactPath);
   const repoIndexer = new RepoIndexer();
   const repoContext: RepoContext = {
@@ -798,7 +825,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   };
 
   let classifiedFeedback: ClassifiedFeedback = {
-    id: evalCase.id,
+    id: runId,
     repoFullName: evalCase.repoFullName,
     receivedAt: new Date(),
     metadata: {},
@@ -1003,7 +1030,9 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   await persistArtifacts();
 
   return {
-    id: evalCase.id,
+    id: runId,
+    caseId: evalCase.id,
+    trial: options.trial,
     passed: errors.length === 0,
     tempPath: repoPath,
     generated,
@@ -1213,10 +1242,17 @@ async function repairVerificationFailure(
   return validation.valid ? repairedChanges : [];
 }
 
-function childArguments(options: ReturnType<typeof parseArgs>, evalCase: EvalCase, resultPath: string): string[] {
+function childArguments(
+  options: ReturnType<typeof parseArgs>,
+  evalCase: EvalCase,
+  trialRun: EvalTrialRun,
+  resultPath: string
+): string[] {
   return [
     resolve("scripts/eval-local-fixes.ts"),
     "--internal-case", evalCase.id,
+    "--trial", String(trialRun.trial),
+    "--run-id", trialRun.runId,
     "--result-path", resultPath,
     "--cases", options.casesPath,
     "--repo-root", options.repoRoot,
@@ -1234,14 +1270,15 @@ function childArguments(options: ReturnType<typeof parseArgs>, evalCase: EvalCas
 
 async function runCaseInChild(
   evalCase: EvalCase,
+  trialRun: EvalTrialRun,
   options: ReturnType<typeof parseArgs>,
   signal: AbortSignal,
   recordInterruptedUsage: (usage: EvalUsageSummary) => void = () => {}
 ): Promise<EvalResult> {
-  const resultPath = join(options.outputDir, evalCase.id, "result.json");
+  const resultPath = join(options.outputDir, trialRun.runId, "result.json");
 
   return new Promise<EvalResult>((resolveResult, rejectResult) => {
-    const child = spawn(process.execPath, [...process.execArgv, ...childArguments(options, evalCase, resultPath)], {
+    const child = spawn(process.execPath, [...process.execArgv, ...childArguments(options, evalCase, trialRun, resultPath)], {
       cwd: process.cwd(),
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"]
@@ -1273,7 +1310,7 @@ async function runCaseInChild(
       }
       signal.removeEventListener("abort", abort);
       if (signal.aborted) {
-        const usage = await readFile(join(options.outputDir, evalCase.id, "usage.json"), "utf8")
+        const usage = await readFile(join(options.outputDir, trialRun.runId, "usage.json"), "utf8")
           .then((content) => JSON.parse(content) as EvalUsageSummary)
           .catch(() => undefined);
         if (usage) {
@@ -1297,8 +1334,11 @@ async function runCaseInChild(
 }
 
 function failedResult(evalCase: EvalCase, options: ReturnType<typeof parseArgs>, error: unknown): EvalResult {
+  const runId = options.runId ?? evalCase.id;
   return {
-    id: evalCase.id,
+    id: runId,
+    caseId: evalCase.id,
+    trial: options.trial,
     passed: false,
     tempPath: "",
     generated: options.generate,
@@ -1306,7 +1346,7 @@ function failedResult(evalCase: EvalCase, options: ReturnType<typeof parseArgs>,
     loadedFiles: [],
     changedFiles: [],
     errors: [error instanceof Error ? error.message : String(error)],
-    artifactPath: join(options.outputDir, evalCase.id),
+    artifactPath: join(options.outputDir, runId),
     scopeViolations: []
   };
 }
@@ -1355,16 +1395,24 @@ async function main(): Promise<void> {
     throw new Error("No eval cases selected");
   }
 
+  const caseById = new Map(selectedCases.map((evalCase) => [evalCase.id, evalCase]));
+  const trialRuns = createEvalTrialRuns(selectedCases.map((evalCase) => evalCase.id), options.trials);
+  const workItems = trialRuns.map((trialRun) => ({
+    trialRun,
+    evalCase: caseById.get(trialRun.caseId) as EvalCase
+  }));
   const startedAt = Date.now();
   let remainingBudgetUsd = options.maxCostUsd;
-  const results = await runEvalCaseBatch(selectedCases, {
+  const batchResults = await runEvalCaseBatch(workItems, {
     timeoutMs: options.caseTimeoutMs,
-    getId: (evalCase) => evalCase.id,
-    runCase: async (evalCase, signal) => {
+    getId: ({ trialRun }) => trialRun.runId,
+    runCase: async ({ evalCase, trialRun }, signal) => {
       let interruptedCostUsd = 0;
-      const result = await runCaseInChild(evalCase, {
+      const result = await runCaseInChild(evalCase, trialRun, {
         ...options,
-        maxCostUsd: remainingBudgetUsd
+        maxCostUsd: remainingBudgetUsd,
+        trial: trialRun.trial,
+        runId: trialRun.runId
       }, signal, (usage) => {
         interruptedCostUsd = usage.totalCostUsd;
         if (remainingBudgetUsd !== undefined) {
@@ -1377,8 +1425,14 @@ async function main(): Promise<void> {
       return result;
     }
   });
+  const results = batchResults.map((result, index) => ({
+    ...result,
+    caseId: workItems[index].trialRun.caseId,
+    trial: workItems[index].trialRun.trial
+  }));
   const finishedAt = Date.now();
-  await writeEvalReport(join(options.outputDir, "results.json"), results, { startedAt, finishedAt });
+  const summary = summarizeEvalTrials(results);
+  await writeEvalReport(join(options.outputDir, "results.json"), results, { startedAt, finishedAt }, summary);
 
   if (!options.keep) {
     await Promise.all(results.map(async (result) => {
@@ -1393,10 +1447,10 @@ async function main(): Promise<void> {
   for (const result of results as Array<EvalBatchResult & Partial<EvalResult>>) {
     const status = result.passed ? "PASS" : "FAIL";
     console.log(`${status} ${result.id}`);
-    console.log(`  references: ${result.references.join(", ") || "(none)"}`);
-    console.log(`  loaded: ${result.loadedFiles.join(", ") || "(none)"}`);
+    console.log(`  references: ${result.references?.join(", ") || "(none)"}`);
+    console.log(`  loaded: ${result.loadedFiles?.join(", ") || "(none)"}`);
     if (result.generated) {
-      console.log(`  changed: ${result.changedFiles.join(", ") || "(none)"}`);
+      console.log(`  changed: ${result.changedFiles?.join(", ") || "(none)"}`);
     }
     if (result.errors.length > 0) {
       for (const error of result.errors) {
@@ -1410,6 +1464,8 @@ async function main(): Promise<void> {
   }
 
   console.log(`\n${passed}/${results.length} evals passed`);
+  console.log(`pass@1: ${summary.passAt1.passedCases}/${summary.passAt1.totalCases}`);
+  console.log(`pass@${options.trials}: ${summary.passAtK.passedCases}/${summary.passAtK.totalCases}`);
   console.log(`JSON report: ${join(options.outputDir, "results.json")}`);
   if (passed !== results.length) {
     process.exitCode = 1;

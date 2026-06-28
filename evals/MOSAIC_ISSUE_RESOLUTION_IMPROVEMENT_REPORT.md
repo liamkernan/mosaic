@@ -25,6 +25,7 @@ does not claim that a generated fix passes its product oracle.
 | SLA case visible context | 9 files in the pre-fix smoke measurement | 3 files (66.7% reduction) |
 | All-case visible context | Not recorded | 26 files total, 3.7 per case average |
 | Medium/large repository coverage | Unavailable | Storybook pinned case completes offline; 7 visible files |
+| Repeated-trial reporting | Unavailable | Round-robin trials, isolated artifacts, raw counts, pass@1, and pass@k enabled |
 
 ## Changes kept
 
@@ -82,6 +83,9 @@ does not claim that a generated fix passes its product oracle.
   the action, selector alternatives, expected state/text/class/attribute/count,
   and actual observations. Focused repair maps existing generated elements to
   those selectors before redesigning and preserves unrelated page content.
+- `--trials N` runs cases round-robin so pass@1 coverage completes before later
+  trials consume budget. Trial IDs and artifact directories are isolated, and
+  aggregate JSON reports raw trial counts, trial pass rate, pass@1, and pass@k.
 
 ## Deterministic verification
 
@@ -90,7 +94,7 @@ The final full local gate run passed:
 ```text
 pnpm lint       PASS
 pnpm typecheck  PASS
-pnpm test       PASS: 230 tests, 3 pre-existing skips
+pnpm test       PASS: 232 tests, 3 pre-existing skips
 pnpm build      PASS: all workspace packages
 ```
 
@@ -105,6 +109,9 @@ Milestones:
 
 - `a415666` — harden local fix evaluation harness
 - `164b484` — tighten fix planning and scope recovery
+- `d37eb48` — enforce repair convergence in production and eval
+- `39b2f48` — reject divergent repair attempts
+- `5dac2e2` — tighten large-repository reference scope
 
 ## Baseline failures and current status
 
@@ -143,8 +150,8 @@ maximum would exceed the remaining authorization.
    Python baseline cases.
 3. Include the now-available pinned Storybook case in both paid routing modes;
    its offline retrieval is verified, but generated-fix quality and cost are not.
-4. Run repeated trials after the first pinned comparison passes local gates;
-   report raw trials, pass@1, scope violations, latency, advisor use, and cost.
+4. Use the implemented `--trials` mode after the first pinned comparison;
+   live raw trials, pass@1/pass@k, latency, advisor use, and cost remain unmeasured.
 
 The highest-value immediate step is the budget-authorized pinned comparison.
 The success threshold remains at least 6/7 with all four backend cases, at
