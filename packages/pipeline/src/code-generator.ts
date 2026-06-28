@@ -596,7 +596,7 @@ export class CodeGenerator {
     try {
       response = await this.llmClient.complete(
         buildGenerationPrompt(feedback.summary, promptFiles, fileTree, implementationPlan, options),
-        "Return only the <changes> payload with complete file contents in CDATA blocks.",
+        "Return only the <changes> payload; use exact <edit> blocks for existing files and complete CDATA content only for new files or changes that cannot be expressed safely as localized edits.",
         {
           temperature: 0.3,
           maxTokens,

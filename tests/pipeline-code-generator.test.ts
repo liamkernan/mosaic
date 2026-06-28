@@ -7,10 +7,12 @@ import { CodeGenerator } from "../packages/pipeline/src/code-generator.js";
 describe("CodeGenerator", () => {
   it("compacts large static JS/CSS prompt context while preserving original diff inputs", async () => {
     let capturedPrompt = "";
+    let capturedUserMessage = "";
     const fakeClient = {
       setUsageContext: () => {},
-      complete: async (systemPrompt: string) => {
+      complete: async (systemPrompt: string, userMessage: string) => {
         capturedPrompt = systemPrompt;
+        capturedUserMessage = userMessage;
         return `<changes>
   <change>
     <filePath>script.js</filePath>
@@ -66,6 +68,8 @@ const generated = true;
     expect(capturedPrompt).toContain("const lastLine = true;");
     expect(capturedPrompt).not.toContain("const omitted1000 = 1000;");
     expect(capturedPrompt).not.toContain(".omitted-1000 { color: black; }");
+    expect(capturedUserMessage).toContain("use exact <edit> blocks for existing files");
+    expect(capturedUserMessage).not.toContain("complete file contents in CDATA blocks");
     expect(generatedChanges).toHaveLength(1);
     expect(generatedChanges[0]?.originalContent).toBe(hugeScript);
   });
