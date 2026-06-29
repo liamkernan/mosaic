@@ -475,6 +475,19 @@ export function estimateMaximumCallCostUsd(
   }, pricing);
 }
 
+export function estimateMaximumAdvisorCallCostUsd(
+  estimatedExecutorInputTokens: number,
+  executorMaxOutputTokens: number,
+  advisorMaxOutputTokens: number,
+  pricing: ModelPricing
+): number {
+  return estimateMaximumCallCostUsd(
+    estimatedExecutorInputTokens + executorMaxOutputTokens,
+    advisorMaxOutputTokens,
+    pricing
+  );
+}
+
 export class EvalBudget {
   private spentUsd = 0;
 

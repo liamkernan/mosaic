@@ -11,6 +11,7 @@ import {
   calculateUsageCostUsd,
   calculateUsageIterationsCostUsd,
   createEvalTrialRuns,
+  estimateMaximumAdvisorCallCostUsd,
   formatFrontendRepairRequirement,
   partitionVisibleContext,
   sanitizePlanForImmutablePaths,
@@ -296,6 +297,20 @@ describe("local fix evaluation harness", () => {
         cacheCreationUsdPerMillion: 6.25
       }
     })).toBeCloseTo(7.55, 10);
+  });
+
+  it("reserves executor output as possible advisor input context", () => {
+    expect(estimateMaximumAdvisorCallCostUsd(
+      10_000,
+      8_000,
+      2_000,
+      {
+        inputUsdPerMillion: 5,
+        outputUsdPerMillion: 25,
+        cacheReadUsdPerMillion: 0.5,
+        cacheCreationUsdPerMillion: 6.25
+      }
+    )).toBeCloseTo(0.14, 10);
   });
 
   it("rejects unrelated Python behavior changes inside an allowed file", () => {

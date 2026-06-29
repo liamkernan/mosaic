@@ -298,7 +298,7 @@ export class LLMClient {
         model,
         ...(advisorTool ? { advisorModel: advisorTool.model } : {}),
         ...(advisorTool?.maxTokens === undefined ? {} : { advisorMaxTokens: advisorTool.maxTokens }),
-        estimatedInputTokens: Math.ceil((systemPrompt.length + userMessage.length) / 4),
+        estimatedInputTokens: Math.ceil((systemPrompt.length + userMessage.length) / 3),
         maxOutputTokens: options.maxTokens ?? 4096
       });
       requestAttempts += 1;

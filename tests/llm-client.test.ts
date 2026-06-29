@@ -321,6 +321,7 @@ describe("LLMClient", () => {
 
     expect(authorizeRequest).toHaveBeenCalledWith(expect.objectContaining({
       model: "claude-sonnet-4-6",
+      estimatedInputTokens: 4,
       maxOutputTokens: 100
     }));
     expect(streamMock).not.toHaveBeenCalled();

@@ -38,6 +38,7 @@ import {
   calculateUsageCostUsd,
   calculateUsageIterationsCostUsd,
   createEvalTrialRuns,
+  estimateMaximumAdvisorCallCostUsd,
   estimateMaximumCallCostUsd,
   formatFrontendRepairRequirement,
   partitionVisibleContext,
@@ -389,8 +390,9 @@ async function createEvalTelemetry(
         if (!advisorPricing) {
           throw new Error(`Missing pricing for advisor model: ${request.advisorModel}`);
         }
-        estimatedMaxCostUsd += estimateMaximumCallCostUsd(
+        estimatedMaxCostUsd += estimateMaximumAdvisorCallCostUsd(
           request.estimatedInputTokens,
+          request.maxOutputTokens,
           request.advisorMaxTokens ?? request.maxOutputTokens,
           advisorPricing
         );
