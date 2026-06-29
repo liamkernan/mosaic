@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { GeneratedChange, RepoContext } from "@mosaic/core";
 
@@ -295,15 +295,15 @@ function splitCommaSeparatedNames(text: string): string[] {
   return names;
 }
 
-function addPythonImport(content: string, moduleName: string, names: string[]): string {
-  const escapedModuleName = moduleName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const importPattern = new RegExp(`^from\\s+\\.${escapedModuleName}\\s+import\\s+([^\\n]+)$`, "m");
+function addPythonImport(content: string, moduleSpecifier: string, names: string[]): string {
+  const escapedModuleSpecifier = moduleSpecifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const importPattern = new RegExp(`^from\\s+${escapedModuleSpecifier}\\s+import\\s+([^\\n]+)$`, "m");
   const existingImport = content.match(importPattern);
 
   if (existingImport) {
     const existingNames = existingImport[1].split(",").map((name) => name.trim()).filter(Boolean);
     const mergedNames = [...new Set([...existingNames, ...names])];
-    return content.replace(importPattern, `from .${moduleName} import ${mergedNames.join(", ")}`);
+    return content.replace(importPattern, `from ${moduleSpecifier} import ${mergedNames.join(", ")}`);
   }
 
   const lines = content.split("\n");
@@ -317,8 +317,16 @@ function addPythonImport(content: string, moduleName: string, names: string[]): 
     break;
   }
 
-  lines.splice(insertAt, 0, `from .${moduleName} import ${names.join(", ")}`);
+  lines.splice(insertAt, 0, `from ${moduleSpecifier} import ${names.join(", ")}`);
   return lines.join("\n");
+}
+
+function pythonImportSpecifier(targetPath: string, sourcePath: string | null, moduleName: string): string {
+  if (!sourcePath || dirname(targetPath) === dirname(sourcePath)) {
+    return `.${moduleName}`;
+  }
+
+  return sourcePath.replace(/\.py$/i, "").split("/").join(".");
 }
 
 function mergeMissingPythonImports(
@@ -786,7 +794,12 @@ export async function completeMissingPythonImports(
       await readFile(join(repoContext.localPath, missingImportsForFile.filePath), "utf8").catch(() => "");
     let modifiedContent = existingChange?.modifiedContent ?? originalContent;
     for (const { moduleName, names } of missingImportsForFile.modules) {
-      modifiedContent = addPythonImport(modifiedContent, moduleName, names);
+      const sourcePath = cachedFilePathByName(repoContext.fileTree, `${moduleName}.py`);
+      modifiedContent = addPythonImport(
+        modifiedContent,
+        pythonImportSpecifier(missingImportsForFile.filePath, sourcePath, moduleName),
+        names
+      );
     }
 
     if (modifiedContent === (existingChange?.modifiedContent ?? originalContent)) {
@@ -826,4 +839,122 @@ export async function applyValidationFallbacks(
   const withStyles = await completeMissingModalStyles(withHooks, repoContext, validationErrors);
   const withAssets = await completeUnlinkedStaticAssets(withStyles, repoContext, validationErrors);
   return completeMissingPythonImports(withAssets, repoContext, validationErrors);
+}
+
+const sensitiveProjectionFieldPattern = /(?:password|passwd|secret|token|credential|api_?key|private_?key|hash)/i;
+
+interface ProjectionRepairCandidate {
+  changeIndex: number;
+  start: number;
+  end: number;
+  replacement: string;
+}
+
+function pythonFunctionRanges(content: string): Array<{ start: number; end: number; content: string }> {
+  const starts = [...content.matchAll(/^(?:async\s+)?def\s+[A-Za-z_]\w*\s*\(/gm)].map((match) => match.index);
+  return starts.map((start, index) => {
+    const end = starts[index + 1] ?? content.length;
+    return { start, end, content: content.slice(start, end) };
+  });
+}
+
+function addQualifiedFieldToProjection(projection: string, qualifiedField: string): string | null {
+  if (new RegExp(`\\b${qualifiedField.replace(".", "\\.")}\\b`).test(projection)) {
+    return null;
+  }
+
+  if (projection.includes("\n")) {
+    const lines = projection.split("\n");
+    const fieldLineIndexes = lines
+      .map((line, index) => (/^\s*[A-Za-z_]\w*\.[A-Za-z_]\w*\s*,?\s*$/.test(line) ? index : -1))
+      .filter((index) => index >= 0);
+    if (fieldLineIndexes.length === 0) {
+      return null;
+    }
+    const insertAt = fieldLineIndexes[fieldLineIndexes.length - 1];
+    const indentation = lines[insertAt].match(/^\s*/)?.[0] ?? "";
+    lines.splice(insertAt, 0, `${indentation}${qualifiedField},`);
+    return lines.join("\n");
+  }
+
+  const fields = projection.split(",");
+  if (fields.length < 2 || fields.some((field) => !/^\s*[A-Za-z_]\w*\.[A-Za-z_]\w*\s*$/.test(field))) {
+    return null;
+  }
+  fields.splice(fields.length - 1, 0, ` ${qualifiedField}`);
+  return fields.join(",");
+}
+
+export function applyVerificationFallbacks(
+  changes: GeneratedChange[],
+  verificationErrors: string[]
+): GeneratedChange[] | null {
+  const missingFields = new Set<string>();
+  for (const error of verificationErrors) {
+    for (const match of error.matchAll(/KeyError:\s*["']([A-Za-z_]\w*)["']/g)) {
+      if (!sensitiveProjectionFieldPattern.test(match[1])) {
+        missingFields.add(match[1]);
+      }
+    }
+  }
+  if (missingFields.size !== 1) {
+    return null;
+  }
+
+  const field = [...missingFields][0];
+  const candidates: ProjectionRepairCandidate[] = [];
+  for (let changeIndex = 0; changeIndex < changes.length; changeIndex += 1) {
+    const change = changes[changeIndex];
+    if (!change.filePath.toLowerCase().endsWith(".py")) {
+      continue;
+    }
+
+    const supportedAliases = new Set(
+      [...change.originalContent.matchAll(new RegExp(`\\b([A-Za-z_]\\w*)\\.${field}\\b`, "g"))]
+        .map((match) => match[1])
+    );
+    if (supportedAliases.size === 0) {
+      continue;
+    }
+
+    for (const fn of pythonFunctionRanges(change.modifiedContent)) {
+      if (!/return\s+\[\s*row_to_dict\s*\(/.test(fn.content)) {
+        continue;
+      }
+      const selectPattern = /\bSELECT\b([\s\S]*?)\bFROM\b/gi;
+      for (const selectMatch of fn.content.matchAll(selectPattern)) {
+        const projection = selectMatch[1];
+        for (const alias of supportedAliases) {
+          const replacement = addQualifiedFieldToProjection(projection, `${alias}.${field}`);
+          if (replacement === null) {
+            continue;
+          }
+          const relativeStart = (selectMatch.index ?? 0) + selectMatch[0].indexOf(projection);
+          candidates.push({
+            changeIndex,
+            start: fn.start + relativeStart,
+            end: fn.start + relativeStart + projection.length,
+            replacement
+          });
+        }
+      }
+    }
+  }
+
+  if (candidates.length !== 1) {
+    return null;
+  }
+
+  const candidate = candidates[0];
+  return changes.map((change, index) => index === candidate.changeIndex
+    ? {
+        ...change,
+        modifiedContent:
+          change.modifiedContent.slice(0, candidate.start) +
+          candidate.replacement +
+          change.modifiedContent.slice(candidate.end),
+        explanation: `${change.explanation} Added the already-supported ${field} field to the unique public list projection after verification reported it missing.`
+      }
+    : change
+  );
 }

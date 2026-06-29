@@ -18,7 +18,7 @@ import { pruneChangesToPlanScope, validatePlanCompletion } from "../packages/pip
 import { assessRepairProgress } from "../packages/pipeline/src/repair-progress.js";
 import { RepoIndexer } from "../packages/pipeline/src/repo-indexer.js";
 import { validate } from "../packages/pipeline/src/validator.js";
-import { applyValidationFallbacks } from "../packages/pipeline/src/validation-repair.js";
+import { applyValidationFallbacks, applyVerificationFallbacks } from "../packages/pipeline/src/validation-repair.js";
 import { getEnv } from "../packages/core/src/config.js";
 import { LLMError } from "../packages/core/src/errors.js";
 import type { ClassifiedFeedback, ComplexityLevel, FeedbackCategory, FeedbackSource, FileNode, GeneratedChange, RepoContext } from "../packages/core/src/types.js";
@@ -965,6 +965,38 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     let verificationErrors = await runVerification(evalCase, repoPath, changes);
     verificationHistory.push({ stage: "initial", errors: verificationErrors });
     await persistArtifacts();
+    if (verificationErrors.length > 0) {
+      const completedChanges = applyVerificationFallbacks(changes, verificationErrors);
+      if (completedChanges) {
+        let completedValidation = await validate(completedChanges, repoContext);
+        const completedPlanErrors = validatePlanCompletion(completedChanges, implementationPlan, `${classifiedFeedback.summary}\n${classifiedFeedback.rawContent}`);
+        if (completedPlanErrors.length > 0) {
+          completedValidation = {
+            valid: false,
+            errors: [...completedValidation.errors, ...completedPlanErrors]
+          };
+        }
+        validationHistory.push({ stage: "verification-deterministic-repair", errors: completedValidation.errors });
+        if (completedValidation.valid) {
+          await writeGeneratedChanges(repoPath, completedChanges);
+          repoContext.fileTree = await buildFileTree(repoPath);
+          const completedVerificationErrors = await runVerification(evalCase, repoPath, completedChanges);
+          const progress = assessRepairProgress(changes, completedChanges, verificationErrors, completedVerificationErrors);
+          verificationHistory.push({
+            stage: `verification-deterministic-repair-${progress.trend}`,
+            errors: completedVerificationErrors
+          });
+          if (progress.accepted) {
+            changes = completedChanges;
+            verificationErrors = completedVerificationErrors;
+          } else {
+            await writeGeneratedChanges(repoPath, changes);
+            repoContext.fileTree = await buildFileTree(repoPath);
+          }
+          await persistArtifacts();
+        }
+      }
+    }
     if (verificationErrors.length > 0) {
       const preRepairChanges = changes;
       let repairedChanges = await repairVerificationFailure(

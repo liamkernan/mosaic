@@ -33,7 +33,7 @@ import { pruneChangesToPlanScope, validatePlanCompletion } from "./plan-completi
 import { assessRepairProgress } from "./repair-progress.js";
 import { buildLlmRetryFeedbackItem, canRetryLlmOverload, getLlmRetryDelayMs, isRetryableLlmOverload } from "./transient-llm.js";
 import { validate } from "./validator.js";
-import { applyValidationFallbacks } from "./validation-repair.js";
+import { applyValidationFallbacks, applyVerificationFallbacks } from "./validation-repair.js";
 import { runVerificationCommands } from "./verification-runner.js";
 
 const FEEDBACK_QUEUE_NAME = "feedback-intake";
@@ -365,6 +365,29 @@ export class FeedbackPipelineWorker {
     }
 
     let verification = await runVerificationCommands(changes, repoContext, implementationPlan);
+    if (!verification.valid) {
+      const completedChanges = applyVerificationFallbacks(changes, verification.errors);
+      if (completedChanges && completedChanges.length <= repoConfig.security.max_files_changed) {
+        const completedValidation = await validateGeneratedChanges(
+          completedChanges,
+          repoContext,
+          repoConfig,
+          implementationPlan,
+          feedbackText
+        );
+        if (completedValidation.valid) {
+          const completedVerification = await runVerificationCommands(completedChanges, repoContext, implementationPlan);
+          const progress = assessRepairProgress(changes, completedChanges, verification.errors, completedVerification.errors);
+          logger.info({ repairProgress: progress, feedbackId: classifiedFeedback.id }, "Assessed deterministic verification repair progress");
+          if (progress.accepted) {
+            changes = completedChanges;
+            validation = completedValidation;
+            verification = completedVerification;
+          }
+        }
+      }
+    }
+
     if (!verification.valid) {
       try {
         const repairedChanges = await codeGenerator.repairValidationFailure(

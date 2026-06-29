@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { GeneratedChange, RepoContext } from "../packages/core/src/types.js";
-import { applyValidationFallbacks } from "../packages/pipeline/src/validation-repair.js";
+import {
+  applyValidationFallbacks,
+  applyVerificationFallbacks
+} from "../packages/pipeline/src/validation-repair.js";
 
 describe("applyValidationFallbacks", () => {
   const tempDirs: string[] = [];
@@ -265,5 +268,83 @@ describe("applyValidationFallbacks", () => {
 
     const webChange = completed.find((change) => change.filePath === "mosaic_demo/web.py");
     expect(webChange?.modifiedContent).toContain("from .service import close_request, create_request, get_request, list_requests, queue_metrics");
+  });
+
+  it("uses the source package for imports added to generated Python tests", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
+    tempDirs.push(localPath);
+    const repoContext: RepoContext = {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath,
+      installationId: 1,
+      fileTree: [
+        { path: "mosaic_demo/service.py", type: "file" },
+        { path: "tests/generated/test_idempotent.py", type: "file" }
+      ]
+    };
+    const changes: GeneratedChange[] = [{
+      filePath: "tests/generated/test_idempotent.py",
+      originalContent: "",
+      modifiedContent: "def test_close():\n    close_request(None, 1)\n",
+      explanation: "test close behavior"
+    }];
+
+    const completed = await applyValidationFallbacks(changes, repoContext, [
+      "Change for tests/generated/test_idempotent.py calls close_request from service.py but does not import or define close_request"
+    ]);
+
+    expect(completed[0]?.modifiedContent).toContain("from mosaic_demo.service import close_request");
+    expect(completed[0]?.modifiedContent).not.toContain("from .service import");
+  });
+});
+
+describe("applyVerificationFallbacks", () => {
+  it("adds one already-supported field to the unique list result projection after a KeyError", () => {
+    const originalContent = [
+      "def get_request(conn):",
+      "    row = conn.execute('SELECT sr.id, sr.body FROM service_requests sr').fetchone()",
+      "    return row_to_dict(row)",
+      "",
+      "def list_requests(conn, sort='created'):",
+      "    rows = conn.execute('SELECT sr.id, sr.title, sr.status FROM service_requests sr ORDER BY sr.created_at DESC').fetchall()",
+      "    return [row_to_dict(row) for row in rows]",
+      ""
+    ].join("\n");
+    const modifiedContent = originalContent.replace(
+      "def get_request(conn):",
+      "def update_request(conn):\n    conn.execute('UPDATE service_requests SET body = ?')\n\ndef get_request(conn):"
+    );
+
+    const completed = applyVerificationFallbacks([{
+      filePath: "mosaic_demo/service.py",
+      originalContent,
+      modifiedContent,
+      explanation: "update an existing request"
+    }], [
+      "Verification command failed: KeyError: 'body'"
+    ]);
+
+    expect(completed).not.toBeNull();
+    expect(completed?.[0]?.modifiedContent).toContain(
+      "SELECT sr.id, sr.title, sr.body, sr.status FROM service_requests sr"
+    );
+    expect(completed?.[0]?.modifiedContent).toContain("ORDER BY sr.created_at DESC");
+  });
+
+  it("refuses sensitive, unsupported, or ambiguous projection repairs", () => {
+    const change = {
+      filePath: "service.py",
+      originalContent: "def list_rows(conn):\n    return conn.execute('SELECT r.id FROM rows r').fetchall()\n",
+      modifiedContent: "def list_rows(conn):\n    return conn.execute('SELECT r.id FROM rows r').fetchall()\n",
+      explanation: "list rows"
+    };
+
+    expect(applyVerificationFallbacks([change], ["KeyError: 'secret'"])).toBeNull();
+    expect(applyVerificationFallbacks([change], ["KeyError: 'body'"])).toBeNull();
+    expect(applyVerificationFallbacks([
+      { ...change, originalContent: "SELECT r.body FROM rows r\n" + change.originalContent },
+      { ...change, filePath: "other.py", originalContent: "SELECT r.body FROM rows r\n" + change.originalContent }
+    ], ["KeyError: 'body'"])).toBeNull();
   });
 });
