@@ -968,4 +968,34 @@ describe("validate", () => {
     expect(result.valid).toBe(false);
     expect(result.errors.join("\n")).toContain("calls get_metrics from service.py but does not import or define get_metrics");
   });
+
+  it("allows loopback HTTP test fixtures but still rejects production and external IP literals", async () => {
+    const context = {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath: process.cwd(),
+      fileTree: [],
+      installationId: 1
+    };
+    const testResult = await validate([
+      {
+        filePath: "tests/generated/test_metrics.py",
+        originalContent: "",
+        modifiedContent: "host = '127.0.0.1'\nexternal = '203.0.113.10'\n",
+        explanation: "exercise local HTTP route"
+      }
+    ], context);
+    const productionResult = await validate([
+      {
+        filePath: "app/web.py",
+        originalContent: "",
+        modifiedContent: "host = '127.0.0.1'\n",
+        explanation: "bind application host"
+      }
+    ], context);
+
+    expect(testResult.errors.join("\n")).not.toContain("127.0.0.1");
+    expect(testResult.errors.join("\n")).toContain("203.0.113.10");
+    expect(productionResult.errors.join("\n")).toContain("127.0.0.1");
+  });
 });
