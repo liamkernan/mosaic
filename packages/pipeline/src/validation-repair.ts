@@ -520,6 +520,7 @@ function applySelectorHookFallbacks(html: string, selectors: string[]): string {
       } else {
         attributesByClass.set(classAttrMatch[1], [classAttrMatch[2]]);
       }
+      missingClasses.push(classAttrMatch[1]);
       continue;
     }
 
@@ -529,13 +530,13 @@ function applySelectorHookFallbacks(html: string, selectors: string[]): string {
     }
   }
 
+  completedHtml = addClassesToSemanticMatches(completedHtml, missingClasses);
+
   for (const [className, attrNames] of attributesByClass) {
     completedHtml = attrNames.length === 1
       ? addAttributeToClassSelector(completedHtml, className, attrNames[0])
       : addAttributesToClassSelector(completedHtml, className, attrNames);
   }
-
-  completedHtml = addClassesToSemanticMatches(completedHtml, missingClasses);
 
   return completedHtml;
 }

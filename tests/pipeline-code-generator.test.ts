@@ -538,6 +538,9 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
     expect(capturedUserMessage).toContain("mismatched HTML and JavaScript hooks");
     expect(capturedUserMessage).toContain("Add the exact missing ids/classes/data attributes");
     expect(capturedUserMessage).toContain("do not leave selectors that match nothing");
+    expect(capturedUserMessage).toContain("native button or link");
+    expect(capturedUserMessage).toContain("Enter and Space keyboard handling");
+    expect(capturedUserMessage).toContain("Do not merely add a clickable class");
   });
 
   it("uses focused frontend verification repair instructions for selector assertion failures", async () => {
@@ -616,6 +619,8 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
     expect(capturedUserMessage).toContain("failing frontend verification assertions");
     expect(capturedUserMessage).toContain("selectors, ids, classes, text, attributes, counts");
     expect(capturedUserMessage).toContain("Map existing generated elements to the required selector alternatives");
+    expect(capturedUserMessage).toContain("exact compound selector");
+    expect(capturedUserMessage).toContain("role, tabindex, and Enter and Space keyboard handling");
     expect(capturedSystemPrompt).toContain('id="colModalOverlay"');
     expect(capturedSystemPrompt).toContain('"selectorAlternatives":["#collectionModalOverlay","#modal-kitchen"]');
     expect(capturedTimeoutMs).toBe(120_000);

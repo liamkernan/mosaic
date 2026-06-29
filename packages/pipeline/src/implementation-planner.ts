@@ -97,7 +97,7 @@ export function validateImplementationPlan(
   if (!verificationText.includes("unit test")) {
     errors.push("Endpoint plan must include unit-test verification for backing behavior");
   }
-  if (!/handler test|route test|http test/.test(verificationText)) {
+  if (!/(?:handler|route|http|public\s+path).{0,80}(?:test|assert|verify|check)|(?:test|assert|verify|check).{0,80}(?:handler|route|http|public\s+path)/.test(verificationText)) {
     errors.push("Endpoint plan must include handler/route verification through the public path");
   }
 

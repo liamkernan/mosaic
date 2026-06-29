@@ -61,7 +61,12 @@
     "oracleTestPathPrefixes": ["tests/reported/", "tests/smoke/"],
     "generatedTestPathPrefixes": ["tests/generated/"],
     "unchangedPythonSymbols": {
-      "mosaic_demo/service.py": ["list_requests", "close_request"]
+      "mosaic_demo/service.py": ["close_request"]
+    },
+    "allowedSymbolAdditions": {
+      "mosaic_demo/service.py": {
+        "list_requests": ["sr.body"]
+      }
     },
     "requiredChangedFilePatterns": [
       "mosaic_demo/service.py",

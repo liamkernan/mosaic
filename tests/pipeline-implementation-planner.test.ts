@@ -99,4 +99,44 @@ describe("ImplementationPlanner", () => {
       reason: "cover service and HTTP handler behavior"
     });
   });
+
+  it("accepts public-path HTTP assertions as handler verification", async () => {
+    const complete = vi.fn().mockResolvedValue(JSON.stringify({
+      requiredFiles: [
+        { path: "mosaic_demo/service.py", reason: "add metrics aggregation" },
+        { path: "mosaic_demo/web.py", reason: "add GET /metrics route" },
+        { path: "tests/generated/test_metrics.py", reason: "cover service and public HTTP behavior" }
+      ],
+      acceptanceCriteria: ["GET /metrics returns open request metrics"],
+      implementationChecklist: ["add service aggregation", "add route handler"],
+      verificationChecklist: [
+        "unit test service aggregation",
+        "Issue GET /metrics through the public path and assert HTTP 200 plus the JSON response shape"
+      ],
+      verificationCommands: ["python3 -m unittest tests.generated.test_metrics"]
+    }));
+    const fakeClient = { setUsageContext: () => {}, complete } as unknown as LLMClient;
+
+    const plan = await new ImplementationPlanner(fakeClient).plan(
+      {
+        id: "01METRICS-PUBLIC",
+        source: "web_form",
+        rawContent: "Add GET /metrics with open counts.",
+        senderIdentifier: "user@example.com",
+        repoFullName: "owner/repo",
+        receivedAt: new Date(),
+        metadata: {},
+        category: "feature_request",
+        complexity: "moderate",
+        summary: "Add metrics endpoint",
+        relevantFiles: ["mosaic_demo/service.py", "mosaic_demo/web.py"],
+        confidence: 0.8
+      },
+      [],
+      ["mosaic_demo/service.py", "mosaic_demo/web.py", "tests"]
+    );
+
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(plan.verificationChecklist.join("\n")).toContain("public path");
+  });
 });

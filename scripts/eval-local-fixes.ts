@@ -43,6 +43,7 @@ import {
   estimateMaximumCallCostUsd,
   formatFrontendRepairRequirement,
   partitionVisibleContext,
+  relocateGeneratedTestsFromImmutablePaths,
   runEvalCaseBatch,
   sanitizePlanForImmutablePaths,
   summarizeEvalTrials,
@@ -52,7 +53,8 @@ import {
   type EvalTrialRun,
   type FrontendRepairRequirement,
   type ModelPricing,
-  validateUnchangedSymbols
+  validateUnchangedSymbols,
+  validateUnchangedSymbolsWithAllowedLines
 } from "./eval-local-fixes-support.js";
 
 const exec = promisify(execCallback);
@@ -100,6 +102,7 @@ interface EvalCase {
   generatedTestPathPrefixes?: string[];
   unchangedPythonSymbols?: Record<string, string[]>;
   unchangedSymbols?: Record<string, string[]>;
+  allowedSymbolAdditions?: Record<string, Record<string, string[]>>;
 }
 
 interface FrontendAssertion {
@@ -544,6 +547,10 @@ async function evaluateChecks(
         ...(evalCase.unchangedSymbols?.[change.filePath] ?? [])
       ];
       errors.push(...validateUnchangedSymbols(change, unchangedSymbols));
+      errors.push(...validateUnchangedSymbolsWithAllowedLines(
+        change,
+        evalCase.allowedSymbolAdditions?.[change.filePath] ?? {}
+      ));
     }
 
     for (const pattern of evalCase.requiredChangedFilePatterns ?? []) {
@@ -942,6 +949,11 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
       await persistArtifacts();
       throw error;
     }
+    changes = relocateGeneratedTestsFromImmutablePaths(changes, {
+      oraclePaths: evalCase.oracleTestPaths ?? [],
+      oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
+      generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
+    });
     assertGeneratedPathsAllowed(changes.map((change) => change.filePath), {
       oraclePaths: evalCase.oracleTestPaths ?? [],
       oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
@@ -955,7 +967,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     await persistArtifacts();
     if (verificationErrors.length > 0) {
       const preRepairChanges = changes;
-      const repairedChanges = await repairVerificationFailure(
+      let repairedChanges = await repairVerificationFailure(
         generator,
         classifiedFeedback,
         relevantFiles,
@@ -967,6 +979,11 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
         (stage, validationErrors) => validationHistory.push({ stage, errors: validationErrors })
       );
       if (repairedChanges.length > 0) {
+        repairedChanges = relocateGeneratedTestsFromImmutablePaths(repairedChanges, {
+          oraclePaths: evalCase.oracleTestPaths ?? [],
+          oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
+          generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
+        });
         assertGeneratedPathsAllowed(repairedChanges.map((change) => change.filePath), {
           oraclePaths: evalCase.oracleTestPaths ?? [],
           oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
@@ -1019,7 +1036,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     });
     await persistArtifacts();
     const generator = new CodeGenerator(createEvalLlmClient(generationModel, telemetry, "check-repair", advisorTool));
-    const repairedChanges = await repairVerificationFailure(
+    let repairedChanges = await repairVerificationFailure(
       generator,
       classifiedFeedback,
       relevantFiles,
@@ -1031,6 +1048,11 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
       (stage, validationErrors) => validationHistory.push({ stage, errors: validationErrors })
     );
     if (repairedChanges.length > 0) {
+      repairedChanges = relocateGeneratedTestsFromImmutablePaths(repairedChanges, {
+        oraclePaths: evalCase.oracleTestPaths ?? [],
+        oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
+        generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
+      });
       assertGeneratedPathsAllowed(repairedChanges.map((change) => change.filePath), {
         oraclePaths: evalCase.oracleTestPaths ?? [],
         oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],

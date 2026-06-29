@@ -14,10 +14,12 @@ import {
   estimateMaximumAdvisorCallCostUsd,
   formatFrontendRepairRequirement,
   partitionVisibleContext,
+  relocateGeneratedTestsFromImmutablePaths,
   sanitizePlanForImmutablePaths,
   runEvalCaseBatch,
   summarizeEvalTrials,
   validateUnchangedSymbols,
+  validateUnchangedSymbolsWithAllowedLines,
   validateUnchangedPythonSymbols,
   writeCaseArtifacts,
   writeEvalReport
@@ -201,6 +203,42 @@ describe("local fix evaluation harness", () => {
     });
   });
 
+  it("relocates only newly invented tests out of immutable oracle prefixes", () => {
+    const relocated = relocateGeneratedTestsFromImmutablePaths([
+      {
+        filePath: "tests/smoke/test_sla_sort_order.py",
+        originalContent: "",
+        modifiedContent: "def test_order(): assert True\n",
+        explanation: "add generated coverage"
+      },
+      {
+        filePath: "mosaic_demo/service.py",
+        originalContent: "old\n",
+        modifiedContent: "new\n",
+        explanation: "fix behavior"
+      }
+    ], {
+      oraclePaths: [],
+      oraclePathPrefixes: ["tests/reported/", "tests/smoke/"],
+      generatedTestPathPrefixes: ["tests/generated/"]
+    });
+
+    expect(relocated.map((change) => change.filePath)).toEqual([
+      "tests/generated/test_sla_sort_order.py",
+      "mosaic_demo/service.py"
+    ]);
+    expect(() => relocateGeneratedTestsFromImmutablePaths([{
+      filePath: "tests/reported/test_existing.py",
+      originalContent: "def test_existing(): pass\n",
+      modifiedContent: "def test_existing(): assert True\n",
+      explanation: "edit oracle"
+    }], {
+      oraclePaths: [],
+      oraclePathPrefixes: ["tests/reported/"],
+      generatedTestPathPrefixes: ["tests/generated/"]
+    })).toThrow("immutable oracle");
+  });
+
   it("persists the plan, context, changes, histories, and final diff", async () => {
     const outputDir = await mkdtemp(join(tmpdir(), "mosaic-eval-artifacts-"));
 
@@ -366,6 +404,31 @@ describe("local fix evaluation harness", () => {
       originalContent,
       modifiedContent: originalContent.replace("runStory(story)", "runStoryWithFallback(story)")
     }, ["convertToFilePath"])).toEqual([]);
+  });
+
+  it("allows one required field addition while preserving the rest of a protected Python symbol", () => {
+    const originalContent = [
+      "def list_requests(conn, sort='created'):",
+      "    order_by = 'sr.created_at DESC'",
+      "    return conn.execute('SELECT sr.id, sr.title FROM service_requests ORDER BY ' + order_by)",
+      ""
+    ].join("\n");
+    const withBody = originalContent.replace("sr.id, sr.title", "sr.id, sr.title, sr.body");
+    expect(validateUnchangedSymbolsWithAllowedLines({
+      filePath: "mosaic_demo/service.py",
+      originalContent,
+      modifiedContent: withBody,
+      explanation: "expose updated body"
+    }, { list_requests: ["sr.body"] })).toEqual([]);
+
+    expect(validateUnchangedSymbolsWithAllowedLines({
+      filePath: "mosaic_demo/service.py",
+      originalContent,
+      modifiedContent: withBody.replace("sr.created_at DESC", "sr.sla_due_at ASC"),
+      explanation: "also change sorting"
+    }, { list_requests: ["sr.body"] })).toEqual([
+      "Unrelated protected symbol changed in mosaic_demo/service.py: list_requests"
+    ]);
   });
 
   it("serializes frontend selector failures as a typed repair requirement", () => {

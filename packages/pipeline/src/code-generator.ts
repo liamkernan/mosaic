@@ -453,7 +453,7 @@ const VALIDATION_REPAIR_ROUTES: ValidationRepairRoute[] = [
   },
   {
     match: hasMissingHtmlHookValidationError,
-    instruction: "Return only a repaired <changes> payload focused on mismatched HTML and JavaScript hooks. Add the exact missing ids/classes/data attributes to the HTML, or retarget the script to hooks that already exist. Include both HTML and JS edits when needed; do not leave selectors that match nothing.",
+    instruction: "Return only a repaired <changes> payload focused on mismatched HTML and JavaScript hooks. Add the exact missing ids/classes/data attributes to the HTML, or retarget the script to hooks that already exist. If the target is a non-native card, use a native button or link where possible; otherwise add role, tabindex, and Enter and Space keyboard handling in the same repair. Do not merely add a clickable class to a div/article/section. Include both HTML and JS edits when needed; do not leave selectors that match nothing.",
     maxTokens: focusedValidationRepairMaxTokens,
     timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
   },
@@ -501,7 +501,7 @@ const VALIDATION_REPAIR_ROUTES: ValidationRepairRoute[] = [
   },
   {
     match: hasFrontendVerificationFailure,
-    instruction: "Return only a repaired <changes> payload focused on the failing frontend verification assertions. Treat the reported selectors, ids, classes, text, attributes, counts, and runtime errors as binding executable contracts. Map existing generated elements to the required selector alternatives before redesigning the implementation; update the smallest matching HTML, CSS, and JS hooks needed and preserve unrelated page content.",
+    instruction: "Return only a repaired <changes> payload focused on the failing frontend verification assertions. Treat the reported selectors, ids, classes, text, attributes, counts, and runtime errors as binding executable contracts. Map existing generated elements to the required selector alternatives before redesigning the implementation. For an exact compound selector such as .card-clickable[data-key], add every required class and data attribute to the same interactive element. Prefer a native button or link; otherwise include role, tabindex, and Enter and Space keyboard handling. Update the smallest matching HTML, CSS, and JS hooks needed and preserve unrelated page content.",
     maxTokens: focusedValidationRepairMaxTokens,
     timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
   },

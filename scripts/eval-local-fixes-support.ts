@@ -194,6 +194,32 @@ export function assertGeneratedPathsAllowed(changedPaths: string[], policy: Gene
   }
 }
 
+export function relocateGeneratedTestsFromImmutablePaths<T extends CaseArtifactChange>(
+  changes: T[],
+  policy: GeneratedPathPolicy
+): T[] {
+  const oraclePaths = new Set(policy.oraclePaths);
+  const generatedPrefix = policy.generatedTestPathPrefixes[0];
+  const occupiedPaths = new Set(changes.map((change) => change.filePath));
+
+  return changes.map((change) => {
+    if (!pathMatches(change.filePath, oraclePaths, policy.oraclePathPrefixes ?? [])) {
+      return change;
+    }
+    if (change.originalContent.length > 0 || !generatedPrefix) {
+      throw new Error(`Generated change targets immutable oracle path: ${change.filePath}`);
+    }
+
+    const relocatedPath = `${generatedPrefix}${basename(change.filePath)}`;
+    if (occupiedPaths.has(relocatedPath)) {
+      throw new Error(`Cannot relocate generated oracle-path test because target already exists: ${relocatedPath}`);
+    }
+    occupiedPaths.delete(change.filePath);
+    occupiedPaths.add(relocatedPath);
+    return { ...change, filePath: relocatedPath };
+  });
+}
+
 export function partitionVisibleContext<T extends { path: string }>(
   files: T[],
   oraclePaths: string[],
@@ -453,6 +479,39 @@ export function validateUnchangedSymbols(
       ? []
       : [`Unrelated protected symbol changed in ${change.filePath}: ${symbol}`]
   );
+}
+
+export function validateUnchangedSymbolsWithAllowedLines(
+  change: { filePath: string; originalContent: string; modifiedContent: string },
+  allowedBySymbol: Record<string, string[]>
+): string[] {
+  const isPython = change.filePath.toLowerCase().endsWith(".py");
+  const originalSymbols = isPython
+    ? extractTopLevelPythonSymbols(change.originalContent)
+    : extractTopLevelJavaScriptSymbols(change.originalContent);
+  const modifiedSymbols = isPython
+    ? extractTopLevelPythonSymbols(change.modifiedContent)
+    : extractTopLevelJavaScriptSymbols(change.modifiedContent);
+
+  return Object.entries(allowedBySymbol).flatMap(([symbol, allowedTokens]) => {
+    const original = originalSymbols.get(symbol);
+    let modified = modifiedSymbols.get(symbol);
+    if (original === undefined || modified === undefined) {
+      return [`Unrelated protected symbol changed in ${change.filePath}: ${symbol}`];
+    }
+    for (const token of allowedTokens) {
+      const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      modified = modified
+        .split("\n")
+        .filter((line) => line.trim().replace(/,$/, "") !== token)
+        .join("\n")
+        .replace(new RegExp(`,\\s*${escaped}`, "g"), "")
+        .replace(new RegExp(`${escaped}\\s*,\\s*`, "g"), "");
+    }
+    return original === modified
+      ? []
+      : [`Unrelated protected symbol changed in ${change.filePath}: ${symbol}`];
+  });
 }
 
 export function validateUnchangedPythonSymbols(

@@ -212,6 +212,30 @@ describe("applyValidationFallbacks", () => {
     expect(htmlChange?.modifiedContent).toContain('class="collection-card shifted-card collection-card-btn collection-card-link"');
   });
 
+  it("adds a missing semantic class before its required data attribute", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
+    tempDirs.push(localPath);
+    await writeFile(
+      join(localPath, "index.html"),
+      '<!doctype html><html><body><article class="collection-card"><h3>Kitchen</h3></article></body></html>\n',
+      "utf8"
+    );
+    const repoContext: RepoContext = {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath,
+      installationId: 1,
+      fileTree: [{ path: "index.html", type: "file" }]
+    };
+
+    const completed = await applyValidationFallbacks([], repoContext, [
+      "Change for collection-modal.js queries selector(s) with no matching HTML: .collection-card-btn[data-collection]"
+    ]);
+
+    const htmlChange = completed.find((change) => change.filePath === "index.html");
+    expect(htmlChange?.modifiedContent).toContain('class="collection-card collection-card-btn" data-collection="kitchen"');
+  });
+
   it("adds missing sibling Python imports reported by validation", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
     tempDirs.push(localPath);
