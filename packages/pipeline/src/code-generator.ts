@@ -384,9 +384,7 @@ function hasMissingIdempotencyUpdateError(validationErrors: string[]): boolean {
 }
 
 function hasTestApiShapeMismatchError(validationErrors: string[]): boolean {
-  return validationErrors.some((error) =>
-    /generated test asserts field|wrong public API shape|does not expose that field|KeyError:\s*["'][^"']+["']/i.test(error)
-  );
+  return validationErrors.some((error) => /generated test asserts field|wrong public API shape|does not expose that field/i.test(error));
 }
 
 function hasMissingPythonImportError(validationErrors: string[]): boolean {
@@ -473,7 +471,7 @@ const VALIDATION_REPAIR_ROUTES: ValidationRepairRoute[] = [
   },
   {
     match: hasTestApiShapeMismatchError,
-    instruction: "Return only a repaired <changes> payload focused on the test/API shape mismatch. A KeyError means the public list/query/API result must expose the missing field named by the KeyError when that field is part of the requested behavior. Update the implementation query/projection/serializer that builds that result, preserving all existing fields, filters, ordering, and unrelated symbols. Preserve required behavioral test coverage. Do not redirect the assertion to a different object, remove it, or edit an immutable reported test merely to pass validation.",
+    instruction: "Return only a repaired <changes> payload focused on the test/API shape mismatch. If a generated test reads a field from a list/query/API result that the implementation does not expose, either update the implementation to expose that field when it is part of the requested public behavior, or repair the test to assert through an existing returned object or supported accessor. Preserve behavioral coverage; do not delete assertions just to pass validation.",
     maxTokens: focusedValidationRepairMaxTokens,
     timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
   },
@@ -630,23 +628,13 @@ export class CodeGenerator {
         throw error;
       }
 
-      const staticFrontendRetry = shouldCompactStaticFrontendContext(relevantFiles);
-      const retryFiles = staticFrontendRetry
-        ? retryPromptRelevantFiles(relevantFiles, extractKeywords(promptKeywordText(feedback, implementationPlan)))
-        : undefined;
       const repairedResponse = await this.llmClient.complete(
-        retryFiles
-          ? buildGenerationPrompt(feedback.summary, retryFiles, fileTree, implementationPlan, options)
-          : buildGenerationRepairPrompt(response),
-        retryFiles
-          ? "The previous structured output was truncated or malformed. Return only a small localized <changes> payload using exact <edit> blocks for existing files or compact new scoped assets. Do not rewrite complete existing frontend files."
-          : "Return only the repaired <changes> payload with complete file contents in CDATA blocks.",
+        buildGenerationRepairPrompt(response),
+        "Return only the repaired <changes> payload with complete file contents in CDATA blocks.",
         {
           temperature: 0,
-          maxTokens: retryFiles
-            ? Math.min(estimateGenerationMaxTokens(retryFiles, options), STATIC_FRONTEND_RETRY_MAX_TOKENS)
-            : maxTokens,
-          timeoutMs: retryFiles ? STATIC_FRONTEND_RETRY_TIMEOUT_MS : GENERATION_TIMEOUT_MS
+          maxTokens,
+          timeoutMs: GENERATION_TIMEOUT_MS
         }
       );
 

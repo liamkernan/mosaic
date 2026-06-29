@@ -1004,12 +1004,7 @@ export async function validate(
       errors.push(`New URL(s) added to ${change.filePath}: ${newUrls.join(", ")}`);
     }
 
-    const newIps = findAddedMatches(
-      ipPattern,
-      change.originalContent,
-      change.modifiedContent,
-      lineStats[index].modifiedChangedText
-    ).filter((ip) => !(testFilePathPattern.test(change.filePath) && ip === "127.0.0.1"));
+    const newIps = findAddedMatches(ipPattern, change.originalContent, change.modifiedContent, lineStats[index].modifiedChangedText);
     if (newIps.length > 0) {
       errors.push(`New IP address(es) added to ${change.filePath}: ${newIps.join(", ")}`);
     }

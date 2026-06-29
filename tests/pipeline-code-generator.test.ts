@@ -5,60 +5,6 @@ import type { LLMClient } from "../packages/llm/src/client.js";
 import { CodeGenerator } from "../packages/pipeline/src/code-generator.js";
 
 describe("CodeGenerator", () => {
-  it("regenerates compact localized static frontend edits after truncated structured output", async () => {
-    const prompts: string[] = [];
-    const messages: string[] = [];
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (systemPrompt: string, userMessage: string) => {
-        prompts.push(systemPrompt);
-        messages.push(userMessage);
-        if (prompts.length === 1) {
-          return "<changes><change><filePath>index.html</filePath><modifiedContent><![CDATA[<main>truncated";
-        }
-        return `<changes>
-  <edit>
-    <filePath>index.html</filePath>
-    <search><![CDATA[
-<main></main>
-]]></search>
-    <replace><![CDATA[
-<main><button id="open-modal">Open</button></main>
-]]></replace>
-    <explanation>Add a compact modal trigger.</explanation>
-  </edit>
-</changes>`;
-      }
-    } as unknown as LLMClient;
-    const hugeHtml = `<main></main>\n${"<section>content</section>\n".repeat(3_000)}`;
-
-    const changes = await new CodeGenerator(fakeClient).generate(
-      {
-        id: "01TEST",
-        source: "web_form",
-        rawContent: "Add a modal",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
-        category: "feature_request",
-        complexity: "complex",
-        summary: "Add a modal",
-        relevantFiles: ["index.html"],
-        confidence: 0.8
-      },
-      [{ path: "index.html", content: hugeHtml, reason: "markup" }],
-      ["index.html"],
-      undefined,
-      { completeSolution: true }
-    );
-
-    expect(prompts).toHaveLength(2);
-    expect(prompts[1]).not.toContain("<main>truncated");
-    expect(messages[1]).toContain("small localized <changes> payload");
-    expect(changes[0]?.modifiedContent).toContain('id="open-modal"');
-  });
-
   it("compacts large static JS/CSS prompt context while preserving original diff inputs", async () => {
     let capturedPrompt = "";
     let capturedUserMessage = "";
@@ -739,10 +685,9 @@ self.assertIn("screenshot", second["body"])
       { completeSolution: true }
     );
 
-    expect(capturedUserMessage).toContain("missing field named by the KeyError");
+    expect(capturedUserMessage).toContain("failing test or verification output");
     expect(capturedUserMessage).toContain("Preserve required behavioral test coverage");
-    expect(capturedUserMessage).toContain("list/query/API result");
-    expect(capturedUserMessage).toContain("Do not redirect the assertion");
+    expect(capturedUserMessage).toContain("wrong public API shape");
     expect(capturedTimeoutMs).toBe(120_000);
   });
 
