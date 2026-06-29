@@ -150,6 +150,24 @@ passed 2/7, and spent $3.970749. Both runs reported zero protected-symbol scope
 violations. The result is an honest tie with the 2/7 source baseline, not a
 claimed benchmark improvement.
 
+### Post-measurement offline hardening
+
+The matched failures were converted into failing deterministic regressions
+before production changes in `779065d`:
+
+- verification `KeyError` output now routes to a focused public-result
+  projection repair that preserves existing fields, filters, ordering, and
+  immutable tests;
+- generated tests may use only the exact loopback fixture `127.0.0.1`; external
+  test IPs and all production IP additions remain rejected;
+- malformed/truncated large static-frontend output is regenerated from compact
+  source context as localized edits rather than expanded from the oversized
+  malformed response.
+
+These changes pass all offline gates but were made after the matched paid runs.
+They are therefore not included in the 2/7 measurements and must not be claimed
+as a benchmark gain without a future authorized rerun.
+
 ### Seven pinned baseline cases (diagnostic rerun)
 
 | Case | Direct Sonnet | Quality/advisor |
@@ -223,7 +241,7 @@ Final gates after all kept production changes:
 ```text
 pnpm lint       PASS
 pnpm typecheck  PASS
-pnpm test       PASS: 247 tests, 3 skipped
+pnpm test       PASS: 249 tests, 3 skipped
 pnpm build      PASS: all workspace packages
 ```
 
@@ -246,17 +264,16 @@ Milestones added in this budgeted phase:
 - `7a56958` — cap production advisor output
 - `6352276` — record the corrected offline benchmark state
 - `10c2825` — fix eval repair scope regressions
+- `779065d` — fix residual generation repair failures
 
 ## Remaining risks and next highest-value work
 
-1. Add a deterministic, general repair for public result-shape mismatches so an
-   idempotent update that changes `body` also exposes `body` through the list
-   API, while retaining exact protected-symbol scope checks.
-2. Treat loopback literals in generated HTTP tests separately from newly added
-   external IP addresses, while continuing to reject production network targets,
-   and add deterministic missing-sibling-import repair coverage.
-3. Add bounded structured-output recovery for frontend generation and improve
-   exact compound-selector repair before another paid run.
+1. Measure the post-run offline hardening on the same pinned direct/quality cases
+   only after receiving new API-budget authorization.
+2. If idempotency still misses the list projection, add a syntax-aware bounded
+   fallback rather than broad string rewriting.
+3. Improve exact compound-selector repair for collections before spending on
+   all three frontend cases again.
 4. The target remains at least 6/7, all four backend cases, at least two frontend
    cases, zero oracle edits, zero unrelated changes, and no weakened safeguards.
 
