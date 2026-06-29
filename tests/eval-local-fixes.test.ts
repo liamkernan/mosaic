@@ -213,6 +213,16 @@ describe("local fix evaluation harness", () => {
         explanation: "fix"
       }],
       validationHistory: [{ stage: "generation", errors: [] }],
+      validationCandidates: [{
+        stage: "generation",
+        selected: false,
+        changes: [{
+          filePath: "src/service.py",
+          originalContent: "old\n",
+          modifiedContent: "rejected\n",
+          explanation: "rejected candidate"
+        }]
+      }],
       verificationHistory: [{ stage: "initial", errors: [] }]
     });
 
@@ -220,6 +230,7 @@ describe("local fix evaluation harness", () => {
     await expect(readFile(join(outputDir, "selected-context.json"), "utf8")).resolves.toContain("reported file");
     await expect(readFile(join(outputDir, "change-manifest.json"), "utf8")).resolves.toContain("fix");
     await expect(readFile(join(outputDir, "validation-history.json"), "utf8")).resolves.toContain("generation");
+    await expect(readFile(join(outputDir, "validation-candidates.json"), "utf8")).resolves.toContain("rejected candidate");
     await expect(readFile(join(outputDir, "verification-history.json"), "utf8")).resolves.toContain("initial");
     await expect(readFile(join(outputDir, "final.diff"), "utf8")).resolves.toContain("-old\n+new");
   });

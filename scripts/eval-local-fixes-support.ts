@@ -271,6 +271,11 @@ interface CaseArtifacts {
   selectedContext: unknown;
   changes: CaseArtifactChange[];
   validationHistory: unknown;
+  validationCandidates: Array<{
+    stage: string;
+    selected: boolean;
+    changes: CaseArtifactChange[];
+  }>;
   verificationHistory: unknown;
 }
 
@@ -308,6 +313,7 @@ export async function writeCaseArtifacts(outputDir: string, artifacts: CaseArtif
     writeJson(`${outputDir}/selected-context.json`, artifacts.selectedContext),
     writeJson(`${outputDir}/change-manifest.json`, artifacts.changes),
     writeJson(`${outputDir}/validation-history.json`, artifacts.validationHistory),
+    writeJson(`${outputDir}/validation-candidates.json`, artifacts.validationCandidates),
     writeJson(`${outputDir}/verification-history.json`, artifacts.verificationHistory),
     writeFile(`${outputDir}/final.diff`, formatFinalDiff(artifacts.changes), "utf8")
   ]);

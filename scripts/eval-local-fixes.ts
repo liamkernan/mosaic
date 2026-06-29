@@ -884,12 +884,18 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   const errors: string[] = [];
   let implementationPlan: ImplementationPlan | undefined;
   const validationHistory: Array<{ stage: string; errors: string[] }> = [];
+  const validationCandidates: Array<{
+    stage: string;
+    selected: boolean;
+    changes: GeneratedChange[];
+  }> = [];
   const verificationHistory: Array<{ stage: string; errors: string[] }> = [];
   const persistArtifacts = async (): Promise<void> => writeCaseArtifacts(artifactPath, {
     plan: implementationPlan ?? null,
     selectedContext: relevantFiles.map(({ path, reason }) => ({ path, reason })),
     changes,
     validationHistory,
+    validationCandidates,
     verificationHistory
   });
   await persistArtifacts();
@@ -914,15 +920,26 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     relevantFiles = partitionedPlannedFiles.visible;
     await persistArtifacts();
     const generator = new CodeGenerator(createEvalLlmClient(generationModel, telemetry, "generation-and-repair", advisorTool));
-    changes = await generateValidatedChanges(
-      generator,
-      classifiedFeedback,
-      relevantFiles,
-      fileTree,
-      implementationPlan,
-      repoContext,
-      (stage, validationErrors) => validationHistory.push({ stage, errors: validationErrors })
-    );
+    try {
+      changes = await generateValidatedChanges(
+        generator,
+        classifiedFeedback,
+        relevantFiles,
+        fileTree,
+        implementationPlan,
+        repoContext,
+        (stage, validationErrors, candidateChanges, selected) => {
+          validationHistory.push({ stage, errors: validationErrors });
+          validationCandidates.push({ stage, selected, changes: candidateChanges });
+          if (selected) {
+            changes = candidateChanges;
+          }
+        }
+      );
+    } catch (error) {
+      await persistArtifacts();
+      throw error;
+    }
     assertGeneratedPathsAllowed(changes.map((change) => change.filePath), {
       oraclePaths: evalCase.oracleTestPaths ?? [],
       oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
@@ -1079,7 +1096,12 @@ async function generateValidatedChanges(
   fileTree: string[],
   implementationPlan: ImplementationPlan,
   repoContext: RepoContext,
-  recordValidation: (stage: string, errors: string[]) => void = () => {}
+  recordValidation: (
+    stage: string,
+    errors: string[],
+    candidateChanges: GeneratedChange[],
+    selected: boolean
+  ) => void = () => {}
 ): Promise<GeneratedChange[]> {
   let changes = await generator.generate(feedback, relevantFiles, fileTree, implementationPlan, {
     completeSolution: true
@@ -1093,7 +1115,7 @@ async function generateValidatedChanges(
       errors: [...validation.errors, ...planErrors]
     };
   }
-  recordValidation("initial", validation.errors);
+  recordValidation("initial", validation.errors, changes, true);
 
   for (let attempt = 0; !validation.valid && attempt < validationRecoveryAttempts; attempt += 1) {
     if (validation.errors.some((error) => scopeValidationPattern.test(error))) {
@@ -1108,7 +1130,7 @@ async function generateValidatedChanges(
             errors: [...validation.errors, ...scopedPlanErrors]
           };
         }
-        recordValidation(`scope-prune-${attempt + 1}`, validation.errors);
+        recordValidation(`scope-prune-${attempt + 1}`, validation.errors, changes, true);
 
         if (validation.valid) {
           break;
@@ -1142,7 +1164,12 @@ async function generateValidatedChanges(
           };
         }
         const progress = assessRepairProgress(changes, candidateChanges, validation.errors, candidateValidation.errors);
-        recordValidation(`model-repair-${progress.trend}-${attempt + 1}`, candidateValidation.errors);
+        recordValidation(
+          `model-repair-${progress.trend}-${attempt + 1}`,
+          candidateValidation.errors,
+          candidateChanges,
+          progress.accepted
+        );
         if (progress.accepted) {
           changes = candidateChanges;
           madeProgress = true;
@@ -1167,7 +1194,12 @@ async function generateValidatedChanges(
           };
         }
         const progress = assessRepairProgress(changes, completedChanges, validation.errors, completedValidation.errors);
-        recordValidation(`deterministic-repair-${progress.trend}-${attempt + 1}`, completedValidation.errors);
+        recordValidation(
+          `deterministic-repair-${progress.trend}-${attempt + 1}`,
+          completedValidation.errors,
+          completedChanges,
+          progress.accepted
+        );
         if (progress.accepted) {
           changes = completedChanges;
           madeProgress = true;
