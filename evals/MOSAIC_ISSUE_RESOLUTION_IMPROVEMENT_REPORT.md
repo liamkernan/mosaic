@@ -150,23 +150,14 @@ passed 2/7, and spent $3.970749. Both runs reported zero protected-symbol scope
 violations. The result is an honest tie with the 2/7 source baseline, not a
 claimed benchmark improvement.
 
-### Post-measurement offline hardening
+### Rejected unmeasured candidates
 
-The matched failures were converted into failing deterministic regressions
-before production changes in `779065d`:
-
-- verification `KeyError` output now routes to a focused public-result
-  projection repair that preserves existing fields, filters, ordering, and
-  immutable tests;
-- generated tests may use only the exact loopback fixture `127.0.0.1`; external
-  test IPs and all production IP additions remain rejected;
-- malformed/truncated large static-frontend output is regenerated from compact
-  source context as localized edits rather than expanded from the oversized
-  malformed response.
-
-These changes pass all offline gates but were made after the matched paid runs.
-They are therefore not included in the 2/7 measurements and must not be claimed
-as a benchmark gain without a future authorized rerun.
+Three matched failures were reproduced with failing deterministic regressions:
+focused `KeyError`/public-projection repair, test-only `127.0.0.1` handling, and
+compact regeneration after truncated static-frontend output. Their local tests
+passed, but the remaining $0.195862 could not safely fund an identical matched
+evaluation. Commit `779065d` was therefore reverted by `cdd3a0e`; none of those
+unmeasured production changes remain active.
 
 ### Seven pinned baseline cases (diagnostic rerun)
 
@@ -241,7 +232,7 @@ Final gates after all kept production changes:
 ```text
 pnpm lint       PASS
 pnpm typecheck  PASS
-pnpm test       PASS: 249 tests, 3 skipped
+pnpm test       PASS: 247 tests, 3 skipped
 pnpm build      PASS: all workspace packages
 ```
 
@@ -264,7 +255,7 @@ Milestones added in this budgeted phase:
 - `7a56958` — cap production advisor output
 - `6352276` — record the corrected offline benchmark state
 - `10c2825` — fix eval repair scope regressions
-- `779065d` — fix residual generation repair failures
+- `cdd3a0e` — revert unmeasured residual repair candidates
 
 ## Remaining risks and next highest-value work
 
