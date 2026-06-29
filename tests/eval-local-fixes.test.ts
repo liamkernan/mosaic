@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   EvalBudget,
+  DEFAULT_EVAL_CASE_TIMEOUT_MS,
   assertGeneratedPathsAllowed,
   calculateUsageCostUsd,
   calculateUsageIterationsCostUsd,
@@ -22,6 +23,10 @@ import {
 } from "../scripts/eval-local-fixes-support.js";
 
 describe("local fix evaluation harness", () => {
+  it("uses the source-of-truth seven-minute case timeout", () => {
+    expect(DEFAULT_EVAL_CASE_TIMEOUT_MS).toBe(420_000);
+  });
+
   it("records a thrown case and continues with later cases", async () => {
     const runCase = vi.fn(async (id: string) => {
       if (id === "case-1") {

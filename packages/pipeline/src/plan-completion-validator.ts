@@ -424,7 +424,7 @@ function generatedTestListFieldErrors(changes: GeneratedChange[]): string[] {
 }
 
 function planRequiresBehavioralTests(plan: ImplementationPlan, text: string): boolean {
-  const testChangePattern = /\b(?:add|update|create|write|extend|modify)\b.{0,80}\b(?:test|tests|spec|specs|coverage|unittest|pytest|jest|vitest)\b/i;
+  const testChangePattern = /\b(?:add|update|create|write|extend|modify)\b.{0,80}\b(?:tests?|coverage|unittest|pytest|jest|vitest|spec(?:ification)?\s+(?:file|test|coverage))\b/i;
   const checklistRequestsTestChanges = [
     ...plan.implementationChecklist,
     ...plan.verificationChecklist

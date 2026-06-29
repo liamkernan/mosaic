@@ -433,4 +433,37 @@ def test_list_body(conn):
 
     expect(errors).toEqual([]);
   });
+
+  it("does not mistake product specifications for requested test specs", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>\n",
+          modifiedContent: '<main><dialog id="productModal"><dl class="product-specs"></dl></dialog></main>\n',
+          explanation: "add product details markup"
+        },
+        {
+          filePath: "script.js",
+          originalContent: "",
+          modifiedContent: "const productData = { vase: { specs: ['Stoneware'] } };\n",
+          explanation: "populate product details"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "index.html", reason: "add product modal" },
+          { path: "script.js", reason: "add product data" }
+        ],
+        acceptanceCriteria: ["Product modal shows details and specifications while preserving filter behavior."],
+        implementationChecklist: ["Add a product specs list with label/value rows."],
+        verificationChecklist: ["Click each product and confirm its specs render."]
+      }
+    );
+
+    expect(errors).not.toContain(
+      "Implementation plan requires behavioral test coverage, but the generated change does not modify any test/spec file"
+    );
+  });
 });

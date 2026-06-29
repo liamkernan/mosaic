@@ -33,6 +33,7 @@ import {
 } from "../packages/llm/src/client.js";
 import {
   EvalBudget,
+  DEFAULT_EVAL_CASE_TIMEOUT_MS,
   assertGeneratedPathsAllowed,
   calculateUsageCostUsd,
   calculateUsageIterationsCostUsd,
@@ -178,7 +179,7 @@ function parseArgs(argv: string[]): {
     repoRoot: process.env.MOSAIC_EVAL_REPO_ROOT ?? resolve(process.env.HOME ?? ".", "Documents"),
     casesPath: "evals/local-fix-cases.json",
     model: "sonnet" as keyof typeof ANTHROPIC_MODEL_IDS,
-    caseTimeoutMs: Number(process.env.MOSAIC_EVAL_CASE_TIMEOUT_MS ?? 300_000),
+    caseTimeoutMs: Number(process.env.MOSAIC_EVAL_CASE_TIMEOUT_MS ?? DEFAULT_EVAL_CASE_TIMEOUT_MS),
     outputDir: resolve(process.env.MOSAIC_EVAL_OUTPUT_DIR ?? join("evals", "runs", runTimestamp)),
     internalCase: undefined as string | undefined,
     resultPath: undefined as string | undefined,

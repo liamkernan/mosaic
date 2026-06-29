@@ -3,6 +3,8 @@ import { basename, dirname } from "node:path";
 
 export type EvalOutcome = "completed" | "error" | "timeout";
 
+export const DEFAULT_EVAL_CASE_TIMEOUT_MS = 420_000;
+
 export interface EvalBatchResult {
   id: string;
   passed: boolean;
