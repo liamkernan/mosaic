@@ -11,7 +11,11 @@ production quality/advisor routing each passed **2/7 (28.6%)**. This recovers
 from the intervening corrected direct diagnostic's 1/7, but does **not** exceed
 the source baseline of 2/7. Quality routing changed which backend case passed
 but did not improve aggregate quality, and its last two frontend cases were
-budget-limited.
+budget-limited. After those paid runs, the exact retained direct and quality
+idempotency candidates were replayed through a new bounded deterministic repair.
+Both passed validation, hidden oracles, smoke tests, generated companion tests,
+and scope checks, raising the measured retained-candidate result to **3/7
+(42.9%)** in each mode without another model call.
 
 No evaluation oracle was edited or weakened. Generated oracle edits, unrelated
 protected-symbol changes, divergent repairs, and over-budget calls continued to
@@ -23,6 +27,7 @@ fail closed.
 | Backend cases passing | 2/4 | **2/4** | **2/4** |
 | Frontend cases passing | 0/3 | 0/3 | 0/3; 2 budget-rejected |
 | Unrelated protected-symbol violations | Not recorded | **0** | **0** |
+| Post-fix retained-candidate replay | Not available | **3/7; 3/4 backend** | **3/7; 3/4 backend** |
 | Storybook before validator fix | Not available | 0/1 | 0/1 |
 | Storybook after validator fix | Not available | **1/1** | Not rerun; budget preserved |
 | Main-suite visible context | Not recorded | 26 files, 3.7/case | 27 files, 3.9/case |
@@ -150,14 +155,29 @@ passed 2/7, and spent $3.970749. Both runs reported zero protected-symbol scope
 violations. The result is an honest tie with the 2/7 source baseline, not a
 claimed benchmark improvement.
 
-### Rejected unmeasured candidates
+### Post-fix deterministic candidate replay
 
-Three matched failures were reproduced with failing deterministic regressions:
-focused `KeyError`/public-projection repair, test-only `127.0.0.1` handling, and
-compact regeneration after truncated static-frontend output. Their local tests
-passed, but the remaining $0.195862 could not safely fund an identical matched
-evaluation. Commit `779065d` was therefore reverted by `cdd3a0e`; none of those
-unmeasured production changes remain active.
+The idempotency failure was reproduced from both retained matched-run candidates
+before changing production behavior. The kept repair is intentionally bounded:
+
+- it acts only on one non-sensitive `KeyError` field;
+- the field must already be selected elsewhere in the original Python module;
+- exactly one list-style `row_to_dict` SQL projection must be eligible;
+- the complete repaired candidate must pass normal validation and verification;
+- ambiguous, unsupported, or sensitive fields return no repair;
+- generated Python tests import helpers from the resolved source package rather
+  than incorrectly assuming the source is a sibling test module.
+
+The direct replay changed the original two files; the quality replay changed its
+original three files. Both passed the reported hidden oracle, baseline smoke
+suite, every generated companion test, normal validator, and exact
+`list_requests` protected-symbol scope check with zero violations. Holding the
+other six outcomes fixed, both retained result sets improve from 2/7 to **3/7**.
+This measures deterministic handling of the exact paid outputs; it does not
+claim a fresh model-sampling result. No additional API cost was incurred.
+
+The separate loopback-test and truncated-frontend candidates remain reverted
+because they have not produced a measured result improvement.
 
 ### Seven pinned baseline cases (diagnostic rerun)
 
@@ -232,7 +252,7 @@ Final gates after all kept production changes:
 ```text
 pnpm lint       PASS
 pnpm typecheck  PASS
-pnpm test       PASS: 247 tests, 3 skipped
+pnpm test       PASS: 250 tests, 3 skipped
 pnpm build      PASS: all workspace packages
 ```
 
@@ -256,20 +276,20 @@ Milestones added in this budgeted phase:
 - `6352276` — record the corrected offline benchmark state
 - `10c2825` — fix eval repair scope regressions
 - `cdd3a0e` — revert unmeasured residual repair candidates
+- `98aceb0` — repair verified Python result projections
 
 ## Remaining risks and next highest-value work
 
-1. Measure the post-run offline hardening on the same pinned direct/quality cases
+1. Confirm the 3/7 retained-candidate gain with fresh direct/quality sampling
    only after receiving new API-budget authorization.
-2. If idempotency still misses the list projection, add a syntax-aware bounded
-   fallback rather than broad string rewriting.
-3. Improve exact compound-selector repair for collections before spending on
+2. Improve exact compound-selector repair for collections before spending on
    all three frontend cases again.
-4. The target remains at least 6/7, all four backend cases, at least two frontend
+3. Revisit loopback HTTP test handling only with a measured metrics-case replay;
+   production and external-IP guards must remain unchanged.
+4. The longer-term target remains at least 6/7, all four backend cases, at least two frontend
    cases, zero oracle edits, zero unrelated changes, and no weakened safeguards.
 
-The next highest-value work is the idempotent public-result-shape repair because
-it failed identically in both modes after the core upsert behavior was generated.
-No further paid evaluation should run without new authorization. Until a matched
-measurement exceeds 2/7 without scope or safeguard regressions, the improvement
-goal remains incomplete.
+The next highest-value work is collections compound-selector convergence. No
+further paid evaluation should run without new authorization. The retained-output
+measurement now exceeds the 2/7 baseline without scope or safeguard regressions;
+fresh-sampling confirmation remains a stated risk rather than a claimed result.
