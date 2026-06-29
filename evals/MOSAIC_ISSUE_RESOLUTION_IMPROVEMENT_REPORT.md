@@ -4,12 +4,15 @@ Date: 2026-06-28
 
 ## Outcome
 
-The P0 and highest-value P1 pipeline work is implemented and locally gated. A
-fresh paid comparison did **not** improve the seven-case baseline: direct Sonnet
-and production quality/advisor routing both scored 0/7, versus the source report's
-2/7 (28.6%). The large-repository Storybook case initially scored 0/1 in both
-modes. Its common failure exposed a deterministic validator defect; after a
-test-first fix, direct Sonnet passed that case 1/1 with no scope violations.
+The P0 and highest-value P1 pipeline work is implemented and locally gated. The
+first paid rerun produced diagnostic 0/7 results, but it is **not an authoritative
+comparison** with the source report's 2/7 (28.6%): the direct run accidentally
+used a 300-second timeout instead of the source-of-truth 420 seconds, and the
+quality run rejected its final two cases before calling a model because its
+sub-budget was exhausted. The large-repository Storybook case initially scored
+0/1 in both modes. Its common failure exposed a deterministic validator defect;
+after a test-first fix, direct Sonnet passed that case 1/1 with no scope
+violations.
 
 No evaluation oracle was edited or weakened. Generated oracle edits, unrelated
 protected-symbol changes, divergent repairs, and over-budget calls continued to
@@ -17,9 +20,9 @@ fail closed.
 
 | Measure | Source baseline | Fresh direct Sonnet | Fresh quality/advisor |
 | --- | ---: | ---: | ---: |
-| Seven pinned cases passing | 2/7 (28.6%) | 0/7 | 0/7 |
-| Backend cases passing | 2/4 | 0/4 | 0/4 |
-| Frontend cases passing | 0/3 | 0/3 | 0/3 |
+| Seven pinned cases passing | 2/7 (28.6%) | 0/7 diagnostic; timeout mismatch | 0/7 diagnostic; 2 budget-rejected |
+| Backend cases passing | 2/4 | 0/4 diagnostic | 0/4 diagnostic |
+| Frontend cases passing | 0/3 | 0/3 diagnostic | 0/3 diagnostic |
 | Storybook before validator fix | Not available | 0/1 | 0/1 |
 | Storybook after validator fix | Not available | **1/1** | Not rerun; budget preserved |
 | Main-suite visible context | Not recorded | 26 files, 3.7/case | 27 files, 3.9/case |
@@ -45,6 +48,9 @@ fail closed.
   every Sonnet and Opus iteration separately and fails closed if an
   advisor-assisted response omits its advisor usage record.
 - Advisor output is explicitly capped at 2,048 tokens per request.
+- The default per-case timeout is pinned back to the source report's 420 seconds;
+  a regression prevents silently comparing future runs with the accidental
+  300-second setting.
 
 ### Scope, planning, and repair safeguards
 
@@ -62,6 +68,25 @@ fail closed.
   and failed-verification regressions.
 - Frontend failures produce typed selector/action/expectation/actual repair
   requirements while retaining accessibility and keyboard guardrails.
+- Existing reported/regression tests are verification-only oracles. Planning
+  now requests independent generated companion tests, the eval file tree hides
+  oracle paths, and any residual immutable plan target is redirected to the
+  approved generated-test directory. Replaying the four backend plans reduced
+  immutable plan targets from 4 to 0.
+- Completion validation enforces only endpoint paths explicitly requested by
+  user feedback, rather than paths the planner mentions for an unchanged route.
+- Product detail `specs` are no longer misclassified as requested test specs;
+  explicit tests, coverage, test frameworks, and specification test/file
+  requests remain enforced.
+- Generation requests consistently prefer localized `<edit>` blocks for
+  existing files instead of contradicting that requirement with a full-file
+  user message.
+- Deterministic modal-hook repair now recognizes close, hero/image, eyebrow,
+  kicker, and label IDs, including the exact `collClose`, `collHero`, and
+  `collEyebrow` failure from the collections case.
+- Failed validation stages now persist full candidate manifests with stage and
+  selected/rejected status before throwing, so failed-case scope quality and
+  rejected behavior changes remain auditable.
 
 ### Measured validator correction
 
@@ -79,7 +104,7 @@ The post-fix direct run passed:
 
 ## Paid evaluation results
 
-### Seven pinned baseline cases
+### Seven pinned baseline cases (diagnostic rerun)
 
 | Case | Direct Sonnet | Quality/advisor |
 | --- | --- | --- |
@@ -88,9 +113,10 @@ The post-fix direct run passed:
 | Close audit event | Rejected attempted oracle edit | Failed: idempotency-path validation |
 | Metrics endpoint | Rejected attempted oracle edit | Rejected unsafe oracle/test edit and missing import |
 | Collections modal | Failed missing DOM hooks | Failed typed frontend assertions after repairs |
-| Journal articles | Timed out after paid calls | Rejected pre-call by remaining budget |
+| Journal articles | Timed out at the incorrect 300-second setting | Rejected pre-call by remaining budget |
 | Product details | Failed asset/selector/test validation | Rejected pre-call by remaining budget |
 
+These are retained as failure diagnostics, not claimed as an identical benchmark.
 Direct Sonnet made 20 calls and spent $1.359792. Quality routing made 18 calls
 across five attempted cases, used the advisor in 17 calls, and spent $3.083666;
 the final two cases were rejected before contacting Anthropic because their
@@ -140,7 +166,7 @@ Final gates after all kept production changes:
 ```text
 pnpm lint       PASS
 pnpm typecheck  PASS
-pnpm test       PASS: 237 tests, 3 skipped
+pnpm test       PASS: 242 tests, 3 skipped
 pnpm build      PASS: all workspace packages
 ```
 
@@ -154,26 +180,23 @@ Milestones added in this budgeted phase:
 - `805df06` — track exact advisor evaluation cost
 - `decdadd` — preserve advisor usage through streaming
 - `48bfaec` — exclude test modules from static asset linking
+- `4876a78` — keep oracle tests out of generated plans
+- `511c48d` — prefer localized edits in generation requests
+- `f5c4a87` — restore benchmark validation parity
+- `5c1d5be` — repair semantic modal hooks
+- `b9e59b4` — persist rejected validation candidates
 
 ## Remaining risks and next highest-value work
 
-1. The generic endpoint validator is producing false negatives on otherwise
-   plausible backend changes. Add case-derived deterministic regressions and
-   make route checks framework-aware without weakening route coverage.
-2. Models repeatedly attempted to edit reported oracle tests. Strengthen planner
-   and generation path constraints so immutable paths are excluded from proposed
-   changes, while retaining the hard post-generation rejection.
-3. Frontend repair still spends heavily before converging or timing out. Preserve
-   typed assertions but make initial DOM-hook selection consume the existing HTML
-   contract directly.
-4. Artifact capture should persist rejected candidate manifests and diffs before
-   validation; current failed results can lose candidate-level scope detail even
-   though selected context and usage remain available.
-5. After those offline regressions pass, rerun the same seven cases with a new
-   explicit budget. The target remains at least 6/7, all four backend cases, at
-   least two frontend cases, zero oracle edits, zero unrelated changes, and no
-   weakened safeguards.
+1. Run a new identical seven-case direct/quality comparison with the corrected
+   420-second timeout and a new explicit API budget. The existing paid rerun
+   cannot prove improvement or regression against 2/7.
+2. Frontend repair still spends heavily before converging. Measure whether the
+   localized-edit request and expanded semantic-hook repair reduce tokens and
+   repair count on all three frontend cases.
+3. The target remains at least 6/7, all four backend cases, at least two frontend
+   cases, zero oracle edits, zero unrelated changes, and no weakened safeguards.
 
-The next highest-value task is framework-aware endpoint validation, because it
-blocked multiple backend candidates in both routing modes and can be corrected
-offline with deterministic tests before another paid evaluation.
+The next highest-value step is the corrected identical paid rerun. Until that
+measurement exceeds 2/7 without scope or safeguard regressions, the improvement
+goal remains active.
