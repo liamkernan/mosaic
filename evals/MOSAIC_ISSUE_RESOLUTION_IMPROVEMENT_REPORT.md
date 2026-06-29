@@ -109,6 +109,12 @@ The post-fix direct run passed:
 - reported zero scope violations and zero oracle changes;
 - cost $0.359565.
 
+A final post-hardening offline run completed all seven baseline cases with 26
+model-visible files (3.7 per case), zero oracle paths in loaded context, and a
+complete artifact bundle including `validation-candidates.json` for every case.
+Its 7/7 result measures harness/retrieval readiness only, not generated-fix
+quality.
+
 ## Paid evaluation results
 
 ### Seven pinned baseline cases (diagnostic rerun)
