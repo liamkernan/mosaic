@@ -52,6 +52,9 @@ fail closed.
   every Sonnet and Opus iteration separately and fails closed if an
   advisor-assisted response omits its advisor usage record.
 - Advisor output is explicitly capped at 2,048 tokens per request.
+- Production quality routing now uses the same 2,048-token advisor ceiling as
+  evaluation, so measured cost controls and deployed behavior cannot silently
+  diverge.
 - The default per-case timeout is pinned back to the source report's 420 seconds;
   a regression prevents silently comparing future runs with the accidental
   300-second setting.
@@ -190,6 +193,7 @@ Milestones added in this budgeted phase:
 - `5c1d5be` — repair semantic modal hooks
 - `b9e59b4` — persist rejected validation candidates
 - `c2e9a6a` — reserve advisor context in eval budgets
+- `7a56958` — cap production advisor output
 
 ## Remaining risks and next highest-value work
 
