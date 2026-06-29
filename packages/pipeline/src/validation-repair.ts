@@ -541,7 +541,10 @@ function applySelectorHookFallbacks(html: string, selectors: string[]): string {
 }
 
 function buildModalHookFallback(ids: string[], selectors: string[], html: string): string {
-  const modalIds = ids.filter((id) => /modal|overlay|dialog|review|product|graphic|title|desc/i.test(id) && !htmlHasId(html, id));
+  const modalIds = ids.filter((id) =>
+    /modal|overlay|dialog|review|product|graphic|image|visual|hero|title|desc|close|eyebrow|kicker|label/i.test(id) &&
+    !htmlHasId(html, id)
+  );
   const modalClasses = selectors
     .map((selector) => selector.match(/^\.([a-zA-Z0-9_-]+)$/)?.[1])
     .filter((className): className is string => Boolean(className))
@@ -556,7 +559,7 @@ function buildModalHookFallback(ids: string[], selectors: string[], html: string
   const titleId = modalIds.find((id) => /title/i.test(id));
   const eyebrowId = modalIds.find((id) => /eyebrow|kicker|label/i.test(id));
   const descriptionId = modalIds.find((id) => /desc/i.test(id));
-  const graphicId = modalIds.find((id) => /graphic|image|visual/i.test(id));
+  const graphicId = modalIds.find((id) => /graphic|image|visual|hero/i.test(id));
   const productsId = modalIds.find((id) => /product|item/i.test(id));
   const reviewsId = modalIds.find((id) => /review/i.test(id));
   const closeId = modalIds.find((id) => /close/i.test(id));

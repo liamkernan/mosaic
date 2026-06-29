@@ -143,6 +143,41 @@ describe("applyValidationFallbacks", () => {
     expect(htmlChange?.modifiedContent).toContain('class="modal-close"');
   });
 
+  it("adds semantic close hero and eyebrow ids reported by collection modal validation", async () => {
+    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
+    tempDirs.push(localPath);
+    await writeFile(
+      join(localPath, "index.html"),
+      '<!doctype html><html><body><main><article class="collection-card">Kitchen</article></main></body></html>\n',
+      "utf8"
+    );
+    const repoContext: RepoContext = {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath,
+      installationId: 1,
+      fileTree: [{ path: "index.html", type: "file" }]
+    };
+    const changes: GeneratedChange[] = [{
+      filePath: "script.js",
+      originalContent: "",
+      modifiedContent:
+        "document.getElementById('collClose').addEventListener('click', closeModal);\n" +
+        "document.getElementById('collHero').textContent = 'Kitchen';\n" +
+        "document.getElementById('collEyebrow').textContent = 'Collection';\n",
+      explanation: "wire collection details"
+    }];
+
+    const completed = await applyValidationFallbacks(changes, repoContext, [
+      "Change for script.js queries missing HTML id(s): collClose, collHero, collEyebrow"
+    ]);
+
+    const htmlChange = completed.find((change) => change.filePath === "index.html");
+    expect(htmlChange?.modifiedContent).toContain('id="collClose"');
+    expect(htmlChange?.modifiedContent).toContain('id="collHero"');
+    expect(htmlChange?.modifiedContent).toContain('id="collEyebrow"');
+  });
+
   it("adds missing selector classes to semantically matching existing html hooks", async () => {
     const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
     tempDirs.push(localPath);
