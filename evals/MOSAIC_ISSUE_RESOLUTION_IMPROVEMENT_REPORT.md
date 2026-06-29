@@ -43,6 +43,10 @@ fail closed.
   run round-robin and report raw trials, pass@1, and pass@k.
 - Paid runs require an explicit cap and pricing table. Every request is checked
   against its maximum cost before it starts.
+- Preauthorization estimates code-heavy prompts at a conservative three
+  characters per token and reserves the executor's maximum output as possible
+  advisor input context, covering the extra context observed in live advisor
+  iterations.
 - Anthropic SDK 0.39.0 was upgraded to 0.106.0 because the old beta stream
   accumulator discarded `usage.iterations`. Telemetry now records and prices
   every Sonnet and Opus iteration separately and fails closed if an
@@ -166,7 +170,7 @@ Final gates after all kept production changes:
 ```text
 pnpm lint       PASS
 pnpm typecheck  PASS
-pnpm test       PASS: 242 tests, 3 skipped
+pnpm test       PASS: 243 tests, 3 skipped
 pnpm build      PASS: all workspace packages
 ```
 
@@ -185,6 +189,7 @@ Milestones added in this budgeted phase:
 - `f5c4a87` — restore benchmark validation parity
 - `5c1d5be` — repair semantic modal hooks
 - `b9e59b4` — persist rejected validation candidates
+- `c2e9a6a` — reserve advisor context in eval budgets
 
 ## Remaining risks and next highest-value work
 
