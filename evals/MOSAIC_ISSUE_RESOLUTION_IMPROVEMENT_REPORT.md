@@ -1,18 +1,17 @@
 # Mosaic Issue-Resolution Improvement Report
 
-Date: 2026-06-28
+Date: 2026-06-29
 
 ## Outcome
 
-The P0 and highest-value P1 pipeline work is implemented and locally gated. The
-first paid rerun produced diagnostic 0/7 results, but it is **not an authoritative
-comparison** with the source report's 2/7 (28.6%): the direct run accidentally
-used a 300-second timeout instead of the source-of-truth 420 seconds, and the
-quality run rejected its final two cases before calling a model because its
-sub-budget was exhausted. The large-repository Storybook case initially scored
-0/1 in both modes. Its common failure exposed a deterministic validator defect;
-after a test-first fix, direct Sonnet passed that case 1/1 with no scope
-violations.
+The P0 and highest-value P1 pipeline work is implemented and locally gated. A
+final matched seven-case comparison used the source-of-truth 420-second timeout,
+the same pinned cases and commit, and identical safeguards. Direct Sonnet and
+production quality/advisor routing each passed **2/7 (28.6%)**. This recovers
+from the intervening corrected direct diagnostic's 1/7, but does **not** exceed
+the source baseline of 2/7. Quality routing changed which backend case passed
+but did not improve aggregate quality, and its last two frontend cases were
+budget-limited.
 
 No evaluation oracle was edited or weakened. Generated oracle edits, unrelated
 protected-symbol changes, divergent repairs, and over-budget calls continued to
@@ -20,9 +19,10 @@ fail closed.
 
 | Measure | Source baseline | Fresh direct Sonnet | Fresh quality/advisor |
 | --- | ---: | ---: | ---: |
-| Seven pinned cases passing | 2/7 (28.6%) | 0/7 diagnostic; timeout mismatch | 0/7 diagnostic; 2 budget-rejected |
-| Backend cases passing | 2/4 | 0/4 diagnostic | 0/4 diagnostic |
-| Frontend cases passing | 0/3 | 0/3 diagnostic | 0/3 diagnostic |
+| Seven pinned cases passing | 2/7 (28.6%) | **2/7 (28.6%)** | **2/7 (28.6%)** |
+| Backend cases passing | 2/4 | **2/4** | **2/4** |
+| Frontend cases passing | 0/3 | 0/3 | 0/3; 2 budget-rejected |
+| Unrelated protected-symbol violations | Not recorded | **0** | **0** |
 | Storybook before validator fix | Not available | 0/1 | 0/1 |
 | Storybook after validator fix | Not available | **1/1** | Not rerun; budget preserved |
 | Main-suite visible context | Not recorded | 26 files, 3.7/case | 27 files, 3.9/case |
@@ -94,6 +94,16 @@ fail closed.
 - Failed validation stages now persist full candidate manifests with stage and
   selected/rejected status before throwing, so failed-case scope quality and
   rejected behavior changes remain auditable.
+- New generated tests that target immutable reported/smoke directories are
+  relocated into the case's approved generated-test prefix; edits to an
+  existing oracle still fail closed.
+- The idempotency case allows only the required `sr.body` projection inside
+  `list_requests`; byte-level changes to the rest of that protected symbol are
+  still rejected.
+- Endpoint preflight accepts semantically equivalent public-path HTTP
+  verification wording, compound frontend hooks receive both required class
+  and attribute repairs, and interactive-hook repair explicitly requires
+  native controls or keyboard-equivalent semantics.
 
 ### Measured validator correction
 
@@ -116,6 +126,29 @@ Its 7/7 result measures harness/retrieval readiness only, not generated-fix
 quality.
 
 ## Paid evaluation results
+
+### Final matched seven-case comparison
+
+Both modes ran commit `10c2825`, the same seven pinned cases, a 420-second case
+timeout, one trial, unchanged hidden oracles, and the same scope/security/
+accessibility validation. Direct had a $1.55 hard cap and quality had a $4.16
+hard cap. The actual combined spend was $5.337366.
+
+| Case | Direct Sonnet | Quality/advisor |
+| --- | --- | --- |
+| SLA sort | **Pass** | **Pass** |
+| Idempotent external ref | Failed: list response omitted `body` | Failed: list response omitted `body` |
+| Close audit event | **Pass** | Failed: candidate rejected by idempotency-path validation |
+| Metrics endpoint | Failed: loopback test literal and missing import rejected | **Pass** |
+| Collections modal | Failed: malformed structured generation | Failed: required collection trigger selector absent |
+| Journal articles | Failed: malformed structured generation | Rejected pre-call by remaining budget |
+| Product details | Rejected pre-call by remaining budget | Rejected pre-call by remaining budget |
+
+Direct made 20 Sonnet calls, passed 2/7, and spent $1.366617. Quality made 22
+top-level calls comprising 44 Sonnet iterations and 21 Opus advisor iterations,
+passed 2/7, and spent $3.970749. Both runs reported zero protected-symbol scope
+violations. The result is an honest tie with the 2/7 source baseline, not a
+claimed benchmark improvement.
 
 ### Seven pinned baseline cases (diagnostic rerun)
 
@@ -163,6 +196,10 @@ input and $25/M output, with cache read/write multipliers represented in
 | Storybook quality, before fix | Opus 4.8 advisor | 102,256 | 1,564 | $0.550380 |
 | Storybook direct, after fix | Sonnet 4.6 | 99,685 | 4,034 | $0.359565 |
 | Aborted pre-upgrade quality call | Sonnet 4.6 | 4,808 | 959 | $0.028809 |
+| Corrected direct diagnostic | Sonnet 4.6 | 240,264 | 49,732 | $1.466772 |
+| Final matched direct | Sonnet 4.6 | 172,229 | 56,662 | $1.366617 |
+| Final matched quality | Sonnet 4.6 | 447,898 | 50,116 | $2.095434 |
+| Final matched quality | Opus 4.8 advisor | 289,993 | 17,014 | $1.875315 |
 
 Known exact metered spend was **$6.277823**. One advisor iteration in the aborted
 pre-upgrade call is the sole telemetry exception: SDK 0.39.0 discarded its
@@ -170,7 +207,14 @@ iteration detail. The run was stopped immediately. The identical post-upgrade
 planning call measured that Opus iteration at $0.054620; using the matched input
 and the full 2,048-token advisor output cap gives a $0.089595 proxy. Thus total
 spend is estimated at $6.332443 and remains below $6.367418 under that proxy,
-within the authorized $7 cap. No further paid calls were made.
+within the initial authorized $7 cap.
+
+The additional authorized $7 paid for the corrected direct diagnostic
+($1.466772), final matched direct ($1.366617), and final matched quality
+($3.970749): **$6.804138 exact**, leaving $0.195862 unused. Across both
+authorizations, known exact spend is **$13.081961**. Including the original
+missing-advisor proxy gives an estimated $13.136581, or $13.171556 under the
+conservative full-output proxy, below the combined $14 authorization.
 
 ## Deterministic verification
 
@@ -179,7 +223,7 @@ Final gates after all kept production changes:
 ```text
 pnpm lint       PASS
 pnpm typecheck  PASS
-pnpm test       PASS: 243 tests, 3 skipped
+pnpm test       PASS: 247 tests, 3 skipped
 pnpm build      PASS: all workspace packages
 ```
 
@@ -200,18 +244,24 @@ Milestones added in this budgeted phase:
 - `b9e59b4` — persist rejected validation candidates
 - `c2e9a6a` — reserve advisor context in eval budgets
 - `7a56958` — cap production advisor output
+- `6352276` — record the corrected offline benchmark state
+- `10c2825` — fix eval repair scope regressions
 
 ## Remaining risks and next highest-value work
 
-1. Run a new identical seven-case direct/quality comparison with the corrected
-   420-second timeout and a new explicit API budget. The existing paid rerun
-   cannot prove improvement or regression against 2/7.
-2. Frontend repair still spends heavily before converging. Measure whether the
-   localized-edit request and expanded semantic-hook repair reduce tokens and
-   repair count on all three frontend cases.
-3. The target remains at least 6/7, all four backend cases, at least two frontend
+1. Add a deterministic, general repair for public result-shape mismatches so an
+   idempotent update that changes `body` also exposes `body` through the list
+   API, while retaining exact protected-symbol scope checks.
+2. Treat loopback literals in generated HTTP tests separately from newly added
+   external IP addresses, while continuing to reject production network targets,
+   and add deterministic missing-sibling-import repair coverage.
+3. Add bounded structured-output recovery for frontend generation and improve
+   exact compound-selector repair before another paid run.
+4. The target remains at least 6/7, all four backend cases, at least two frontend
    cases, zero oracle edits, zero unrelated changes, and no weakened safeguards.
 
-The next highest-value step is the corrected identical paid rerun. Until that
+The next highest-value work is the idempotent public-result-shape repair because
+it failed identically in both modes after the core upsert behavior was generated.
+No further paid evaluation should run without new authorization. Until a matched
 measurement exceeds 2/7 without scope or safeguard regressions, the improvement
-goal remains active.
+goal remains incomplete.
