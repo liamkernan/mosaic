@@ -37,7 +37,7 @@ fail closed.
 
 ### Evaluation integrity and cost control
 
-- Each case runs in an isolated child process. Errors and five-minute timeouts
+- Each case runs in an isolated child process. Errors and 420-second timeouts
   become structured failures, usage is recovered, and later cases continue.
 - Aggregate JSON and per-case plan, selected-context, change, validation,
   verification, diff, result, and usage artifacts are retained under
