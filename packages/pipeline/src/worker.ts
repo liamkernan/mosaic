@@ -1,6 +1,12 @@
 import { getEnv, LLMError, logger, RateLimitError, type ClassifiedFeedback, type FeedbackItem, type GeneratedChange } from "@mosaic/core";
 import { getOctokit } from "@mosaic/github-app";
-import { ANTHROPIC_ADVISOR_MODEL_ID, ANTHROPIC_MODEL_IDS, LLMClient, type AdvisorToolOptions } from "@mosaic/llm";
+import {
+  ANTHROPIC_ADVISOR_MAX_TOKENS,
+  ANTHROPIC_ADVISOR_MODEL_ID,
+  ANTHROPIC_MODEL_IDS,
+  LLMClient,
+  type AdvisorToolOptions
+} from "@mosaic/llm";
 import { Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
 
@@ -212,7 +218,8 @@ export class FeedbackPipelineWorker {
     const advisorTool = shouldUseAdvisorTool(classifiedFeedback, repoConfig.llmModelPreset)
       ? {
           model: ANTHROPIC_ADVISOR_MODEL_ID,
-          maxUses: 1
+          maxUses: 1,
+          maxTokens: ANTHROPIC_ADVISOR_MAX_TOKENS
         }
       : undefined;
     const codeGenerator = new CodeGenerator(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, generationModel, advisorTool));

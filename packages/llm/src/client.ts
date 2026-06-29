@@ -12,6 +12,7 @@ export const ANTHROPIC_MODEL_IDS = {
 
 export const ANTHROPIC_ADVISOR_MODEL_ID = "claude-opus-4-8";
 export const ANTHROPIC_ADVISOR_TOOL_BETA = "advisor-tool-2026-03-01";
+export const ANTHROPIC_ADVISOR_MAX_TOKENS = 2_048;
 
 const ANTHROPIC_ADVISOR_TOOL_TYPE = "advisor_20260301";
 const ANTHROPIC_ADVISOR_TOOL_NAME = "advisor";

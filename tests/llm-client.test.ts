@@ -35,7 +35,12 @@ vi.mock("../packages/llm/src/token-tracker.js", () => ({
   trackUsage: trackUsageMock
 }));
 
-import { ANTHROPIC_ADVISOR_MODEL_ID, ANTHROPIC_ADVISOR_TOOL_BETA, LLMClient } from "../packages/llm/src/client.js";
+import {
+  ANTHROPIC_ADVISOR_MAX_TOKENS,
+  ANTHROPIC_ADVISOR_MODEL_ID,
+  ANTHROPIC_ADVISOR_TOOL_BETA,
+  LLMClient
+} from "../packages/llm/src/client.js";
 
 describe("LLMClient", () => {
   beforeEach(() => {
@@ -97,7 +102,8 @@ describe("LLMClient", () => {
       platformApiKey: "test-key",
       advisorTool: {
         model: ANTHROPIC_ADVISOR_MODEL_ID,
-        maxUses: 1
+        maxUses: 1,
+        maxTokens: ANTHROPIC_ADVISOR_MAX_TOKENS
       }
     });
 
@@ -114,7 +120,8 @@ describe("LLMClient", () => {
             type: "advisor_20260301",
             name: "advisor",
             model: "claude-opus-4-8",
-            max_uses: 1
+            max_uses: 1,
+            max_tokens: 2_048
           }
         ]
       }),

@@ -24,6 +24,7 @@ import { LLMError } from "../packages/core/src/errors.js";
 import type { ClassifiedFeedback, ComplexityLevel, FeedbackCategory, FeedbackSource, FileNode, GeneratedChange, RepoContext } from "../packages/core/src/types.js";
 import {
   ANTHROPIC_MODEL_IDS,
+  ANTHROPIC_ADVISOR_MAX_TOKENS,
   ANTHROPIC_ADVISOR_MODEL_ID,
   LLMClient,
   type AdvisorToolOptions,
@@ -58,7 +59,6 @@ const exec = promisify(execCallback);
 const ignoredNames = new Set(["node_modules", ".git", "dist", "build", "__pycache__", ".next", "vendor"]);
 const validationRecoveryAttempts = 3;
 const oversizedPatchPattern = /too large|exceeds limit|total new code added/i;
-const evalAdvisorMaxTokens = 2_048;
 
 function isRecoverableLlmFailure(error: unknown): boolean {
   const maybeError = error as { code?: unknown; name?: unknown; message?: unknown };
@@ -862,7 +862,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     ? options.model
     : selectGenerationModelTier(classifiedFeedback, options.preset);
   const advisorTool = options.preset !== "direct" && shouldUseAdvisorTool(classifiedFeedback, options.preset)
-    ? { model: ANTHROPIC_ADVISOR_MODEL_ID, maxUses: 1, maxTokens: evalAdvisorMaxTokens }
+    ? { model: ANTHROPIC_ADVISOR_MODEL_ID, maxUses: 1, maxTokens: ANTHROPIC_ADVISOR_MAX_TOKENS }
     : undefined;
 
   let relevantFiles = await repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
