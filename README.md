@@ -52,7 +52,7 @@ Staged issues can later be promoted by commenting `@mosaic fix this`, `@mosaic i
 ## Packages
 
 - `@mosaic/core`: shared types, configuration, logging, and typed errors.
-- `@mosaic/llm`: Anthropic-backed completion client, token tracking, and rate limiting.
+- `@mosaic/llm`: interchangeable Anthropic/OpenAI completion client, token tracking, and rate limiting.
 - `@mosaic/intake`: Fastify intake server, adapters, normalization, abuse protection, and BullMQ enqueueing.
 - `@mosaic/pipeline`: classifier, repo indexing, code generation, validation, issue creation, and PR creation.
 - `@mosaic/github-app`: Probot wrapper and GitHub App authentication helpers.
@@ -313,6 +313,7 @@ Production repo config supports a simple frontend-facing LLM preset at `llm.mode
 
 ```yaml
 llm:
+  provider: anthropic # anthropic | openai; optional when using the global switch
   mode: platform
   model_preset: quality # quality | balanced
 ```
@@ -321,8 +322,16 @@ Use these values for a segmented control or select:
 
 | Value | Label | Behavior |
 | --- | --- | --- |
-| `quality` | Quality (Recommended) | Default. Uses automatic Haiku/Sonnet routing and enables the Opus advisor for moderate and complex work. |
-| `balanced` | Balanced | Uses automatic Haiku/Sonnet routing and disables the advisor. |
+| `quality` | Quality (Recommended) | Anthropic uses automatic Haiku/Sonnet routing plus Opus advice for moderate/complex work. OpenAI uses GPT-5.5 for complex and moderate-review-needed work, GPT-5.4 for moderate-safe and simple work, and GPT-5.4 mini for trivial work. |
+| `balanced` | Balanced | Uses cost-conscious provider routing and disables Anthropic advisor calls. |
+
+Anthropic remains the production default. To switch the hosted platform globally,
+set `MOSAIC_LLM_PROVIDER=openai` and `OPENAI_API_KEY`, then restart the pipeline
+worker. No existing `.env` or repository config is changed automatically. A
+repository can override the global choice with `llm.provider`; BYOK repositories
+continue to use `MOSAIC_LLM_KEY` for whichever provider they select. See
+[LLM provider switching](docs/LLM_PROVIDERS.md) for the complete API mapping,
+routing table, rollback steps, and advisor behavior.
 
 ## Scripts
 

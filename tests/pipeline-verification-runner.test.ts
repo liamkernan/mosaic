@@ -73,7 +73,11 @@ describe("runVerificationCommands", () => {
 
   it("does not expose parent process secrets to verified test processes", async () => {
     const previousSecret = process.env.ANTHROPIC_API_KEY;
+    const previousOpenAISecret = process.env.OPENAI_API_KEY;
+    const previousByokSecret = process.env.MOSAIC_LLM_KEY;
     process.env.ANTHROPIC_API_KEY = "parent-secret-that-must-not-leak";
+    process.env.OPENAI_API_KEY = "openai-secret-that-must-not-leak";
+    process.env.MOSAIC_LLM_KEY = "byok-secret-that-must-not-leak";
 
     try {
       const localPath = await createPythonRepo();
@@ -86,6 +90,8 @@ describe("runVerificationCommands", () => {
           "class EnvTest(unittest.TestCase):",
           "    def test_parent_secret_is_not_exposed(self):",
           "        self.assertIsNone(os.environ.get('ANTHROPIC_API_KEY'))",
+          "        self.assertIsNone(os.environ.get('OPENAI_API_KEY'))",
+          "        self.assertIsNone(os.environ.get('MOSAIC_LLM_KEY'))",
           ""
         ].join("\n"),
         "utf8"
@@ -117,6 +123,10 @@ describe("runVerificationCommands", () => {
       } else {
         process.env.ANTHROPIC_API_KEY = previousSecret;
       }
+      if (previousOpenAISecret === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousOpenAISecret;
+      if (previousByokSecret === undefined) delete process.env.MOSAIC_LLM_KEY;
+      else process.env.MOSAIC_LLM_KEY = previousByokSecret;
     }
   }, 120_000);
 

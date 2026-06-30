@@ -1,11 +1,13 @@
-import { getEnv, LLMError, logger, RateLimitError, type ClassifiedFeedback, type FeedbackItem, type GeneratedChange } from "@mosaic/core";
+import { getEnv, LLMError, logger, RateLimitError, type ClassifiedFeedback, type FeedbackItem, type GeneratedChange, type LLMProvider } from "@mosaic/core";
 import { getOctokit } from "@mosaic/github-app";
 import {
   ANTHROPIC_ADVISOR_MAX_TOKENS,
   ANTHROPIC_ADVISOR_MODEL_ID,
   ANTHROPIC_MODEL_IDS,
   LLMClient,
-  type AdvisorToolOptions
+  OPENAI_MODEL_IDS,
+  type AdvisorToolOptions,
+  type OpenAIReasoningEffort
 } from "@mosaic/llm";
 import { Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
@@ -23,12 +25,13 @@ import { loadRepoRuntimeConfig, type RepoRuntimeConfig } from "./repo-config.js"
 import { RepoIndexer } from "./repo-indexer.js";
 import {
   isFixThisCommand,
+  getModerateIssueMode,
   parseStagedIssueMetadata,
   STAGED_ISSUE_LABEL,
   STAGED_ISSUE_PROMOTED_LABEL,
   type StagedIssueMode
 } from "./staged-issues.js";
-import { selectGenerationModelTier, selectPlanningModelTier, shouldEscalateClassification, shouldUseAdvisorTool } from "./model-routing.js";
+import { selectGenerationModelTier, selectOpenAIModel, selectPlanningModelTier, shouldEscalateClassification, shouldUseAdvisorTool } from "./model-routing.js";
 import { pruneChangesToPlanScope, validatePlanCompletion } from "./plan-completion-validator.js";
 import { assessRepairProgress } from "./repair-progress.js";
 import { buildLlmRetryFeedbackItem, canRetryLlmOverload, getLlmRetryDelayMs, isRetryableLlmOverload } from "./transient-llm.js";
@@ -106,17 +109,22 @@ export class FeedbackPipelineWorker {
   }
 
   private createLlmClient(
+    provider: LLMProvider,
     mode: "byok" | "platform",
     apiKey: string | undefined,
     model: string,
+    reasoningEffort?: OpenAIReasoningEffort,
     advisorTool?: AdvisorToolOptions
   ): LLMClient {
+    const env = getEnv();
     return new LLMClient({
+      provider,
       mode,
       apiKey,
-      platformApiKey: process.env.ANTHROPIC_API_KEY,
+      platformApiKey: provider === "openai" ? env.OPENAI_API_KEY : env.ANTHROPIC_API_KEY,
       model,
-      advisorTool
+      reasoningEffort,
+      advisorTool: provider === "anthropic" ? advisorTool : undefined
     });
   }
 
@@ -212,26 +220,45 @@ export class FeedbackPipelineWorker {
       })
     ]);
     let relevantFiles = mergeRelevantFiles(classifierFiles, referenceFiles);
-    const generationModel = selectGenerationModelTier(classifiedFeedback, repoConfig.llmModelPreset) === "sonnet"
-      ? ANTHROPIC_MODEL_IDS.sonnet
-      : ANTHROPIC_MODEL_IDS.haiku;
-    const advisorTool = shouldUseAdvisorTool(classifiedFeedback, repoConfig.llmModelPreset)
+    const openAISelection = repoConfig.llmProvider === "openai"
+      ? selectOpenAIModel(classifiedFeedback, repoConfig.llmModelPreset, options.issueMode)
+      : undefined;
+    const generationModel = openAISelection?.model ?? (
+      selectGenerationModelTier(classifiedFeedback, repoConfig.llmModelPreset) === "sonnet"
+        ? ANTHROPIC_MODEL_IDS.sonnet
+        : ANTHROPIC_MODEL_IDS.haiku
+    );
+    const advisorTool = repoConfig.llmProvider === "anthropic" && shouldUseAdvisorTool(classifiedFeedback, repoConfig.llmModelPreset)
       ? {
           model: ANTHROPIC_ADVISOR_MODEL_ID,
           maxUses: 1,
           maxTokens: ANTHROPIC_ADVISOR_MAX_TOKENS
-        }
+      }
       : undefined;
-    const codeGenerator = new CodeGenerator(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, generationModel, advisorTool));
+    const codeGenerator = new CodeGenerator(this.createLlmClient(
+      repoConfig.llmProvider,
+      repoConfig.llmKeyMode,
+      repoConfig.llmApiKey,
+      generationModel,
+      openAISelection?.reasoningEffort,
+      advisorTool
+    ));
     const completeSolution = shouldUseImplementationPlanning(options.issueMode);
     let implementationPlan: ImplementationPlan | undefined;
     const feedbackText = `${classifiedFeedback.summary}\n${classifiedFeedback.rawContent}`;
 
     if (completeSolution) {
-      const planningModel = selectPlanningModelTier() === "sonnet"
+      const planningModel = openAISelection?.model ?? (selectPlanningModelTier() === "sonnet"
         ? ANTHROPIC_MODEL_IDS.sonnet
-        : ANTHROPIC_MODEL_IDS.haiku;
-      const planner = new ImplementationPlanner(this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, planningModel, advisorTool));
+        : ANTHROPIC_MODEL_IDS.haiku);
+      const planner = new ImplementationPlanner(this.createLlmClient(
+        repoConfig.llmProvider,
+        repoConfig.llmKeyMode,
+        repoConfig.llmApiKey,
+        planningModel,
+        openAISelection?.reasoningEffort,
+        advisorTool
+      ));
       implementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
       const loadedPaths = new Set(relevantFiles.map((file) => file.path));
       const plannedFiles = await this.repoIndexer.readFiles(
@@ -628,13 +655,40 @@ export class FeedbackPipelineWorker {
       };
     }
 
-    const haikuClient = this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.haiku);
-    const sonnetClient = this.createLlmClient(repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.sonnet);
-    const classifier = new FeedbackClassifier(haikuClient);
     const topLevelFileTree = repoContext.fileTree.map((node) => node.path);
-    let classifiedFeedback = await classifier.classify(feedbackItem, topLevelFileTree);
-    if (shouldEscalateClassification(classifiedFeedback)) {
-      classifiedFeedback = await new FeedbackClassifier(sonnetClient).classify(feedbackItem, topLevelFileTree);
+    let classifiedFeedback: ClassifiedFeedback;
+    if (repoConfig.llmProvider === "openai") {
+      const initialClient = this.createLlmClient(
+        "openai",
+        repoConfig.llmKeyMode,
+        repoConfig.llmApiKey,
+        OPENAI_MODEL_IDS.mini,
+        "none"
+      );
+      classifiedFeedback = await new FeedbackClassifier(initialClient).classify(feedbackItem, topLevelFileTree);
+      if (classifiedFeedback.complexity !== "trivial") {
+        const reviewMode = classifiedFeedback.complexity === "moderate"
+          ? getModerateIssueMode(classifiedFeedback)
+          : classifiedFeedback.complexity === "complex"
+            ? "complex-review-needed"
+            : undefined;
+        const selection = selectOpenAIModel(classifiedFeedback, repoConfig.llmModelPreset, reviewMode);
+        const routedClient = this.createLlmClient(
+          "openai",
+          repoConfig.llmKeyMode,
+          repoConfig.llmApiKey,
+          selection.model,
+          selection.reasoningEffort
+        );
+        classifiedFeedback = await new FeedbackClassifier(routedClient).classify(feedbackItem, topLevelFileTree);
+      }
+    } else {
+      const haikuClient = this.createLlmClient("anthropic", repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.haiku);
+      const sonnetClient = this.createLlmClient("anthropic", repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.sonnet);
+      classifiedFeedback = await new FeedbackClassifier(haikuClient).classify(feedbackItem, topLevelFileTree);
+      if (shouldEscalateClassification(classifiedFeedback)) {
+        classifiedFeedback = await new FeedbackClassifier(sonnetClient).classify(feedbackItem, topLevelFileTree);
+      }
     }
     const decision = decideFeedbackDisposition(classifiedFeedback, repoConfig);
 

@@ -13,6 +13,7 @@ rules:
   reviewers:
     - "repo-owner-username"
 llm:
+  provider: anthropic
   mode: byok
   model_preset: quality
 security:

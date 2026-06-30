@@ -150,12 +150,12 @@ export const llmModelPresetOptions = [
   {
     value: "quality",
     label: "Quality (Recommended)",
-    description: "Uses automatic Haiku/Sonnet routing and enables the Opus advisor for moderate and complex work."
+    description: "Uses provider-specific quality routing; Anthropic enables Opus advice and OpenAI routes review-heavy work to GPT-5.5."
   },
   {
     value: "balanced",
     label: "Balanced",
-    description: "Uses automatic Haiku/Sonnet routing and disables the advisor."
+    description: "Uses cost-conscious provider routing and disables Anthropic advisor calls."
   }
 ] as const satisfies ReadonlyArray<{
   value: LLMModelPreset;
