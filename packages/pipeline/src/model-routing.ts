@@ -1,6 +1,13 @@
 import type { ClassifiedFeedback, LLMModelPreset } from "@mosaic/core";
+import { OPENAI_MODEL_IDS, type OpenAIReasoningEffort } from "@mosaic/llm";
 
 export type ModelTier = "haiku" | "sonnet";
+export type ReviewMode = "moderate-safe" | "moderate-review-needed" | "complex-review-needed";
+
+export interface OpenAIModelSelection {
+  model: typeof OPENAI_MODEL_IDS[keyof typeof OPENAI_MODEL_IDS];
+  reasoningEffort: OpenAIReasoningEffort;
+}
 
 const CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.75;
 const obviousFixPattern =
@@ -72,4 +79,30 @@ export function shouldUseAdvisorTool(
 ): boolean {
   return modelPreset === "quality" &&
     (classifiedFeedback.complexity === "moderate" || classifiedFeedback.complexity === "complex");
+}
+
+export function selectOpenAIModel(
+  classifiedFeedback: ClassifiedFeedback,
+  modelPreset: LLMModelPreset = "quality",
+  reviewMode?: ReviewMode
+): OpenAIModelSelection {
+  if (classifiedFeedback.complexity === "trivial") {
+    return { model: OPENAI_MODEL_IDS.mini, reasoningEffort: "none" };
+  }
+
+  if (modelPreset === "quality" && (
+    classifiedFeedback.complexity === "complex" ||
+    reviewMode === "moderate-review-needed" ||
+    reviewMode === "complex-review-needed"
+  )) {
+    return {
+      model: OPENAI_MODEL_IDS.frontier,
+      reasoningEffort: classifiedFeedback.complexity === "complex" ? "high" : "medium"
+    };
+  }
+
+  return {
+    model: OPENAI_MODEL_IDS.standard,
+    reasoningEffort: "low"
+  };
 }

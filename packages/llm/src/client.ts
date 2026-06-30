@@ -1,7 +1,9 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { LLMError, type LLMKeyMode, logger } from "@mosaic/core";
+import { LLMError, type LLMKeyMode, type LLMProvider, logger } from "@mosaic/core";
+import type OpenAI from "openai";
 
 import { createAnthropicClient } from "./anthropic.js";
+import { createOpenAIClient } from "./openai.js";
 import { enforceRepoRateLimit } from "./rate-limiter.js";
 import { trackUsage } from "./token-tracker.js";
 
@@ -9,6 +11,14 @@ export const ANTHROPIC_MODEL_IDS = {
   sonnet: "claude-sonnet-4-6",
   haiku: "claude-haiku-4-5-20251001"
 } as const;
+
+export const OPENAI_MODEL_IDS = {
+  frontier: "gpt-5.5",
+  standard: "gpt-5.4",
+  mini: "gpt-5.4-mini"
+} as const;
+
+export type OpenAIReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 
 export const ANTHROPIC_ADVISOR_MODEL_ID = "claude-opus-4-8";
 export const ANTHROPIC_ADVISOR_TOOL_BETA = "advisor-tool-2026-03-01";
@@ -24,11 +34,13 @@ export interface AdvisorToolOptions {
 }
 
 export interface LLMClientOptions {
+  provider?: LLMProvider;
   mode: LLMKeyMode;
   apiKey?: string;
   platformApiKey?: string;
   model?: string;
   advisorTool?: AdvisorToolOptions;
+  reasoningEffort?: OpenAIReasoningEffort;
   disableUsageTracking?: boolean;
   authorizeRequest?: (request: LLMRequestAuthorization) => void | Promise<void>;
   observeUsage?: (event: LLMUsageObservation) => void | Promise<void>;
@@ -101,7 +113,7 @@ type AnthropicMessageResponse = Awaited<ReturnType<ReturnType<Anthropic["message
 type AnthropicBetaMessageResponse = Awaited<ReturnType<ReturnType<Anthropic["beta"]["messages"]["stream"]>["finalMessage"]>>;
 type AnthropicCompletionResponse = AnthropicMessageResponse | AnthropicBetaMessageResponse;
 
-function withHardTimeout<T>(promise: Promise<T>, timeoutMs: number | undefined): Promise<T> {
+function withHardTimeout<T>(promise: Promise<T>, timeoutMs: number | undefined, provider = "Anthropic"): Promise<T> {
   if (timeoutMs === undefined) {
     return promise;
   }
@@ -109,7 +121,7 @@ function withHardTimeout<T>(promise: Promise<T>, timeoutMs: number | undefined):
   let timeout: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeout = setTimeout(() => {
-      reject(new LLMError(`Anthropic completion timed out after ${timeoutMs}ms`));
+      reject(new LLMError(`${provider} completion timed out after ${timeoutMs}ms`));
     }, timeoutMs);
   });
 
@@ -251,20 +263,25 @@ function shouldFallbackFromAdvisorError(error: unknown, advisorTool: AdvisorTool
 }
 
 export class LLMClient {
-  private readonly client: Anthropic;
+  private readonly provider: LLMProvider;
+  private readonly anthropicClient?: Anthropic;
+  private readonly openaiClient?: OpenAI;
   private readonly defaultModel: string;
   private readonly advisorTool?: AdvisorToolOptions;
+  private readonly reasoningEffort?: OpenAIReasoningEffort;
   private readonly disableUsageTracking: boolean;
   private readonly authorizeRequest?: LLMClientOptions["authorizeRequest"];
   private readonly observeUsage?: LLMClientOptions["observeUsage"];
   private usageContext?: UsageContext;
 
   constructor({
+    provider = "anthropic",
     mode,
     apiKey,
     platformApiKey,
     model,
     advisorTool,
+    reasoningEffort,
     disableUsageTracking = false,
     authorizeRequest,
     observeUsage
@@ -274,9 +291,15 @@ export class LLMClient {
       throw new LLMError(`Missing API key for LLM mode: ${mode}`);
     }
 
-    this.client = createAnthropicClient(resolvedApiKey);
-    this.defaultModel = model ?? ANTHROPIC_MODEL_IDS.sonnet;
-    this.advisorTool = advisorTool;
+    this.provider = provider;
+    if (provider === "openai") {
+      this.openaiClient = createOpenAIClient(resolvedApiKey);
+    } else {
+      this.anthropicClient = createAnthropicClient(resolvedApiKey);
+    }
+    this.defaultModel = model ?? (provider === "openai" ? OPENAI_MODEL_IDS.standard : ANTHROPIC_MODEL_IDS.sonnet);
+    this.advisorTool = provider === "anthropic" ? advisorTool : undefined;
+    this.reasoningEffort = reasoningEffort;
     this.disableUsageTracking = disableUsageTracking;
     this.authorizeRequest = authorizeRequest;
     this.observeUsage = observeUsage;
@@ -286,7 +309,116 @@ export class LLMClient {
     this.usageContext = context;
   }
 
+  private async completeWithOpenAI(
+    systemPrompt: string,
+    userMessage: string,
+    options: CompletionOptions
+  ): Promise<string> {
+    if (!this.openaiClient) {
+      throw new LLMError("OpenAI client is not initialized");
+    }
+
+    const maxRetries = 3;
+    let attempt = 0;
+    let requestAttempts = 0;
+    const model = this.defaultModel;
+    const startedAt = Date.now();
+
+    while (attempt < maxRetries) {
+      try {
+        if (this.usageContext && !this.disableUsageTracking) {
+          await enforceRepoRateLimit(this.usageContext.repoFullName);
+        }
+
+        await this.authorizeRequest?.({
+          model,
+          estimatedInputTokens: Math.ceil((systemPrompt.length + userMessage.length) / 3),
+          maxOutputTokens: options.maxTokens ?? 4096
+        });
+        requestAttempts += 1;
+
+        const requestOptions = options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : undefined;
+        const response = await withHardTimeout(
+          this.openaiClient.responses.create({
+            model,
+            instructions: systemPrompt,
+            input: userMessage,
+            max_output_tokens: options.maxTokens ?? 4096,
+            ...(this.reasoningEffort ? { reasoning: { effort: this.reasoningEffort } } : {}),
+            text: { verbosity: "low" },
+            store: false
+          }, requestOptions),
+          options.timeoutMs,
+          "OpenAI"
+        );
+
+        const inputTokens = response.usage?.input_tokens ?? 0;
+        const outputTokens = response.usage?.output_tokens ?? 0;
+        const cacheReadInputTokens = response.usage?.input_tokens_details?.cached_tokens ?? 0;
+
+        if (this.usageContext && response.usage && !this.disableUsageTracking) {
+          await trackUsage({
+            ...this.usageContext,
+            model,
+            inputTokens,
+            outputTokens,
+            timestamp: Date.now()
+          });
+        }
+
+        if (response.usage && this.observeUsage) {
+          await this.observeUsage({
+            model,
+            inputTokens,
+            outputTokens,
+            cacheReadInputTokens,
+            cacheCreationInputTokens: 0,
+            latencyMs: Date.now() - startedAt,
+            retries: Math.max(0, requestAttempts - 1),
+            advisorOffered: false,
+            advisorUsed: false,
+            advisorUnavailable: false,
+            iterations: [{
+              type: "message",
+              model,
+              inputTokens,
+              outputTokens,
+              cacheReadInputTokens,
+              cacheCreationInputTokens: 0
+            }]
+          });
+        }
+
+        return response.output_text.trim();
+      } catch (error) {
+        attempt += 1;
+        const { status, name: errorName, message: errorMessage } = getAnthropicErrorDetails(error);
+        if (status === 429 && attempt < maxRetries) {
+          const delayMs = 2 ** attempt * 1_000;
+          logger.warn({ attempt, delayMs, provider: "openai" }, "OpenAI rate limit hit, retrying");
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        const details = [status ? `status ${status}` : undefined, errorName, errorMessage]
+          .filter(Boolean)
+          .join(": ");
+        throw new LLMError(details ? `OpenAI completion failed (${details})` : "OpenAI completion failed", {
+          cause: error as Error
+        });
+      }
+    }
+
+    throw new LLMError("OpenAI completion failed after retries");
+  }
+
   async complete(systemPrompt: string, userMessage: string, options: CompletionOptions = {}): Promise<string> {
+    if (this.provider === "openai") {
+      return this.completeWithOpenAI(systemPrompt, userMessage, options);
+    }
+    if (!this.anthropicClient) {
+      throw new LLMError("Anthropic client is not initialized");
+    }
     const maxRetries = 3;
     let attempt = 0;
     const model = this.defaultModel;
@@ -325,7 +457,7 @@ export class LLMClient {
         if (advisorTool) {
           try {
             await authorizeApiRequest(advisorTool);
-            const advisorStream = this.client.beta.messages.stream(
+            const advisorStream = this.anthropicClient.beta.messages.stream(
               {
                 ...request,
                 betas: [ANTHROPIC_ADVISOR_TOOL_BETA],
@@ -353,12 +485,12 @@ export class LLMClient {
             );
 
             await authorizeApiRequest();
-            const fallbackStream = this.client.messages.stream(request, requestOptions);
+            const fallbackStream = this.anthropicClient.messages.stream(request, requestOptions);
             response = await withHardTimeout(fallbackStream.finalMessage(), options.timeoutMs);
           }
         } else {
           await authorizeApiRequest();
-          const stream = this.client.messages.stream(request, requestOptions);
+          const stream = this.anthropicClient.messages.stream(request, requestOptions);
           response = await withHardTimeout(stream.finalMessage(), options.timeoutMs);
         }
 

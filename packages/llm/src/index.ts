@@ -2,6 +2,7 @@ import { logger } from "@mosaic/core";
 
 export * from "./anthropic.js";
 export * from "./client.js";
+export * from "./openai.js";
 export * from "./rate-limiter.js";
 export * from "./token-tracker.js";
 

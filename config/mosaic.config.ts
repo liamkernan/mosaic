@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { complexitySchema, defaultSecurityConfig, feedbackCategorySchema, feedbackSourceSchema, llmModelPresetSchema } from "../packages/core/src/config.js";
+import { complexitySchema, defaultSecurityConfig, feedbackCategorySchema, feedbackSourceSchema, llmModelPresetSchema, llmProviderSchema } from "../packages/core/src/config.js";
 import { z } from "zod";
 import YAML from "yaml";
 
@@ -15,6 +15,7 @@ export const mosaicConfigSchema = z.object({
     reviewers: z.array(z.string().min(1)).default([])
   }).default({}),
   llm: z.object({
+    provider: llmProviderSchema.default("anthropic"),
     mode: z.enum(["byok", "platform"]).default("byok"),
     model_preset: llmModelPresetSchema.default("quality")
   }).default({}),

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { expandHome, llmModelPresetOptions, repoFullNamePattern, resetEnvForTests } from "../packages/core/src/config.js";
+import { expandHome, llmModelPresetOptions, llmProviderOptions, repoFullNamePattern, resetEnvForTests } from "../packages/core/src/config.js";
 import { getEnv } from "../packages/core/src/index.js";
 
 describe("core config helpers", () => {
@@ -39,6 +39,19 @@ describe("core config helpers", () => {
   it("exposes frontend-facing model preset toggle options", () => {
     expect(llmModelPresetOptions.map((option) => option.value)).toEqual(["quality", "balanced"]);
     expect(llmModelPresetOptions.map((option) => option.label)).toEqual(["Quality (Recommended)", "Balanced"]);
+  });
+
+  it("keeps Anthropic as the default provider and accepts an explicit OpenAI switch", () => {
+    delete process.env.MOSAIC_LLM_PROVIDER;
+    resetEnvForTests();
+    expect(getEnv().MOSAIC_LLM_PROVIDER).toBe("anthropic");
+    expect(llmProviderOptions.map((option) => option.value)).toEqual(["anthropic", "openai"]);
+
+    process.env.MOSAIC_LLM_PROVIDER = "openai";
+    resetEnvForTests();
+    expect(getEnv().MOSAIC_LLM_PROVIDER).toBe("openai");
+
+    delete process.env.MOSAIC_LLM_PROVIDER;
   });
 
   it("defaults the Mosaic trigger phrase when unset", () => {

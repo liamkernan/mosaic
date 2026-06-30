@@ -69,6 +69,7 @@ export interface PRPayload {
 // === CONFIG TYPES ===
 
 export type LLMKeyMode = "platform" | "byok";
+export type LLMProvider = "anthropic" | "openai";
 
 export type LLMModelPreset = "quality" | "balanced";
 
@@ -77,6 +78,7 @@ export interface RepoConfig {
   intakeSources: FeedbackSource[];
   allowedCategories: FeedbackCategory[];
   maxComplexity: ComplexityLevel;
+  llmProvider: LLMProvider;
   llmKeyMode: LLMKeyMode;
   llmModelPreset: LLMModelPreset;
   llmApiKey?: string;

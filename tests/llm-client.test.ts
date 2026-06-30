@@ -4,12 +4,16 @@ const {
   streamMock,
   betaStreamMock,
   finalMessageMock,
+  responsesCreateMock,
+  createOpenAIClientMock,
   enforceRepoRateLimitMock,
   trackUsageMock
 } = vi.hoisted(() => ({
   streamMock: vi.fn(),
   betaStreamMock: vi.fn(),
   finalMessageMock: vi.fn(),
+  responsesCreateMock: vi.fn(),
+  createOpenAIClientMock: vi.fn(),
   enforceRepoRateLimitMock: vi.fn(async () => {}),
   trackUsageMock: vi.fn(async () => {})
 }));
@@ -27,6 +31,14 @@ vi.mock("../packages/llm/src/anthropic.js", () => ({
   }))
 }));
 
+vi.mock("../packages/llm/src/openai.js", () => ({
+  createOpenAIClient: createOpenAIClientMock.mockImplementation(() => ({
+    responses: {
+      create: responsesCreateMock
+    }
+  }))
+}));
+
 vi.mock("../packages/llm/src/rate-limiter.js", () => ({
   enforceRepoRateLimit: enforceRepoRateLimitMock
 }));
@@ -39,6 +51,7 @@ import {
   ANTHROPIC_ADVISOR_MAX_TOKENS,
   ANTHROPIC_ADVISOR_MODEL_ID,
   ANTHROPIC_ADVISOR_TOOL_BETA,
+  OPENAI_MODEL_IDS,
   LLMClient
 } from "../packages/llm/src/client.js";
 
@@ -49,6 +62,16 @@ describe("LLMClient", () => {
     finalMessageMock.mockReset();
     enforceRepoRateLimitMock.mockClear();
     trackUsageMock.mockClear();
+    responsesCreateMock.mockReset();
+    createOpenAIClientMock.mockClear();
+    responsesCreateMock.mockResolvedValue({
+      output_text: "openai ok",
+      usage: {
+        input_tokens: 10,
+        output_tokens: 5,
+        input_tokens_details: { cached_tokens: 2 }
+      }
+    });
     finalMessageMock.mockResolvedValue({
       content: [{ type: "text", text: "ok" }],
       usage: {
@@ -363,5 +386,75 @@ describe("LLMClient", () => {
     });
 
     await expect(client.complete("system", "user", { timeoutMs: 5 })).rejects.toThrow("timed out");
+  });
+
+  it("maps completions directly to the stateless OpenAI Responses API", async () => {
+    const observeUsage = vi.fn();
+    const authorizeRequest = vi.fn();
+    const client = new LLMClient({
+      provider: "openai",
+      mode: "platform",
+      platformApiKey: "openai-test-key",
+      model: OPENAI_MODEL_IDS.frontier,
+      reasoningEffort: "high",
+      advisorTool: {
+        model: ANTHROPIC_ADVISOR_MODEL_ID,
+        maxUses: 1
+      },
+      disableUsageTracking: true,
+      authorizeRequest,
+      observeUsage
+    });
+
+    await expect(client.complete("system", "user", { maxTokens: 900, timeoutMs: 1234 })).resolves.toBe("openai ok");
+
+    expect(createOpenAIClientMock).toHaveBeenCalledWith("openai-test-key");
+    expect(responsesCreateMock).toHaveBeenCalledWith({
+      model: "gpt-5.5",
+      instructions: "system",
+      input: "user",
+      max_output_tokens: 900,
+      reasoning: { effort: "high" },
+      text: { verbosity: "low" },
+      store: false
+    }, { timeout: 1234 });
+    expect(authorizeRequest).toHaveBeenCalledWith(expect.objectContaining({
+      model: "gpt-5.5",
+      maxOutputTokens: 900
+    }));
+    expect(authorizeRequest.mock.calls[0]?.[0]).not.toHaveProperty("advisorModel");
+    expect(observeUsage).toHaveBeenCalledWith(expect.objectContaining({
+      model: "gpt-5.5",
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheReadInputTokens: 2,
+      advisorOffered: false,
+      advisorUsed: false,
+      iterations: [{
+        type: "message",
+        model: "gpt-5.5",
+        inputTokens: 10,
+        outputTokens: 5,
+        cacheReadInputTokens: 2,
+        cacheCreationInputTokens: 0
+      }]
+    }));
+  });
+
+  it("defaults OpenAI to GPT-5.4 when no model is supplied", async () => {
+    const client = new LLMClient({
+      provider: "openai",
+      mode: "byok",
+      apiKey: "repo-openai-key",
+      disableUsageTracking: true
+    });
+
+    await client.complete("system", "user");
+
+    expect(createOpenAIClientMock).toHaveBeenCalledWith("repo-openai-key");
+    expect(responsesCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gpt-5.4", store: false }),
+      undefined
+    );
   });
 });

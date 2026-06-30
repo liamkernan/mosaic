@@ -7,6 +7,7 @@ import {
   feedbackCategorySchema,
   feedbackSourceSchema,
   llmModelPresetSchema,
+  llmProviderSchema,
   type FeedbackCategory,
   type RepoConfig
 } from "@mosaic/core";
@@ -30,6 +31,7 @@ const repoConfigFileSchema = z.object({
     reviewers: z.array(z.string().min(1)).optional()
   }).default({}),
   llm: z.object({
+    provider: llmProviderSchema.optional(),
     mode: z.enum(["byok", "platform"]).default("platform"),
     model_preset: llmModelPresetSchema.default("quality")
   }).default({}),
@@ -46,6 +48,7 @@ export const defaultRuntimeConfig: Omit<RepoRuntimeConfig, "repoFullName"> = {
   intakeSources: ["web_form", "github_issue"],
   allowedCategories: ["bug_report", "copy_change", "ui_tweak"],
   maxComplexity: "simple",
+  llmProvider: "anthropic",
   llmKeyMode: "platform",
   llmModelPreset: "quality",
   branchPrefix: "mosaic/",
@@ -55,6 +58,10 @@ export const defaultRuntimeConfig: Omit<RepoRuntimeConfig, "repoFullName"> = {
     block_patterns: [...defaultSecurityConfig.block_patterns]
   }
 };
+
+function platformLlmProvider() {
+  return llmProviderSchema.parse(process.env.MOSAIC_LLM_PROVIDER ?? "anthropic");
+}
 
 async function resolveRepoConfigPath(repoRoot: string): Promise<string | null> {
   const configCandidates = ["mosaic.config.yml"];
@@ -77,7 +84,8 @@ export async function loadRepoRuntimeConfig(repoRoot: string, repoFullName: stri
   if (!configPath) {
     return {
       repoFullName,
-      ...defaultRuntimeConfig
+      ...defaultRuntimeConfig,
+      llmProvider: platformLlmProvider()
     };
   }
 
@@ -89,6 +97,7 @@ export async function loadRepoRuntimeConfig(repoRoot: string, repoFullName: stri
     intakeSources: parsed.intake,
     allowedCategories: parsed.rules.allowed_categories as FeedbackCategory[],
     maxComplexity: parsed.rules.max_complexity,
+    llmProvider: parsed.llm.provider ?? platformLlmProvider(),
     llmKeyMode: parsed.llm.mode,
     llmModelPreset: parsed.llm.model_preset,
     llmApiKey: parsed.llm.mode === "byok" ? process.env.MOSAIC_LLM_KEY : undefined,

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { selectGenerationModelTier, selectPlanningModelTier, shouldEscalateClassification, shouldUseAdvisorTool } from "../packages/pipeline/src/model-routing.js";
+import {
+  selectGenerationModelTier,
+  selectOpenAIModel,
+  selectPlanningModelTier,
+  shouldEscalateClassification,
+  shouldUseAdvisorTool
+} from "../packages/pipeline/src/model-routing.js";
 
 const baseFeedback = {
   id: "01TEST",
@@ -171,5 +177,28 @@ describe("model routing", () => {
     expect(selectPlanningModelTier()).toBe("sonnet");
     expect(shouldUseAdvisorTool(complexFeedback, "quality")).toBe(true);
     expect(shouldUseAdvisorTool(moderateFeedback, "quality")).toBe(true);
+  });
+
+  it("routes OpenAI quality work to the requested GPT models", () => {
+    expect(selectOpenAIModel({ ...baseFeedback, complexity: "trivial" }, "quality")).toEqual({
+      model: "gpt-5.4-mini",
+      reasoningEffort: "none"
+    });
+    expect(selectOpenAIModel(baseFeedback, "quality")).toEqual({
+      model: "gpt-5.4",
+      reasoningEffort: "low"
+    });
+    expect(selectOpenAIModel({ ...baseFeedback, complexity: "moderate" }, "quality", "moderate-safe")).toEqual({
+      model: "gpt-5.4",
+      reasoningEffort: "low"
+    });
+    expect(selectOpenAIModel({ ...baseFeedback, complexity: "moderate" }, "quality", "moderate-review-needed")).toEqual({
+      model: "gpt-5.5",
+      reasoningEffort: "medium"
+    });
+    expect(selectOpenAIModel({ ...baseFeedback, complexity: "complex" }, "quality", "complex-review-needed")).toEqual({
+      model: "gpt-5.5",
+      reasoningEffort: "high"
+    });
   });
 });

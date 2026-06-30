@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import { z } from "zod";
 
 import { ConfigError } from "./errors.js";
-import type { ComplexityLevel, FeedbackCategory, FeedbackSource, LLMModelPreset } from "./types.js";
+import type { ComplexityLevel, FeedbackCategory, FeedbackSource, LLMModelPreset, LLMProvider } from "./types.js";
 
 const packageDir = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = resolve(packageDir, "../../..");
@@ -61,6 +61,8 @@ const envSchema = z.object({
   GITHUB_WEBHOOK_SECRET: optionalNonEmptyString(),
   REDIS_URL: z.string().url().default("redis://localhost:6379"),
   ANTHROPIC_API_KEY: optionalNonEmptyString(),
+  OPENAI_API_KEY: optionalNonEmptyString(),
+  MOSAIC_LLM_PROVIDER: z.enum(["anthropic", "openai"]).default("anthropic"),
   EMAIL_IMAP_HOST: optionalNonEmptyString(),
   EMAIL_IMAP_PORT: z.coerce.number().int().positive().default(993),
   EMAIL_IMAP_USER: optionalNonEmptyString(),
@@ -125,6 +127,24 @@ export const feedbackCategorySchema = z.enum([
 export const complexitySchema = z.enum(["trivial", "simple", "moderate", "complex"]) satisfies z.ZodType<ComplexityLevel>;
 
 export const llmModelPresetSchema = z.enum(["quality", "balanced"]) satisfies z.ZodType<LLMModelPreset>;
+export const llmProviderSchema = z.enum(["anthropic", "openai"]) satisfies z.ZodType<LLMProvider>;
+
+export const llmProviderOptions = [
+  {
+    value: "anthropic",
+    label: "Anthropic",
+    description: "Uses the existing Claude routing and Opus advisor behavior."
+  },
+  {
+    value: "openai",
+    label: "OpenAI",
+    description: "Uses GPT-5.5, GPT-5.4, and GPT-5.4 mini through the Responses API."
+  }
+] as const satisfies ReadonlyArray<{
+  value: LLMProvider;
+  label: string;
+  description: string;
+}>;
 
 export const llmModelPresetOptions = [
   {
