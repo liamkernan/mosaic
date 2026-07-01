@@ -1,0 +1,20 @@
+{
+  "claude-sonnet-5": {
+    "inputUsdPerMillion": 2,
+    "outputUsdPerMillion": 10,
+    "cacheReadUsdPerMillion": 0.2,
+    "cacheCreationUsdPerMillion": 2.5
+  },
+  "claude-haiku-4-5-20251001": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 5,
+    "cacheReadUsdPerMillion": 0.1,
+    "cacheCreationUsdPerMillion": 1.25
+  },
+  "claude-opus-4-8": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 25,
+    "cacheReadUsdPerMillion": 0.5,
+    "cacheCreationUsdPerMillion": 6.25
+  }
+}
