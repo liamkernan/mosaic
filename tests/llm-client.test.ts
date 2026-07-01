@@ -51,6 +51,7 @@ import {
   ANTHROPIC_ADVISOR_MAX_TOKENS,
   ANTHROPIC_ADVISOR_MODEL_ID,
   ANTHROPIC_ADVISOR_TOOL_BETA,
+  ANTHROPIC_MODEL_IDS,
   OPENAI_MODEL_IDS,
   LLMClient
 } from "../packages/llm/src/client.js";
@@ -97,7 +98,27 @@ describe("LLMClient", () => {
 
     expect(streamMock).toHaveBeenCalledWith(
       expect.objectContaining({
+        model: "claude-sonnet-5",
         system: "system"
+      }),
+      undefined
+    );
+    expect(streamMock.mock.calls[0]?.[0]).not.toHaveProperty("temperature");
+  });
+
+  it("retains sampling temperature for older Anthropic models", async () => {
+    const client = new LLMClient({
+      mode: "platform",
+      platformApiKey: "test-key",
+      model: ANTHROPIC_MODEL_IDS.haiku
+    });
+
+    await client.complete("system", "user", { temperature: 0.4 });
+
+    expect(streamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: ANTHROPIC_MODEL_IDS.haiku,
+        temperature: 0.4
       }),
       undefined
     );
@@ -135,7 +156,7 @@ describe("LLMClient", () => {
     expect(streamMock).not.toHaveBeenCalled();
     expect(betaStreamMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-5",
         system: "system",
         betas: [ANTHROPIC_ADVISOR_TOOL_BETA],
         tools: [
@@ -173,7 +194,7 @@ describe("LLMClient", () => {
     expect(betaStreamMock).toHaveBeenCalledTimes(1);
     expect(streamMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-5",
         system: "system"
       }),
       undefined
@@ -221,7 +242,7 @@ describe("LLMClient", () => {
     expect(enforceRepoRateLimitMock).not.toHaveBeenCalled();
     expect(trackUsageMock).not.toHaveBeenCalled();
     expect(observeUsage).toHaveBeenCalledWith(expect.objectContaining({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5",
       inputTokens: 1,
       outputTokens: 1,
       retries: 0,
@@ -285,7 +306,7 @@ describe("LLMClient", () => {
       iterations: [
         {
           type: "message",
-          model: "claude-sonnet-4-6",
+          model: "claude-sonnet-5",
           inputTokens: 412,
           outputTokens: 89,
           cacheReadInputTokens: 0,
@@ -301,7 +322,7 @@ describe("LLMClient", () => {
         },
         {
           type: "message",
-          model: "claude-sonnet-4-6",
+          model: "claude-sonnet-5",
           inputTokens: 1_348,
           outputTokens: 442,
           cacheReadInputTokens: 412,
@@ -350,7 +371,7 @@ describe("LLMClient", () => {
     await expect(client.complete("system", "user", { maxTokens: 100 })).rejects.toThrow("budget exhausted");
 
     expect(authorizeRequest).toHaveBeenCalledWith(expect.objectContaining({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5",
       estimatedInputTokens: 4,
       maxOutputTokens: 100
     }));
@@ -386,6 +407,20 @@ describe("LLMClient", () => {
     });
 
     await expect(client.complete("system", "user", { timeoutMs: 5 })).rejects.toThrow("timed out");
+  });
+
+  it("fails closed when Sonnet 5 returns a refusal stop reason", async () => {
+    finalMessageMock.mockResolvedValueOnce({
+      content: [],
+      stop_reason: "refusal",
+      usage: { input_tokens: 10, output_tokens: 1 }
+    });
+    const client = new LLMClient({
+      mode: "platform",
+      platformApiKey: "test-key"
+    });
+
+    await expect(client.complete("system", "user")).rejects.toThrow("refused by the model safety system");
   });
 
   it("maps completions directly to the stateless OpenAI Responses API", async () => {

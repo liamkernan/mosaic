@@ -8,7 +8,7 @@ import { enforceRepoRateLimit } from "./rate-limiter.js";
 import { trackUsage } from "./token-tracker.js";
 
 export const ANTHROPIC_MODEL_IDS = {
-  sonnet: "claude-sonnet-4-6",
+  sonnet: "claude-sonnet-5",
   haiku: "claude-haiku-4-5-20251001"
 } as const;
 
@@ -447,7 +447,7 @@ export class LLMClient {
           model,
           system: systemPrompt,
           max_tokens: options.maxTokens ?? 4096,
-          temperature: options.temperature ?? 0.2,
+          ...(model === ANTHROPIC_MODEL_IDS.sonnet ? {} : { temperature: options.temperature ?? 0.2 }),
           messages: [{ role: "user" as const, content: userMessage }]
         };
         const requestOptions = options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : undefined;
@@ -494,6 +494,9 @@ export class LLMClient {
           response = await withHardTimeout(stream.finalMessage(), options.timeoutMs);
         }
 
+        if (response.stop_reason === "refusal") {
+          throw new LLMError("Anthropic completion was refused by the model safety system");
+        }
         const text = extractTextContent(response.content);
 
         if (this.usageContext && response.usage && !this.disableUsageTracking) {
