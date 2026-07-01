@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildStagedIssueMetadata,
@@ -28,7 +28,12 @@ const stagedIssueSecret = "test-staged-secret";
 
 describe("staged issues", () => {
   beforeEach(() => {
-    process.env.MOSAIC_TRIGGER_PHRASE = "@custombot";
+    vi.stubEnv("MOSAIC_TRIGGER_PHRASE", "@custombot");
+    resetEnvForTests();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
     resetEnvForTests();
   });
 

@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { resetEnvForTests } from "../packages/core/src/config.js";
 import { loadRepoRuntimeConfig } from "../packages/pipeline/src/repo-config.js";
@@ -21,6 +21,8 @@ async function makeRepoConfig(contents?: string): Promise<string> {
 describe("repo runtime config", () => {
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+    vi.unstubAllEnvs();
+    resetEnvForTests();
   });
 
   it("defaults the frontend model preset to quality", async () => {
@@ -33,8 +35,7 @@ describe("repo runtime config", () => {
   });
 
   it("uses the global provider switch unless a repo explicitly overrides it", async () => {
-    const previousProvider = process.env.MOSAIC_LLM_PROVIDER;
-    process.env.MOSAIC_LLM_PROVIDER = "openai";
+    vi.stubEnv("MOSAIC_LLM_PROVIDER", "openai");
     resetEnvForTests();
     const globalRepoRoot = await makeRepoConfig();
     const overriddenRepoRoot = await makeRepoConfig(`
@@ -49,10 +50,6 @@ llm:
     await expect(loadRepoRuntimeConfig(overriddenRepoRoot, "owner/override")).resolves.toMatchObject({
       llmProvider: "anthropic"
     });
-
-    if (previousProvider === undefined) delete process.env.MOSAIC_LLM_PROVIDER;
-    else process.env.MOSAIC_LLM_PROVIDER = previousProvider;
-    resetEnvForTests();
   });
 
   it("parses the frontend model preset from mosaic config", async () => {

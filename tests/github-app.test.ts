@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type * as GithubApp from "../packages/github-app/src/app.js";
 
 import { resetEnvForTests } from "../packages/core/src/index.js";
@@ -7,9 +7,14 @@ let bodyContainsTrigger: typeof GithubApp.bodyContainsTrigger;
 let isMosaicAuthoredEvent: typeof GithubApp.isMosaicAuthoredEvent;
 
 beforeAll(async () => {
-  process.env.MOSAIC_TRIGGER_PHRASE = "@custombot";
+  vi.stubEnv("MOSAIC_TRIGGER_PHRASE", "@custombot");
   resetEnvForTests();
   ({ bodyContainsTrigger, isMosaicAuthoredEvent } = await import("../packages/github-app/src/app.js"));
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+  resetEnvForTests();
 });
 
 describe("github app forwarding triggers", () => {
