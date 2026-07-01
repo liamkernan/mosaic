@@ -12,6 +12,7 @@
     "typecheck": "tsc -b packages/*/tsconfig.json",
     "typecheck:tests": "tsc -p tsconfig.tests.json",
     "test": "vitest run",
+    "test:security:docker": "MOSAIC_REQUIRE_DOCKER_TESTS=1 vitest run tests/pipeline-verification-runner.test.ts",
     "test:watch": "vitest",
     "eval:local": "tsx scripts/eval-local-fixes.ts",
     "setup": "tsx scripts/setup.ts",
