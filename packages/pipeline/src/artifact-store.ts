@@ -1,5 +1,3 @@
-import type { Redis } from "ioredis";
-
 export type ArtifactType = "issue" | "pr" | "quarantine";
 
 export interface ArtifactRecord {
@@ -10,7 +8,16 @@ export interface ArtifactRecord {
   createdAt: string;
 }
 
-type MinimalRedis = Pick<Redis, "get" | "set">;
+interface MinimalRedis {
+  get(key: string): Promise<string | null>;
+  set(
+    key: string,
+    value: string,
+    expiryMode: "EX",
+    ttlSeconds: number,
+    condition: "NX"
+  ): Promise<"OK" | null>;
+}
 
 const ARTIFACT_KEY_PREFIX = "feedback-artifact";
 const ARTIFACT_TTL_SECONDS = 30 * 24 * 60 * 60;

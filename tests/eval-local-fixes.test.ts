@@ -417,15 +417,13 @@ describe("local fix evaluation harness", () => {
     expect(validateUnchangedSymbolsWithAllowedLines({
       filePath: "mosaic_demo/service.py",
       originalContent,
-      modifiedContent: withBody,
-      explanation: "expose updated body"
+      modifiedContent: withBody
     }, { list_requests: ["sr.body"] })).toEqual([]);
 
     expect(validateUnchangedSymbolsWithAllowedLines({
       filePath: "mosaic_demo/service.py",
       originalContent,
-      modifiedContent: withBody.replace("sr.created_at DESC", "sr.sla_due_at ASC"),
-      explanation: "also change sorting"
+      modifiedContent: withBody.replace("sr.created_at DESC", "sr.sla_due_at ASC")
     }, { list_requests: ["sr.body"] })).toEqual([
       "Unrelated protected symbol changed in mosaic_demo/service.py: list_requests"
     ]);

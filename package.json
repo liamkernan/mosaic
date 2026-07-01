@@ -10,6 +10,7 @@
     "verify:image": "docker build -f Dockerfile.verify -t mosaic-verify:local .",
     "lint": "eslint .",
     "typecheck": "tsc -b packages/*/tsconfig.json",
+    "typecheck:tests": "tsc -p tsconfig.tests.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "eval:local": "tsx scripts/eval-local-fixes.ts",

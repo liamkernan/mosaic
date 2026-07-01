@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { LLMClient } from "../packages/llm/src/client.js";
+import type { LLMClient } from "../packages/llm/dist/client.js";
 import { ImplementationPlanner } from "../packages/pipeline/src/implementation-planner.js";
 
 describe("ImplementationPlanner", () => {
