@@ -17,16 +17,18 @@ describe("normalize", () => {
   });
 
   it("strips html and truncates content", () => {
+    const oversizedContent = "x".repeat(5_100);
     const feedback = normalize(
       {
-        rawContent: "<p>Hello <strong>world</strong></p>",
+        rawContent: `<p>${oversizedContent}</p>`,
         repoFullName: "owner/repo",
         senderEmail: "user@example.com"
       },
       "email"
     );
 
-    expect(feedback.rawContent).toBe("Hello world");
+    expect(feedback.rawContent).toBe("x".repeat(5_000));
+    expect(feedback.rawContent).toHaveLength(5_000);
     expect(feedback.repoFullName).toBe("owner/repo");
   });
 
