@@ -70,16 +70,14 @@ describe("core config helpers", () => {
     expect(getEnv().VERIFICATION_REQUIRE_SANDBOX).toBe(false);
   });
 
-  it("parses explicit verification sandbox booleans", () => {
+  it.each([
+    ["yes", true],
+    ["off", false]
+  ])("parses explicit verification sandbox boolean %s", (configuredValue, expected) => {
     vi.stubEnv("NODE_ENV", "development");
-
-    vi.stubEnv("VERIFICATION_REQUIRE_SANDBOX", "yes");
+    vi.stubEnv("VERIFICATION_REQUIRE_SANDBOX", configuredValue);
     resetEnvForTests();
-    expect(getEnv().VERIFICATION_REQUIRE_SANDBOX).toBe(true);
-
-    vi.stubEnv("VERIFICATION_REQUIRE_SANDBOX", "off");
-    resetEnvForTests();
-    expect(getEnv().VERIFICATION_REQUIRE_SANDBOX).toBe(false);
+    expect(getEnv().VERIFICATION_REQUIRE_SANDBOX).toBe(expected);
   });
 
   it("rejects invalid verification sandbox booleans", () => {

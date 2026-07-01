@@ -1,7 +1,7 @@
 import { LLMError, type ClassifiedFeedback, type GeneratedChange, type RelevantFile } from "@mosaic/core";
-import type { LLMClient } from "@mosaic/llm";
 
 import { parseGeneratedChanges } from "./generated-change-parser.js";
+import type { PipelineLlmClient } from "./pipeline-llm-client.js";
 import { buildGenerationPrompt } from "./prompts/generate.prompt.js";
 import { buildGenerationRepairPrompt, buildValidationRepairPrompt } from "./prompts/repair-generate.prompt.js";
 import type { ImplementationPlan } from "./implementation-planner.js";
@@ -520,7 +520,7 @@ const VALIDATION_REPAIR_ROUTES: ValidationRepairRoute[] = [
 ];
 
 export class CodeGenerator {
-  constructor(private readonly llmClient: LLMClient) {}
+  constructor(private readonly llmClient: PipelineLlmClient) {}
 
   private toGeneratedChanges(
     parsed: Array<{ filePath: string; modifiedContent?: string; search?: string; replace?: string; explanation: string }>,

@@ -9,21 +9,17 @@ import {
   parseStagedIssueMetadata
 } from "../packages/pipeline/src/staged-issues.js";
 import { resetEnvForTests } from "../packages/core/src/index.js";
+import { buildClassifiedFeedback } from "./helpers/pipeline.js";
 
-const baseFeedback = {
-  id: "01TEST",
-  source: "web_form" as const,
+const baseFeedback = buildClassifiedFeedback({
   rawContent: "Fix the button text alignment in the settings form.",
-  senderIdentifier: "user@example.com",
-  repoFullName: "owner/repo",
   receivedAt: new Date("2026-04-27T12:00:00.000Z"),
-  metadata: {},
-  category: "ui_tweak" as const,
-  complexity: "moderate" as const,
+  category: "ui_tweak",
+  complexity: "moderate",
   summary: "Fix the button text alignment in the settings form",
   relevantFiles: ["src/settings.tsx"],
   confidence: 0.95
-};
+});
 const stagedIssueSecret = "test-staged-secret";
 
 describe("staged issues", () => {

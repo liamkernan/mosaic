@@ -1,16 +1,16 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { validate } from "../packages/pipeline/src/validator.js";
+import { createTempDirTracker } from "./helpers/temp-dirs.js";
 
 describe("validate", () => {
-  const tempDirs: string[] = [];
+  const tempDirs = createTempDirTracker();
 
   afterEach(async () => {
-    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+    await tempDirs.cleanup();
   });
 
   it("rejects unsafe additions", async () => {
@@ -59,8 +59,7 @@ describe("validate", () => {
   });
 
   it("counts localized edits in large files without charging unchanged prefix and suffix lines", async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(tempDir);
+    const tempDir = await tempDirs.create("mosaic-validator-");
     await mkdir(join(tempDir, "src"), { recursive: true });
     const originalContent = [
       ...Array.from({ length: 300 }, (_, index) => `const prefix${index} = ${index};`),
@@ -96,8 +95,7 @@ describe("validate", () => {
   });
 
   it("counts reordered changed-window lines using line-level common subsequences", async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(tempDir);
+    const tempDir = await tempDirs.create("mosaic-validator-");
     const originalContent = ["alpha", "beta", "gamma", "delta"].join("\n");
     const modifiedContent = ["alpha", "gamma", "beta", "delta"].join("\n");
     await writeFile(join(tempDir, "notes.md"), originalContent);
@@ -151,8 +149,7 @@ describe("validate", () => {
   });
 
   it("rejects Python syntax errors before verification", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "service.py"), "def queue():\n    return []\n", "utf8");
 
     const result = await validate(
@@ -178,8 +175,7 @@ describe("validate", () => {
   });
 
   it("rejects changes that weaken existing test assertions", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await mkdir(join(localPath, "tests", "reported"), { recursive: true });
     await writeFile(join(localPath, "tests", "reported", "test_001_sla_sort.py"), "def test_sla_sort_orders_by_due_at(self):\n    self.assertEqual(urgent['id'], queue[0]['id'])\n", "utf8");
 
@@ -208,8 +204,7 @@ describe("validate", () => {
   });
 
   it("rejects skipped or trivial generated tests", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await mkdir(join(localPath, "tests", "reported"), { recursive: true });
     await writeFile(join(localPath, "tests", "reported", "test_001_sla_sort.py"), "", "utf8");
 
@@ -237,8 +232,7 @@ describe("validate", () => {
   });
 
   it("accepts generated tests that preserve and add meaningful assertions", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await mkdir(join(localPath, "tests", "reported"), { recursive: true });
     await writeFile(join(localPath, "tests", "reported", "test_001_sla_sort.py"), "def test_sla_sort_orders_by_due_at(self):\n    self.assertEqual(urgent['id'], queue[0]['id'])\n", "utf8");
 
@@ -266,8 +260,7 @@ describe("validate", () => {
   });
 
   it("rejects newly added inert links", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
 
     const result = await validate(
@@ -293,8 +286,7 @@ describe("validate", () => {
   });
 
   it("rejects newly added click-only containers", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
 
     const result = await validate(
@@ -321,8 +313,7 @@ describe("validate", () => {
   });
 
   it("accepts native interactive card controls", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
 
     const result = await validate(
@@ -348,8 +339,7 @@ describe("validate", () => {
   });
 
   it("rejects accessible non-native controls without keyboard activation behavior", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
     await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
 
@@ -381,8 +371,7 @@ describe("validate", () => {
   });
 
   it("accepts accessible non-native controls with Enter and Space keyboard activation", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
     await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
 
@@ -423,8 +412,7 @@ describe("validate", () => {
   });
 
   it("accepts stylesheet insertions that shift existing lines", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     const originalContent = Array.from({ length: 830 }, (_, index) => `.item-${index} { color: black; }`).join("\n");
     const insertedStyles = Array.from({ length: 24 }, (_, index) => `.modal-content-${index} { display: block; }`).join("\n");
     const modifiedContent = `${insertedStyles}\n${originalContent}`;
@@ -504,8 +492,7 @@ describe("validate", () => {
   });
 
   it("rejects modal UI changes that do not add matching styles", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<div>before</div>\n", "utf8");
     await writeFile(join(localPath, "styles.css"), ".collection-card { padding: 1rem; }\n", "utf8");
 
@@ -536,8 +523,7 @@ describe("validate", () => {
   });
 
   it("rejects modal UI changes that do not add matching behavior", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<div>before</div>\n", "utf8");
     await writeFile(join(localPath, "styles.css"), ".journal-modal { display: block; }\n", "utf8");
     await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
@@ -570,8 +556,7 @@ describe("validate", () => {
   });
 
   it("rejects modal UI changes that only add open behavior", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<div>before</div>\n", "utf8");
     await writeFile(join(localPath, "styles.css"), ".journal-modal { display: block; }\n", "utf8");
     await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
@@ -610,8 +595,7 @@ describe("validate", () => {
   });
 
   it("accepts modal UI changes with matching styles and behavior", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<div>before</div>\n", "utf8");
     await writeFile(join(localPath, "styles.css"), ".journal-modal { display: block; }\n", "utf8");
     await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
@@ -653,8 +637,7 @@ describe("validate", () => {
   });
 
   it("accepts modal UI changes when related styles and behavior are added without every content token", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<div>before</div>\n", "utf8");
     await writeFile(join(localPath, "styles.css"), ".journal-card { display: block; }\n", "utf8");
     await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
@@ -703,8 +686,7 @@ describe("validate", () => {
   });
 
   it("allows moderately sized static UI changes under the default added-line budget", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     const originalContent = "<main></main>\n";
     await writeFile(join(localPath, "index.html"), originalContent, "utf8");
     const modifiedContent = [
@@ -735,8 +717,7 @@ describe("validate", () => {
   });
 
   it("accepts modal behavior and styles in supplemental frontend assets", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
     await writeFile(join(localPath, "styles.css"), ".collection-card { display: block; }\n", "utf8");
     await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
@@ -784,8 +765,7 @@ describe("validate", () => {
   });
 
   it("rejects new static frontend assets that are not linked from html", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
 
     const result = await validate(
@@ -811,8 +791,7 @@ describe("validate", () => {
   });
 
   it("does not require TypeScript test modules to be linked from html", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<main></main>\n", "utf8");
 
     const result = await validate(
@@ -838,8 +817,7 @@ describe("validate", () => {
   });
 
   it("rejects changed static scripts that query missing html hooks", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), '<main><button class="collection-card">Kitchen</button><script src="./collection-modal.js"></script></main>\n', "utf8");
 
     const result = await validate(
@@ -873,8 +851,7 @@ describe("validate", () => {
   });
 
   it("rejects script-only changes that query selectors missing from existing html", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), '<main><button class="collection-card">Kitchen</button><script src="./collection-modal.js"></script></main>\n', "utf8");
 
     const result = await validate(
@@ -904,8 +881,7 @@ describe("validate", () => {
   });
 
   it("accepts changed static scripts that query existing class and data-attribute hooks", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validator-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(
       join(localPath, "index.html"),
       '<main><button class="collection-card" data-collection="kitchen">Kitchen</button><script src="./collection-modal.js"></script></main>\n',

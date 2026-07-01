@@ -22,19 +22,11 @@ body {
     expect(parsed[0]?.modifiedContent).toContain("color: red;");
   });
 
-  it("parses direct json arrays", () => {
-    const parsed = parseGeneratedChanges(
-      '[{"filePath":"styles.css","modifiedContent":"body {}","explanation":"Fix alignment."}]'
-    );
-
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0]?.filePath).toBe("styles.css");
-  });
-
-  it("parses json arrays with leading whitespace", () => {
-    const parsed = parseGeneratedChanges(
-      '\n  [{"filePath":"styles.css","modifiedContent":"body {}","explanation":"Fix alignment."}]'
-    );
+  it.each([
+    ["directly", '[{"filePath":"styles.css","modifiedContent":"body {}","explanation":"Fix alignment."}]'],
+    ["with leading whitespace", '\n  [{"filePath":"styles.css","modifiedContent":"body {}","explanation":"Fix alignment."}]']
+  ])("parses json arrays %s", (_format, payload) => {
+    const parsed = parseGeneratedChanges(payload);
 
     expect(parsed).toHaveLength(1);
     expect(parsed[0]?.filePath).toBe("styles.css");

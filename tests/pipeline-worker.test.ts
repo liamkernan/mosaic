@@ -8,24 +8,17 @@ import {
   FeedbackPipelineWorker,
   type FeedbackPipelineWorkerDependencies
 } from "../packages/pipeline/src/worker.js";
+import { buildFeedbackItem, buildRepoContext } from "./helpers/pipeline.js";
 
-const feedback: FeedbackItem = {
+const feedback: FeedbackItem = buildFeedbackItem({
   id: "01WORKER",
-  source: "web_form",
   rawContent: "Add a reporting dashboard.",
-  senderIdentifier: "user@example.com",
-  repoFullName: "owner/repo",
-  receivedAt: new Date("2026-07-01T12:00:00.000Z"),
-  metadata: {}
-};
+});
 
-const repoContext: RepoContext = {
-  fullName: "owner/repo",
-  defaultBranch: "main",
-  localPath: process.cwd(),
+const repoContext: RepoContext = buildRepoContext({
   fileTree: [{ path: "src/dashboard.ts", type: "file" }],
   installationId: 7
-};
+});
 
 function workerDependencies(classification: Record<string, unknown>) {
   const complete = vi.fn(async () => JSON.stringify(classification));

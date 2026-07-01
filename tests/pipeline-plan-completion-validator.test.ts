@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { pruneChangesToPlanScope, validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
+import { buildImplementationPlan } from "./helpers/pipeline.js";
 
-const basePlan = {
-  requiredFiles: [],
-  acceptanceCriteria: [],
-  implementationChecklist: [],
-  verificationChecklist: [],
-  verificationCommands: []
-};
+const basePlan = buildImplementationPlan();
 
 describe("validatePlanCompletion", () => {
   it("rejects substituted ordered tie-breakers from acceptance criteria", () => {

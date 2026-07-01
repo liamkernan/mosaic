@@ -9,17 +9,13 @@ import {
   isRetryableLlmOverload,
   MAX_LLM_REQUEUE_ATTEMPTS
 } from "../packages/pipeline/src/transient-llm.js";
+import { buildFeedbackItem } from "./helpers/pipeline.js";
 
 function makeFeedbackItem(metadata: Record<string, unknown> = {}): FeedbackItem {
-  return {
-    id: "01TEST",
-    source: "web_form",
+  return buildFeedbackItem({
     rawContent: "Fix typo",
-    senderIdentifier: "user@example.com",
-    repoFullName: "owner/repo",
-    receivedAt: new Date(),
     metadata
-  };
+  });
 }
 
 describe("transient llm helpers", () => {

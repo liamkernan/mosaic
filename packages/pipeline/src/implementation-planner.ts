@@ -1,8 +1,8 @@
 import { LLMError, type ClassifiedFeedback, type RelevantFile } from "@mosaic/core";
-import type { LLMClient } from "@mosaic/llm";
 import { z } from "zod";
 
 import { buildImplementationPlanPrompt } from "./prompts/implementation-plan.prompt.js";
+import type { PipelineLlmClient } from "./pipeline-llm-client.js";
 import { normalizeRepoRelativePath } from "./repo-paths.js";
 
 const PLAN_TIMEOUT_MS = 60_000;
@@ -105,7 +105,7 @@ export function validateImplementationPlan(
 }
 
 export class ImplementationPlanner {
-  constructor(private readonly llmClient: LLMClient) {}
+  constructor(private readonly llmClient: PipelineLlmClient) {}
 
   async plan(
     feedback: ClassifiedFeedback,

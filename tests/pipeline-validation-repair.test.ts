@@ -1,6 +1,5 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -9,17 +8,17 @@ import {
   applyValidationFallbacks,
   applyVerificationFallbacks
 } from "../packages/pipeline/src/validation-repair.js";
+import { createTempDirTracker } from "./helpers/temp-dirs.js";
 
 describe("applyValidationFallbacks", () => {
-  const tempDirs: string[] = [];
+  const tempDirs = createTempDirTracker();
 
   afterEach(async () => {
-    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+    await tempDirs.cleanup();
   });
 
   it("adds minimal stylesheet coverage for modal hooks reported by validation", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validation-repair-");
     await writeFile(join(localPath, "styles.css"), ".collection-card { padding: 1rem; }\n", "utf8");
 
     const repoContext: RepoContext = {
@@ -72,8 +71,7 @@ describe("applyValidationFallbacks", () => {
   });
 
   it("links new static assets from html when validation reports they are orphaned", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validation-repair-");
     await writeFile(join(localPath, "index.html"), "<!doctype html><html><head></head><body><main></main></body></html>\n", "utf8");
 
     const repoContext: RepoContext = {
@@ -109,8 +107,7 @@ describe("applyValidationFallbacks", () => {
   });
 
   it("adds missing html hooks for modal scripts when validation reports unmatched selectors", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validation-repair-");
     await writeFile(
       join(localPath, "index.html"),
       '<!doctype html><html><body><main><article class="collection-card"><h3>Kitchen</h3></article></main></body></html>\n',
@@ -147,8 +144,7 @@ describe("applyValidationFallbacks", () => {
   });
 
   it("adds semantic close hero and eyebrow ids reported by collection modal validation", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validation-repair-");
     await writeFile(
       join(localPath, "index.html"),
       '<!doctype html><html><body><main><article class="collection-card">Kitchen</article></main></body></html>\n',
@@ -182,8 +178,7 @@ describe("applyValidationFallbacks", () => {
   });
 
   it("adds missing selector classes to semantically matching existing html hooks", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validation-repair-");
     await writeFile(
       join(localPath, "index.html"),
       '<!doctype html><html><body><main><article class="collection-card"><h3>Kitchen</h3></article><article class="collection-card shifted-card"><h3>Living</h3></article></main></body></html>\n',
@@ -216,8 +211,7 @@ describe("applyValidationFallbacks", () => {
   });
 
   it("adds a missing semantic class before its required data attribute", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validation-repair-");
     await writeFile(
       join(localPath, "index.html"),
       '<!doctype html><html><body><article class="collection-card"><h3>Kitchen</h3></article></body></html>\n',
@@ -240,8 +234,7 @@ describe("applyValidationFallbacks", () => {
   });
 
   it("adds missing sibling Python imports reported by validation", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validation-repair-");
     const repoContext: RepoContext = {
       fullName: "owner/repo",
       defaultBranch: "main",
@@ -271,8 +264,7 @@ describe("applyValidationFallbacks", () => {
   });
 
   it("uses the source package for imports added to generated Python tests", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-validation-repair-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-validation-repair-");
     const repoContext: RepoContext = {
       fullName: "owner/repo",
       defaultBranch: "main",

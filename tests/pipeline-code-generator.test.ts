@@ -1,19 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { LLMError } from "../packages/core/src/errors.js";
-import type { LLMClient } from "../packages/llm/src/client.js";
 import { CodeGenerator } from "../packages/pipeline/src/code-generator.js";
+import { buildClassifiedFeedback, createPipelineLlmClient } from "./helpers/pipeline.js";
 
 describe("CodeGenerator", () => {
   it("compacts large static JS/CSS prompt context while preserving original diff inputs", async () => {
     let capturedPrompt = "";
     let capturedUserMessage = "";
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (systemPrompt: string, userMessage: string) => {
-        capturedPrompt = systemPrompt;
-        capturedUserMessage = userMessage;
-        return `<changes>
+    const fakeClient = createPipelineLlmClient(async (systemPrompt: string, userMessage: string) => {
+      capturedPrompt = systemPrompt;
+      capturedUserMessage = userMessage;
+      return `<changes>
   <change>
     <filePath>script.js</filePath>
     <modifiedContent><![CDATA[
@@ -22,8 +20,7 @@ const generated = true;
     <explanation>Add generated script behavior.</explanation>
   </change>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
 
     const hugeScript = [
       "const firstLine = true;",
@@ -37,20 +34,14 @@ const generated = true;
     ].join("\n");
 
     const generatedChanges = await new CodeGenerator(fakeClient).generate(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Add a popup",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "feature_request",
         complexity: "complex",
         summary: "Add a popup",
         relevantFiles: ["index.html", "script.js", "styles.css"],
         confidence: 0.8
-      },
+      }),
       [
         { path: "index.html", content: "<main></main>".repeat(2_000), reason: "markup" },
         { path: "script.js", content: hugeScript, reason: "behavior" },
@@ -76,11 +67,9 @@ const generated = true;
 
   it("compacts oversized source file prompt copies while preserving original diff inputs", async () => {
     let capturedPrompt = "";
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (systemPrompt: string) => {
-        capturedPrompt = systemPrompt;
-        return `<changes>
+    const fakeClient = createPipelineLlmClient(async (systemPrompt: string) => {
+      capturedPrompt = systemPrompt;
+      return `<changes>
   <edit>
     <filePath>src/service.ts</filePath>
     <search><![CDATA[
@@ -92,8 +81,7 @@ export const target = "new";
     <explanation>Update the target value.</explanation>
   </edit>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
     const hugeSource = [
       "export const first = true;",
       ...Array.from({ length: 2_000 }, (_, index) => `export const filler${index} = ${index};`),
@@ -103,20 +91,14 @@ export const target = "new";
     ].join("\n");
 
     const changes = await new CodeGenerator(fakeClient).generate(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Update target behavior",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "bug_report",
         complexity: "moderate",
         summary: "Update target behavior",
         relevantFiles: ["src/service.ts"],
         confidence: 0.8
-      },
+      }),
       [{ path: "src/service.ts", content: hugeSource, reason: "implementation" }],
       ["src/service.ts"]
     );
@@ -131,9 +113,7 @@ export const target = "new";
   });
 
   it("applies exact search replace edits to original files", async () => {
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async () => `<changes>
+    const fakeClient = createPipelineLlmClient(async () => `<changes>
   <edit>
     <filePath>index.html</filePath>
     <search><![CDATA[
@@ -144,24 +124,17 @@ export const target = "new";
 ]]></replace>
     <explanation>Replace static copy with an interactive control.</explanation>
   </edit>
-</changes>`
-    } as unknown as LLMClient;
+</changes>`);
 
     const changes = await new CodeGenerator(fakeClient).generate(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Add details",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "feature_request",
         complexity: "moderate",
         summary: "Add details",
         relevantFiles: ["index.html"],
         confidence: 0.8
-      },
+      }),
       [{ path: "index.html", content: "<main><p>Old</p></main>", reason: "markup" }],
       ["index.html"]
     );
@@ -197,26 +170,17 @@ export const target = "new";
     <explanation>Re-anchor against unique current context.</explanation>
   </edit>
 </changes>`);
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete
-    } as unknown as LLMClient;
+    const fakeClient = createPipelineLlmClient(complete);
 
     const changes = await new CodeGenerator(fakeClient).generate(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Add product details",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "feature_request",
         complexity: "complex",
         summary: "Add product details",
         relevantFiles: ["index.html"],
         confidence: 0.8
-      },
+      }),
       [{ path: "index.html", content: "<main><p>Repeated</p><p>Repeated</p></main>", reason: "markup" }],
       ["index.html"]
     );
@@ -231,17 +195,15 @@ export const target = "new";
     const prompts: string[] = [];
     const userMessages: string[] = [];
     const timeoutMs: number[] = [];
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
-        prompts.push(systemPrompt);
-        userMessages.push(userMessage);
-        timeoutMs.push(options.timeoutMs ?? 0);
-        if (prompts.length === 1) {
-          throw new LLMError(`Anthropic completion timed out after ${options.timeoutMs}ms`);
-        }
+    const fakeClient = createPipelineLlmClient(async (systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
+      prompts.push(systemPrompt);
+      userMessages.push(userMessage);
+      timeoutMs.push(options.timeoutMs ?? 0);
+      if (prompts.length === 1) {
+        throw new LLMError(`Anthropic completion timed out after ${options.timeoutMs}ms`);
+      }
 
-        return `<changes>
+      return `<changes>
   <change>
     <filePath>script.js</filePath>
     <modifiedContent><![CDATA[
@@ -250,24 +212,17 @@ const retrySucceeded = true;
     <explanation>Add lean retry behavior.</explanation>
   </change>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
 
     const changes = await new CodeGenerator(fakeClient).generate(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Make journal guide cards open full articles",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "feature_request",
         complexity: "complex",
         summary: "Make journal guide cards open full article content",
         relevantFiles: ["index.html", "script.js", "styles.css"],
         confidence: 0.8
-      },
+      }),
       [
         {
           path: "index.html",
@@ -300,13 +255,11 @@ const retrySucceeded = true;
     let capturedUserMessage = "";
     let capturedMaxTokens = 0;
     let capturedTimeoutMs = 0;
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (_systemPrompt: string, userMessage: string, options: { maxTokens?: number; timeoutMs?: number }) => {
-        capturedUserMessage = userMessage;
-        capturedMaxTokens = options.maxTokens ?? 0;
-        capturedTimeoutMs = options.timeoutMs ?? 0;
-        return `<changes>
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string, options: { maxTokens?: number; timeoutMs?: number }) => {
+      capturedUserMessage = userMessage;
+      capturedMaxTokens = options.maxTokens ?? 0;
+      capturedTimeoutMs = options.timeoutMs ?? 0;
+      return `<changes>
   <change>
     <filePath>index.html</filePath>
     <modifiedContent><![CDATA[
@@ -315,24 +268,17 @@ const retrySucceeded = true;
     <explanation>Replace duplicated modal markup with compact trigger markup.</explanation>
   </change>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
 
     await new CodeGenerator(fakeClient).repairValidationFailure(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Add popups",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "feature_request",
         complexity: "complex",
         summary: "Add popups",
         relevantFiles: ["index.html", "script.js", "styles.css"],
         confidence: 0.8
-      },
+      }),
       [
         { path: "index.html", content: "<main></main>".repeat(2_000), reason: "markup" },
         { path: "script.js", content: "console.log('ready');", reason: "behavior" },
@@ -360,11 +306,9 @@ const retrySucceeded = true;
 
   it("uses focused syntax repair instructions for parser failures", async () => {
     let capturedUserMessage = "";
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (_systemPrompt: string, userMessage: string) => {
-        capturedUserMessage = userMessage;
-        return `<changes>
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {
+      capturedUserMessage = userMessage;
+      return `<changes>
   <change>
     <filePath>mosaic_demo/service.py</filePath>
     <modifiedContent><![CDATA[
@@ -374,24 +318,17 @@ def queue():
     <explanation>Fix Python parser syntax.</explanation>
   </change>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
 
     await new CodeGenerator(fakeClient).repairValidationFailure(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Queue is broken",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "bug_report",
         complexity: "moderate",
         summary: "Fix support queue behavior",
         relevantFiles: ["mosaic_demo/service.py"],
         confidence: 0.8
-      },
+      }),
       [{ path: "mosaic_demo/service.py", content: "def queue():\n    return []\n", reason: "implementation" }],
       ["mosaic_demo/service.py"],
       [
@@ -415,12 +352,10 @@ def queue():
   it("uses focused script repair instructions when modal behavior is missing", async () => {
     let capturedUserMessage = "";
     let capturedTimeoutMs = 0;
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (_systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
-        capturedUserMessage = userMessage;
-        capturedTimeoutMs = options.timeoutMs ?? 0;
-        return `<changes>
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
+      capturedUserMessage = userMessage;
+      capturedTimeoutMs = options.timeoutMs ?? 0;
+      return `<changes>
   <edit>
     <filePath>script.js</filePath>
     <search><![CDATA[
@@ -435,24 +370,17 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
     <explanation>Wire collection triggers to the modal overlay.</explanation>
   </edit>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
 
     await new CodeGenerator(fakeClient).repairValidationFailure(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Add collection popups",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "feature_request",
         complexity: "complex",
         summary: "Add collection popups",
         relevantFiles: ["index.html", "script.js", "styles.css"],
         confidence: 0.8
-      },
+      }),
       [
         { path: "index.html", content: '<main><div id="collectionModalOverlay" aria-hidden="true"></div></main>', reason: "markup" },
         { path: "script.js", content: "console.log('ready');", reason: "behavior" },
@@ -480,11 +408,9 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
 
   it("uses focused hook repair instructions when scripts query missing html", async () => {
     let capturedUserMessage = "";
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (_systemPrompt: string, userMessage: string) => {
-        capturedUserMessage = userMessage;
-        return `<changes>
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {
+      capturedUserMessage = userMessage;
+      return `<changes>
   <edit>
     <filePath>index.html</filePath>
     <search><![CDATA[
@@ -496,24 +422,17 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
     <explanation>Add missing HTML hooks for the modal script.</explanation>
   </edit>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
 
     await new CodeGenerator(fakeClient).repairValidationFailure(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Add collection popups",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "feature_request",
         complexity: "complex",
         summary: "Add collection popups",
         relevantFiles: ["index.html", "collection-modal.js"],
         confidence: 0.8
-      },
+      }),
       [
         { path: "index.html", content: "<main></main>", reason: "markup" },
         { path: "collection-modal.js", content: "document.getElementById('collectionModal').hidden = false;", reason: "behavior" }
@@ -547,13 +466,11 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
     let capturedSystemPrompt = "";
     let capturedUserMessage = "";
     let capturedTimeoutMs = 0;
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
-        capturedSystemPrompt = systemPrompt;
-        capturedUserMessage = userMessage;
-        capturedTimeoutMs = options.timeoutMs ?? 0;
-        return `<changes>
+    const fakeClient = createPipelineLlmClient(async (systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
+      capturedSystemPrompt = systemPrompt;
+      capturedUserMessage = userMessage;
+      capturedTimeoutMs = options.timeoutMs ?? 0;
+      return `<changes>
   <edit>
     <filePath>index.html</filePath>
     <search><![CDATA[
@@ -565,24 +482,17 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
     <explanation>Add modal hooks expected by frontend verification.</explanation>
   </edit>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
 
     await new CodeGenerator(fakeClient).repairValidationFailure(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Add collection popups",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "feature_request",
         complexity: "complex",
         summary: "Add collection popups",
         relevantFiles: ["index.html", "script.js"],
         confidence: 0.8
-      },
+      }),
       [
         { path: "index.html", content: "<main></main>", reason: "markup" },
         { path: "script.js", content: "console.log('ready');", reason: "behavior" }
@@ -629,12 +539,10 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
   it("uses focused test verification repair instructions without dropping coverage", async () => {
     let capturedUserMessage = "";
     let capturedTimeoutMs = 0;
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (_systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
-        capturedUserMessage = userMessage;
-        capturedTimeoutMs = options.timeoutMs ?? 0;
-        return `<changes>
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string, options: { timeoutMs?: number }) => {
+      capturedUserMessage = userMessage;
+      capturedTimeoutMs = options.timeoutMs ?? 0;
+      return `<changes>
   <edit>
     <filePath>tests/reported/test_002_idempotent_external_ref.py</filePath>
     <search><![CDATA[
@@ -646,24 +554,17 @@ self.assertIn("screenshot", second["body"])
     <explanation>Assert the updated body from the returned request object.</explanation>
   </edit>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
 
     await new CodeGenerator(fakeClient).repairValidationFailure(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Slack retry created duplicate requests",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "bug_report",
         complexity: "moderate",
         summary: "Make source and external reference intake idempotent",
         relevantFiles: ["mosaic_demo/service.py", "tests/reported/test_002_idempotent_external_ref.py"],
         confidence: 0.7
-      },
+      }),
       [
         { path: "mosaic_demo/service.py", content: "def create_request(): pass\n", reason: "implementation" },
         { path: "tests/reported/test_002_idempotent_external_ref.py", content: "self.assertIn(\"screenshot\", items[0][\"body\"])\n", reason: "test" }
@@ -693,11 +594,9 @@ self.assertIn("screenshot", second["body"])
 
   it("uses focused idempotency repair instructions when update path is missing", async () => {
     let capturedUserMessage = "";
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (_systemPrompt: string, userMessage: string) => {
-        capturedUserMessage = userMessage;
-        return `<changes>
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {
+      capturedUserMessage = userMessage;
+      return `<changes>
   <edit>
     <filePath>mosaic_demo/service.py</filePath>
     <search><![CDATA[
@@ -712,24 +611,17 @@ cursor = conn.execute("INSERT INTO service_requests")
     <explanation>Lookup and update existing requests before inserting duplicates.</explanation>
   </edit>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
 
     await new CodeGenerator(fakeClient).repairValidationFailure(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Slack retry created duplicate requests",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "bug_report",
         complexity: "moderate",
         summary: "Make source and external reference intake idempotent",
         relevantFiles: ["mosaic_demo/service.py"],
         confidence: 0.7
-      },
+      }),
       [{ path: "mosaic_demo/service.py", content: "cursor = conn.execute(\"INSERT INTO service_requests\")\n", reason: "implementation" }],
       ["mosaic_demo/service.py"],
       [
@@ -755,11 +647,9 @@ cursor = conn.execute("INSERT INTO service_requests")
 
   it("uses focused Python import repair instructions when a new helper is called without import", async () => {
     let capturedUserMessage = "";
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (_systemPrompt: string, userMessage: string) => {
-        capturedUserMessage = userMessage;
-        return `<changes>
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {
+      capturedUserMessage = userMessage;
+      return `<changes>
   <edit>
     <filePath>mosaic_demo/web.py</filePath>
     <search><![CDATA[
@@ -771,24 +661,17 @@ from .service import close_request, create_request, get_metrics, get_request, li
     <explanation>Import the metrics helper used by the route.</explanation>
   </edit>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
 
     await new CodeGenerator(fakeClient).repairValidationFailure(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Need a dashboard metrics endpoint",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "feature_request",
         complexity: "moderate",
         summary: "Add a support metrics endpoint",
         relevantFiles: ["mosaic_demo/service.py", "mosaic_demo/web.py"],
         confidence: 0.7
-      },
+      }),
       [
         { path: "mosaic_demo/service.py", content: "def get_metrics(conn):\n    return {}\n", reason: "implementation" },
         { path: "mosaic_demo/web.py", content: "from .service import close_request, create_request, get_request, list_requests\n", reason: "route" }
@@ -822,11 +705,9 @@ from .service import close_request, create_request, get_metrics, get_request, li
 
   it("uses focused endpoint route repair instructions when a requested path is not handled", async () => {
     let capturedUserMessage = "";
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (_systemPrompt: string, userMessage: string) => {
-        capturedUserMessage = userMessage;
-        return `<changes>
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {
+      capturedUserMessage = userMessage;
+      return `<changes>
   <edit>
     <filePath>mosaic_demo/web.py</filePath>
     <search><![CDATA[
@@ -841,24 +722,17 @@ if parsed.path == "/requests":
     <explanation>Route the metrics endpoint to the metrics helper.</explanation>
   </edit>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
 
     await new CodeGenerator(fakeClient).repairValidationFailure(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "Need GET /metrics for dashboard counts",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "feature_request",
         complexity: "moderate",
         summary: "Add a support metrics endpoint",
         relevantFiles: ["mosaic_demo/service.py", "mosaic_demo/web.py"],
         confidence: 0.7
-      },
+      }),
       [
         { path: "mosaic_demo/service.py", content: "def queue_metrics(conn):\n    return {}\n", reason: "implementation" },
         { path: "mosaic_demo/web.py", content: "if parsed.path == \"/requests\":\n", reason: "route" }
@@ -892,11 +766,9 @@ if parsed.path == "/requests":
 
   it("uses focused runtime implementation repair instructions for tests-only fixes", async () => {
     let capturedUserMessage = "";
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (_systemPrompt: string, userMessage: string) => {
-        capturedUserMessage = userMessage;
-        return `<changes>
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {
+      capturedUserMessage = userMessage;
+      return `<changes>
   <edit>
     <filePath>mosaic_demo/service.py</filePath>
     <search><![CDATA[
@@ -908,24 +780,17 @@ order_by = "sr.sla_due_at ASC, sr.created_at ASC"
     <explanation>Fix SLA queue ordering in the runtime service.</explanation>
   </edit>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
 
     await new CodeGenerator(fakeClient).repairValidationFailure(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "SLA sorting is wrong",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "bug_report",
         complexity: "moderate",
         summary: "Fix SLA sort ordering",
         relevantFiles: ["mosaic_demo/service.py", "tests/reported/test_001_sla_sort.py"],
         confidence: 0.7
-      },
+      }),
       [
         { path: "mosaic_demo/service.py", content: "order_by = \"sr.created_at ASC\"\n", reason: "implementation" },
         { path: "tests/reported/test_001_sla_sort.py", content: "def test_sla(): pass\n", reason: "coverage" }
@@ -953,11 +818,9 @@ order_by = "sr.sla_due_at ASC, sr.created_at ASC"
 
   it("uses focused test integrity repair instructions for weakened tests", async () => {
     let capturedUserMessage = "";
-    const fakeClient = {
-      setUsageContext: () => {},
-      complete: async (_systemPrompt: string, userMessage: string) => {
-        capturedUserMessage = userMessage;
-        return `<changes>
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {
+      capturedUserMessage = userMessage;
+      return `<changes>
   <edit>
     <filePath>mosaic_demo/service.py</filePath>
     <search><![CDATA[
@@ -969,24 +832,17 @@ order_by = "sr.sla_due_at ASC, sr.created_at ASC"
     <explanation>Fix SLA queue ordering while preserving the reported test.</explanation>
   </edit>
 </changes>`;
-      }
-    } as unknown as LLMClient;
+    });
 
     await new CodeGenerator(fakeClient).repairValidationFailure(
-      {
-        id: "01TEST",
-        source: "web_form",
+      buildClassifiedFeedback({
         rawContent: "SLA sorting is wrong",
-        senderIdentifier: "user@example.com",
-        repoFullName: "owner/repo",
-        receivedAt: new Date(),
-        metadata: {},
         category: "bug_report",
         complexity: "moderate",
         summary: "Fix SLA sort ordering",
         relevantFiles: ["mosaic_demo/service.py", "tests/reported/test_001_sla_sort.py"],
         confidence: 0.7
-      },
+      }),
       [
         { path: "mosaic_demo/service.py", content: "order_by = \"sr.created_at ASC\"\n", reason: "implementation" },
         { path: "tests/reported/test_001_sla_sort.py", content: "self.assertEqual(urgent['id'], queue[0]['id'])\n", reason: "coverage" }

@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -6,28 +6,27 @@ import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { runVerificationCommands } from "../packages/pipeline/src/verification-runner.js";
+import { createTempDirTracker } from "./helpers/temp-dirs.js";
 
 describe("runVerificationCommands", () => {
-  const tempDirs: string[] = [];
+  const tempDirs = createTempDirTracker();
   const requireDockerTests = process.env.MOSAIC_REQUIRE_DOCKER_TESTS === "1";
   const dockerGatedIt = requireDockerTests ? it : it.skip;
   const fallbackOptions = { dockerAvailable: false, requireSandbox: false } as const;
 
   afterEach(async () => {
-    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+    await tempDirs.cleanup();
   }, 660_000);
 
   async function createPythonRepo(): Promise<string> {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-verify-test-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-verify-test-");
     await mkdir(join(localPath, "tests", "reported"), { recursive: true });
     await writeFile(join(localPath, "tests", "reported", "test_example.py"), "import unittest\n\nclass ExampleTest(unittest.TestCase):\n    def test_ok(self):\n        self.assertEqual(1, 1)\n", "utf8");
     return localPath;
   }
 
   async function createStaticSiteRepo(script = "document.querySelector('#target').textContent = 'ready';\n"): Promise<string> {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-verify-site-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-verify-site-");
     await writeFile(localPath + "/index.html", "<!doctype html><html><body><div id=\"target\"></div><script src=\"script.js\"></script></body></html>\n", "utf8");
     await writeFile(localPath + "/script.js", script, "utf8");
     return localPath;
@@ -185,8 +184,7 @@ describe("runVerificationCommands", () => {
     await requireDockerInfo();
 
     const localPath = await createPythonRepo();
-    const secretDir = await mkdtemp(join(tmpdir(), "mosaic-host-secret-"));
-    tempDirs.push(secretDir);
+    const secretDir = await tempDirs.create("mosaic-host-secret-");
     const secretPath = join(secretDir, "secret.txt");
     await writeFile(secretPath, "host-secret", "utf8");
 

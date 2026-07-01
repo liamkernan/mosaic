@@ -2,21 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import { decideFeedbackDisposition } from "../packages/pipeline/src/disposition.js";
 import { defaultRuntimeConfig } from "../packages/pipeline/src/repo-config.js";
+import { buildClassifiedFeedback } from "./helpers/pipeline.js";
 
-const baseFeedback = {
-  id: "01TEST",
-  source: "web_form" as const,
+const baseFeedback = buildClassifiedFeedback({
   rawContent: "Fix the typo in the hero copy.",
-  senderIdentifier: "user@example.com",
-  repoFullName: "owner/repo",
-  receivedAt: new Date(),
-  metadata: {},
-  category: "copy_change" as const,
-  complexity: "simple" as const,
+  category: "copy_change",
+  complexity: "simple",
   summary: "Fix the typo in the hero copy",
   relevantFiles: ["src/hero.tsx"],
   confidence: 0.9
-};
+});
 
 describe("feedback disposition", () => {
   it("sends trivial or simple feedback to PR automation", () => {

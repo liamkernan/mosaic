@@ -7,21 +7,16 @@ import {
   shouldEscalateClassification,
   shouldUseAdvisorTool
 } from "../packages/pipeline/src/model-routing.js";
+import { buildClassifiedFeedback } from "./helpers/pipeline.js";
 
-const baseFeedback = {
-  id: "01TEST",
-  source: "web_form" as const,
+const baseFeedback = buildClassifiedFeedback({
   rawContent: "Fix the typo in the hero heading.",
-  senderIdentifier: "user@example.com",
-  repoFullName: "owner/repo",
-  receivedAt: new Date(),
-  metadata: {},
-  category: "copy_change" as const,
-  complexity: "simple" as const,
+  category: "copy_change",
+  complexity: "simple",
   summary: "Fix the typo in the hero heading",
   relevantFiles: ["index.html"],
   confidence: 0.9
-};
+});
 
 describe("model routing", () => {
   it("keeps trivial and simple work on haiku", () => {
@@ -179,26 +174,16 @@ describe("model routing", () => {
     expect(shouldUseAdvisorTool(moderateFeedback, "quality")).toBe(true);
   });
 
-  it("routes OpenAI quality work to the requested GPT models", () => {
-    expect(selectOpenAIModel({ ...baseFeedback, complexity: "trivial" }, "quality")).toEqual({
-      model: "gpt-5.4-mini",
-      reasoningEffort: "none"
-    });
-    expect(selectOpenAIModel(baseFeedback, "quality")).toEqual({
-      model: "gpt-5.4",
-      reasoningEffort: "low"
-    });
-    expect(selectOpenAIModel({ ...baseFeedback, complexity: "moderate" }, "quality", "moderate-safe")).toEqual({
-      model: "gpt-5.4",
-      reasoningEffort: "low"
-    });
-    expect(selectOpenAIModel({ ...baseFeedback, complexity: "moderate" }, "quality", "moderate-review-needed")).toEqual({
-      model: "gpt-5.5",
-      reasoningEffort: "medium"
-    });
-    expect(selectOpenAIModel({ ...baseFeedback, complexity: "complex" }, "quality", "complex-review-needed")).toEqual({
-      model: "gpt-5.5",
-      reasoningEffort: "high"
+  it.each([
+    ["trivial", undefined, "gpt-5.4-mini", "none"],
+    ["simple", undefined, "gpt-5.4", "low"],
+    ["moderate", "moderate-safe", "gpt-5.4", "low"],
+    ["moderate", "moderate-review-needed", "gpt-5.5", "medium"],
+    ["complex", "complex-review-needed", "gpt-5.5", "high"]
+  ] as const)("routes %s OpenAI quality work", (complexity, issueMode, model, reasoningEffort) => {
+    expect(selectOpenAIModel({ ...baseFeedback, complexity }, "quality", issueMode)).toEqual({
+      model,
+      reasoningEffort
     });
   });
 });

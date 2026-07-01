@@ -1,17 +1,16 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { resetEnvForTests } from "../packages/core/src/config.js";
 import { loadRepoRuntimeConfig } from "../packages/pipeline/src/repo-config.js";
+import { createTempDirTracker } from "./helpers/temp-dirs.js";
 
-const tempDirs: string[] = [];
+const tempDirs = createTempDirTracker();
 
 async function makeRepoConfig(contents?: string): Promise<string> {
-  const repoRoot = await mkdtemp(join(tmpdir(), "mosaic-config-test-"));
-  tempDirs.push(repoRoot);
+  const repoRoot = await tempDirs.create("mosaic-config-test-");
   if (contents) {
     await writeFile(join(repoRoot, "mosaic.config.yml"), contents, "utf8");
   }
@@ -20,7 +19,7 @@ async function makeRepoConfig(contents?: string): Promise<string> {
 
 describe("repo runtime config", () => {
   afterEach(async () => {
-    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+    await tempDirs.cleanup();
     vi.unstubAllEnvs();
     resetEnvForTests();
   });

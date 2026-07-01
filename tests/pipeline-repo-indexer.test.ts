@@ -1,16 +1,16 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { RepoIndexer } from "../packages/pipeline/src/repo-indexer.js";
+import { createTempDirTracker } from "./helpers/temp-dirs.js";
 
 describe("RepoIndexer repository references", () => {
-  const tempDirs: string[] = [];
+  const tempDirs = createTempDirTracker();
 
   afterEach(async () => {
-    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+    await tempDirs.cleanup();
   });
 
   it("flattens repository file trees in pre-order without exposing the cached array", () => {
@@ -58,8 +58,7 @@ describe("RepoIndexer repository references", () => {
   });
 
   it("loads promoted local issue specs and related reported tests as authoritative references", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-repo-indexer-");
     await mkdir(join(localPath, "issues"));
     await mkdir(join(localPath, "tests", "reported"), { recursive: true });
     await mkdir(join(localPath, "src"));
@@ -126,8 +125,7 @@ describe("RepoIndexer repository references", () => {
   });
 
   it("does not load sibling issue specs or reported tests for a promoted issue", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-repo-indexer-");
     await mkdir(join(localPath, "issues"));
     await mkdir(join(localPath, "tests", "reported"), { recursive: true });
     const files = [
@@ -183,8 +181,7 @@ describe("RepoIndexer repository references", () => {
   });
 
   it("keeps exact promoted issue references without requiring content term matches", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-repo-indexer-");
     await mkdir(join(localPath, "issues"));
     await writeFile(
       join(localPath, "issues", "042-payment-reconciliation.md"),
@@ -228,8 +225,7 @@ describe("RepoIndexer repository references", () => {
   });
 
   it("excludes generic nested READMEs while retaining path-relevant package documentation", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-repo-indexer-");
     await mkdir(join(localPath, "docs", "react"), { recursive: true });
     await mkdir(join(localPath, "code", "addons", "vitest"), { recursive: true });
     await writeFile(join(localPath, "README.md"), "# Storybook\n", "utf8");
@@ -282,9 +278,8 @@ describe("RepoIndexer repository references", () => {
   });
 
   it("does not read classifier or requested files outside the repository root", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
-    const outsidePath = await mkdtemp(join(tmpdir(), "mosaic-repo-outside-"));
-    tempDirs.push(localPath, outsidePath);
+    const localPath = await tempDirs.create("mosaic-repo-indexer-");
+    const outsidePath = await tempDirs.create("mosaic-repo-outside-");
     await mkdir(join(localPath, "src"));
     await writeFile(join(localPath, "src", "service.ts"), "export const safe = true;\n", "utf8");
     await writeFile(join(outsidePath, "secret.txt"), "host secret\n", "utf8");
@@ -327,8 +322,7 @@ describe("RepoIndexer repository references", () => {
   });
 
   it("preserves first-200-line truncation for large files", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-repo-indexer-");
     await mkdir(join(localPath, "src"));
 
     const line = `export const fixture = "${"x".repeat(600)}";\n`;
@@ -359,8 +353,7 @@ describe("RepoIndexer repository references", () => {
   });
 
   it("truncates large files when the file tree has no eager size metadata", async () => {
-    const localPath = await mkdtemp(join(tmpdir(), "mosaic-repo-indexer-"));
-    tempDirs.push(localPath);
+    const localPath = await tempDirs.create("mosaic-repo-indexer-");
     await mkdir(join(localPath, "src"));
 
     const line = `export const lazyFixture = "${"x".repeat(600)}";\n`;
