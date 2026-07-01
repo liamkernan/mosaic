@@ -833,6 +833,7 @@ describe("validate", () => {
       }
     );
 
+    expect(result.valid).toBe(true);
     expect(result.errors.join("\n")).not.toContain("New static asset");
   });
 
@@ -937,6 +938,7 @@ describe("validate", () => {
       }
     );
 
+    expect(result.valid).toBe(true);
     expect(result.errors.join("\n")).not.toContain(".collection-card[data-collection]");
   });
 
