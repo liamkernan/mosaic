@@ -8,7 +8,7 @@ import {
   isFixThisCommand,
   parseStagedIssueMetadata
 } from "../packages/pipeline/src/staged-issues.js";
-import { resetEnvForTests } from "../packages/core/dist/index.js";
+import { resetEnvForTests } from "../packages/core/src/index.js";
 
 const baseFeedback = {
   id: "01TEST",

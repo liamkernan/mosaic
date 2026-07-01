@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resetEnvForTests } from "../packages/core/dist/index.js";
+import { resetEnvForTests } from "../packages/core/src/index.js";
 import { createIntakeServer } from "../packages/intake/src/server.js";
 import { enqueueFeedback } from "../packages/intake/src/queue.js";
 

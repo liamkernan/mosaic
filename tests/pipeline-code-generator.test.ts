@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { LLMError } from "../packages/core/src/errors.js";
-import type { LLMClient } from "../packages/llm/dist/client.js";
+import type { LLMClient } from "../packages/llm/src/client.js";
 import { CodeGenerator } from "../packages/pipeline/src/code-generator.js";
 
 describe("CodeGenerator", () => {

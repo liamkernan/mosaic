@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type * as GithubApp from "../packages/github-app/src/app.js";
 
-import { resetEnvForTests } from "../packages/core/dist/index.js";
+import { resetEnvForTests } from "../packages/core/src/index.js";
 
 let bodyContainsTrigger: typeof GithubApp.bodyContainsTrigger;
 let isMosaicAuthoredEvent: typeof GithubApp.isMosaicAuthoredEvent;

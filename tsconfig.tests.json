@@ -4,6 +4,16 @@
     "declaration": false,
     "declarationMap": false,
     "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mosaic/core": ["packages/core/src/index.ts"],
+      "@mosaic/discord-bot": ["packages/discord-bot/src/index.ts"],
+      "@mosaic/github-app": ["packages/github-app/src/index.ts"],
+      "@mosaic/intake": ["packages/intake/src/index.ts"],
+      "@mosaic/llm": ["packages/llm/src/index.ts"],
+      "@mosaic/pipeline": ["packages/pipeline/src/index.ts"],
+      "@mosaic/slack-bot": ["packages/slack-bot/src/index.ts"]
+    },
     "types": ["node", "vitest/globals"]
   },
   "include": ["tests/**/*.ts", "packages/**/*.d.ts"]
