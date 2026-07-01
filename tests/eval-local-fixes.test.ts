@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   EvalBudget,
@@ -26,6 +26,12 @@ import {
 } from "../scripts/eval-local-fixes-support.js";
 
 describe("local fix evaluation harness", () => {
+  const tempDirs: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
   it("uses the source-of-truth seven-minute case timeout", () => {
     expect(DEFAULT_EVAL_CASE_TIMEOUT_MS).toBe(420_000);
   });
@@ -80,6 +86,7 @@ describe("local fix evaluation harness", () => {
 
   it("writes a machine-readable result for every selected case", async () => {
     const outputDir = await mkdtemp(join(tmpdir(), "mosaic-eval-report-"));
+    tempDirs.push(outputDir);
     const outputPath = join(outputDir, "results.json");
     const results = [
       { id: "case-1", passed: false, outcome: "error" as const, errors: ["boom"] },
@@ -241,6 +248,7 @@ describe("local fix evaluation harness", () => {
 
   it("persists the plan, context, changes, histories, and final diff", async () => {
     const outputDir = await mkdtemp(join(tmpdir(), "mosaic-eval-artifacts-"));
+    tempDirs.push(outputDir);
 
     await writeCaseArtifacts(outputDir, {
       plan: { requiredFiles: [{ path: "src/service.py", reason: "fix ordering" }] },
