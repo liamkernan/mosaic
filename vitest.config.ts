@@ -16,6 +16,17 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["tests/**/*.test.ts"]
+    include: ["tests/**/*.test.ts"],
+    coverage: {
+      provider: "v8",
+      include: ["packages/*/src/**/*.ts"],
+      reporter: ["text", "json-summary"],
+      thresholds: {
+        statements: 70,
+        branches: 75,
+        functions: 78,
+        lines: 70
+      }
+    }
   }
 });
