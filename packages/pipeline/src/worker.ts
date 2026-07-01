@@ -45,6 +45,23 @@ const oversizedPatchPattern = /too large|exceeds limit|total new code added/i;
 
 type RepoContext = Awaited<ReturnType<RepoIndexer["getContext"]>>;
 type PromotionResult = { handled: boolean; reason?: string; artifactType?: "issue" | "pr"; artifactValue?: string };
+type LlmClientFactory = (options: ConstructorParameters<typeof LLMClient>[0]) => LLMClient;
+
+export interface FeedbackPipelineWorkerDependencies {
+  connection?: Redis;
+  retryQueue?: Pick<Queue<FeedbackItem>, "add">;
+  artifactStore?: Pick<ArtifactStore, "get" | "record">;
+  repoIndexer?: Pick<
+    RepoIndexer,
+    "getContext" | "fileTreeToPaths" | "findRelevantFiles" | "findRepositoryReferenceFiles" | "readFiles"
+  >;
+  issueCreator?: Pick<IssueCreator, "createIssue">;
+  prCreator?: Pick<PRCreator, "createPR">;
+  quarantineStore?: Pick<QuarantineStore, "quarantine">;
+  loadRepoRuntimeConfig?: typeof loadRepoRuntimeConfig;
+  decideFeedbackDisposition?: typeof decideFeedbackDisposition;
+  createLlmClient?: LlmClientFactory;
+}
 
 export interface FeedbackJobResult {
   outcome: "succeeded" | "requeued";
@@ -91,13 +108,42 @@ async function validateGeneratedChanges(
 }
 
 export class FeedbackPipelineWorker {
-  private readonly connection = new Redis(getEnv().REDIS_URL, { maxRetriesPerRequest: null });
-  private readonly retryQueue = new Queue<FeedbackItem>(FEEDBACK_QUEUE_NAME, { connection: this.connection });
-  private readonly artifactStore = new ArtifactStore(this.connection);
-  private readonly repoIndexer = new RepoIndexer();
-  private readonly issueCreator = new IssueCreator();
-  private readonly prCreator = new PRCreator();
-  private readonly quarantineStore = new QuarantineStore();
+  private connection: Redis | undefined;
+  private retryQueue: Pick<Queue<FeedbackItem>, "add"> | undefined;
+  private readonly artifactStore: Pick<ArtifactStore, "get" | "record">;
+  private readonly repoIndexer: Pick<
+    RepoIndexer,
+    "getContext" | "fileTreeToPaths" | "findRelevantFiles" | "findRepositoryReferenceFiles" | "readFiles"
+  >;
+  private readonly issueCreator: Pick<IssueCreator, "createIssue">;
+  private readonly prCreator: Pick<PRCreator, "createPR">;
+  private readonly quarantineStore: Pick<QuarantineStore, "quarantine">;
+  private readonly runtimeConfigLoader: typeof loadRepoRuntimeConfig;
+  private readonly dispositionDecider: typeof decideFeedbackDisposition;
+  private readonly llmClientFactory: LlmClientFactory;
+
+  constructor(dependencies: FeedbackPipelineWorkerDependencies = {}) {
+    this.connection = dependencies.connection;
+    this.retryQueue = dependencies.retryQueue;
+    this.artifactStore = dependencies.artifactStore ?? new ArtifactStore(this.getConnection());
+    this.repoIndexer = dependencies.repoIndexer ?? new RepoIndexer();
+    this.issueCreator = dependencies.issueCreator ?? new IssueCreator();
+    this.prCreator = dependencies.prCreator ?? new PRCreator();
+    this.quarantineStore = dependencies.quarantineStore ?? new QuarantineStore();
+    this.runtimeConfigLoader = dependencies.loadRepoRuntimeConfig ?? loadRepoRuntimeConfig;
+    this.dispositionDecider = dependencies.decideFeedbackDisposition ?? decideFeedbackDisposition;
+    this.llmClientFactory = dependencies.createLlmClient ?? ((options) => new LLMClient(options));
+  }
+
+  private getConnection(): Redis {
+    this.connection ??= new Redis(getEnv().REDIS_URL, { maxRetriesPerRequest: null });
+    return this.connection;
+  }
+
+  private getRetryQueue(): Pick<Queue<FeedbackItem>, "add"> {
+    this.retryQueue ??= new Queue<FeedbackItem>(FEEDBACK_QUEUE_NAME, { connection: this.getConnection() });
+    return this.retryQueue;
+  }
 
   private normalizeFeedbackItem(feedbackItem: FeedbackItem): FeedbackItem {
     return {
@@ -117,7 +163,7 @@ export class FeedbackPipelineWorker {
     advisorTool?: AdvisorToolOptions
   ): LLMClient {
     const env = getEnv();
-    return new LLMClient({
+    return this.llmClientFactory({
       provider,
       mode,
       apiKey,
@@ -637,7 +683,7 @@ export class FeedbackPipelineWorker {
     }
 
     const repoContext = await this.repoIndexer.getContext(feedbackItem.repoFullName);
-    const repoConfig = await loadRepoRuntimeConfig(repoContext.localPath, feedbackItem.repoFullName);
+    const repoConfig = await this.runtimeConfigLoader(repoContext.localPath, feedbackItem.repoFullName);
     const stagedIssuePromotion = await this.tryPromoteStagedIssue(feedbackItem, repoContext, repoConfig);
     if (stagedIssuePromotion.handled) {
       if (stagedIssuePromotion.artifactType && stagedIssuePromotion.artifactValue) {
@@ -690,7 +736,7 @@ export class FeedbackPipelineWorker {
         classifiedFeedback = await new FeedbackClassifier(sonnetClient).classify(feedbackItem, topLevelFileTree);
       }
     }
-    const decision = decideFeedbackDisposition(classifiedFeedback, repoConfig);
+    const decision = this.dispositionDecider(classifiedFeedback, repoConfig);
 
     if (decision.disposition === "quarantine") {
       await this.quarantineStore.quarantine(classifiedFeedback, decision.reason);
@@ -747,7 +793,7 @@ export class FeedbackPipelineWorker {
           return await this.process(job.data);
         } catch (error) {
           if (error instanceof RateLimitError) {
-            await this.retryQueue.add("feedback-item", job.data, {
+            await this.getRetryQueue().add("feedback-item", job.data, {
               delay: 60_000,
               attempts: 3,
               backoff: {
@@ -766,7 +812,7 @@ export class FeedbackPipelineWorker {
             const retriedJob = buildLlmRetryFeedbackItem(job.data);
             const delay = getLlmRetryDelayMs(job.data);
 
-            await this.retryQueue.add("feedback-item", retriedJob, {
+            await this.getRetryQueue().add("feedback-item", retriedJob, {
               delay,
               attempts: 1
             });
@@ -784,7 +830,7 @@ export class FeedbackPipelineWorker {
         }
       },
       {
-        connection: this.connection,
+        connection: this.getConnection(),
         concurrency: getEnv().WORKER_CONCURRENCY,
         lockDuration: getEnv().WORKER_LOCK_DURATION_MS,
         stalledInterval: getEnv().WORKER_STALLED_INTERVAL_MS,

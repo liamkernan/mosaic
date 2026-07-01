@@ -13,8 +13,15 @@ export interface QuarantinedFeedbackRecord {
   quarantinedAt: string;
 }
 
+interface QuarantineRedis {
+  lpush(key: string, value: string): Promise<number>;
+  ltrim(key: string, start: number, stop: number): Promise<"OK">;
+}
+
 export class QuarantineStore {
-  private readonly redis = new Redis(getEnv().REDIS_URL, { maxRetriesPerRequest: null });
+  constructor(
+    private readonly redis: QuarantineRedis = new Redis(getEnv().REDIS_URL, { maxRetriesPerRequest: null })
+  ) {}
 
   async quarantine(feedback: ClassifiedFeedback, reason: string): Promise<void> {
     const record: QuarantinedFeedbackRecord = {

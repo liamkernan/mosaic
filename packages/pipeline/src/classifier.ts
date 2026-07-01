@@ -4,9 +4,16 @@ import {
   type FeedbackItem,
   type ComplexityLevel
 } from "@mosaic/core";
-import type { LLMClient } from "@mosaic/llm";
-
 import { buildClassificationPrompt } from "./prompts/classify.prompt.js";
+
+interface ClassificationClient {
+  setUsageContext(context: { repoFullName: string; feedbackId: string }): void;
+  complete(
+    systemPrompt: string,
+    userMessage: string,
+    options: { temperature: number; maxTokens: number }
+  ): Promise<string>;
+}
 
 interface ClassifierResponse {
   category: FeedbackCategory;
@@ -17,7 +24,7 @@ interface ClassifierResponse {
 }
 
 export class FeedbackClassifier {
-  constructor(private readonly llmClient: LLMClient) {}
+  constructor(private readonly llmClient: ClassificationClient) {}
 
   async classify(item: FeedbackItem, fileTree: string[]): Promise<ClassifiedFeedback> {
     this.llmClient.setUsageContext({
