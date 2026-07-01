@@ -8,6 +8,77 @@ vi.mock("../packages/intake/src/queue.js", () => ({
   enqueueFeedback: vi.fn()
 }));
 
+const trustedWebhookCases = [
+  {
+    name: "generic form",
+    url: "/webhook/form",
+    payload: {
+      message: "Fix the checkout copy",
+      repoFullName: "owner/repo"
+    },
+    expectedFeedback: {
+      source: "web_form",
+      rawContent: "Fix the checkout copy",
+      senderIdentifier: "unknown",
+      repoFullName: "owner/repo"
+    }
+  },
+  {
+    name: "GitHub",
+    url: "/webhook/github",
+    payload: {
+      action: "opened",
+      repository: { full_name: "owner/repo" },
+      issue: {
+        body: "@mosaic fix this",
+        user: { login: "user" },
+        number: 1
+      }
+    },
+    expectedFeedback: {
+      source: "github_issue",
+      rawContent: "@mosaic fix this",
+      senderIdentifier: "user",
+      repoFullName: "owner/repo",
+      metadata: { action: "opened", issueNumber: 1 }
+    }
+  },
+  {
+    name: "Slack",
+    url: "/webhook/slack",
+    payload: {
+      message: "Fix the checkout copy",
+      repoFullName: "owner/repo",
+      userId: "U123",
+      channelId: "C123"
+    },
+    expectedFeedback: {
+      source: "slack",
+      rawContent: "Fix the checkout copy",
+      senderIdentifier: "U123",
+      repoFullName: "owner/repo",
+      metadata: { channelId: "C123" }
+    }
+  },
+  {
+    name: "Discord",
+    url: "/webhook/discord",
+    payload: {
+      message: "Fix the checkout copy",
+      repoFullName: "owner/repo",
+      userId: "123",
+      channelId: "456"
+    },
+    expectedFeedback: {
+      source: "discord",
+      rawContent: "Fix the checkout copy",
+      senderIdentifier: "123",
+      repoFullName: "owner/repo",
+      metadata: { channelId: "456" }
+    }
+  }
+];
+
 describe("trusted intake webhooks", () => {
   const originalSecret = process.env.MOSAIC_INTAKE_SHARED_SECRET;
 
@@ -27,49 +98,7 @@ describe("trusted intake webhooks", () => {
     vi.clearAllMocks();
   });
 
-  it.each([
-    {
-      name: "generic form",
-      url: "/webhook/form",
-      payload: {
-        message: "Fix the checkout copy",
-        repoFullName: "owner/repo"
-      }
-    },
-    {
-      name: "GitHub",
-      url: "/webhook/github",
-      payload: {
-        action: "opened",
-        repository: { full_name: "owner/repo" },
-        issue: {
-          body: "@mosaic fix this",
-          user: { login: "user" },
-          number: 1
-        }
-      }
-    },
-    {
-      name: "Slack",
-      url: "/webhook/slack",
-      payload: {
-        message: "Fix the checkout copy",
-        repoFullName: "owner/repo",
-        userId: "U123",
-        channelId: "C123"
-      }
-    },
-    {
-      name: "Discord",
-      url: "/webhook/discord",
-      payload: {
-        message: "Fix the checkout copy",
-        repoFullName: "owner/repo",
-        userId: "123",
-        channelId: "456"
-      }
-    }
-  ])("rejects unauthenticated $name requests", async ({ url, payload }) => {
+  it.each(trustedWebhookCases)("rejects unauthenticated $name requests", async ({ url, payload }) => {
     const { server } = await createIntakeServer();
     try {
       const response = await server.inject({
@@ -85,49 +114,7 @@ describe("trusted intake webhooks", () => {
     }
   });
 
-  it.each([
-    {
-      name: "generic form",
-      url: "/webhook/form",
-      payload: {
-        message: "Fix the checkout copy",
-        repoFullName: "owner/repo"
-      }
-    },
-    {
-      name: "GitHub",
-      url: "/webhook/github",
-      payload: {
-        action: "opened",
-        repository: { full_name: "owner/repo" },
-        issue: {
-          body: "@mosaic fix this",
-          user: { login: "user" },
-          number: 1
-        }
-      }
-    },
-    {
-      name: "Slack",
-      url: "/webhook/slack",
-      payload: {
-        message: "Fix the checkout copy",
-        repoFullName: "owner/repo",
-        userId: "U123",
-        channelId: "C123"
-      }
-    },
-    {
-      name: "Discord",
-      url: "/webhook/discord",
-      payload: {
-        message: "Fix the checkout copy",
-        repoFullName: "owner/repo",
-        userId: "123",
-        channelId: "456"
-      }
-    }
-  ])("accepts authenticated $name requests", async ({ url, payload }) => {
+  it.each(trustedWebhookCases)("accepts authenticated $name requests", async ({ url, payload, expectedFeedback }) => {
     const { server } = await createIntakeServer();
     try {
       const response = await server.inject({
@@ -141,6 +128,29 @@ describe("trusted intake webhooks", () => {
 
       expect(response.statusCode, response.body).toBe(202);
       expect(enqueueFeedback).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(enqueueFeedback).mock.calls[0]?.[0]).toMatchObject(expectedFeedback);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("rejects an incorrect shared secret", async () => {
+    const { server } = await createIntakeServer();
+    try {
+      const response = await server.inject({
+        method: "POST",
+        url: "/webhook/form",
+        headers: {
+          "x-mosaic-intake-secret": "wrong-secret"
+        },
+        payload: {
+          message: "Fix the checkout copy",
+          repoFullName: "owner/repo"
+        }
+      });
+
+      expect(response.statusCode, response.body).toBe(403);
+      expect(enqueueFeedback).not.toHaveBeenCalled();
     } finally {
       await server.close();
     }
