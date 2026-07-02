@@ -1,7 +1,7 @@
 import type { ClassifiedFeedback, LLMModelPreset } from "@mosaic/core";
-import { OPENAI_MODEL_IDS, type OpenAIReasoningEffort } from "@mosaic/llm";
+import { OPENAI_MODEL_IDS, type ANTHROPIC_MODEL_IDS, type OpenAIReasoningEffort } from "@mosaic/llm";
 
-export type ModelTier = "haiku" | "sonnet";
+export type ModelTier = keyof typeof ANTHROPIC_MODEL_IDS;
 export type ReviewMode = "moderate-safe" | "moderate-review-needed" | "complex-review-needed";
 
 export interface OpenAIModelSelection {
@@ -55,7 +55,7 @@ export function selectGenerationModelTier(
   modelPreset: LLMModelPreset = "quality"
 ): ModelTier {
   if (classifiedFeedback.complexity === "complex") {
-    return "sonnet";
+    return modelPreset === "quality" ? "opus" : "sonnet";
   }
 
   if (classifiedFeedback.complexity === "moderate") {
@@ -69,16 +69,18 @@ export function selectGenerationModelTier(
   return "haiku";
 }
 
-export function selectPlanningModelTier(): ModelTier {
-  return "sonnet";
+export function selectPlanningModelTier(
+  classifiedFeedback: ClassifiedFeedback,
+  modelPreset: LLMModelPreset = "quality"
+): ModelTier {
+  return classifiedFeedback.complexity === "complex" && modelPreset === "quality" ? "opus" : "sonnet";
 }
 
 export function shouldUseAdvisorTool(
   classifiedFeedback: ClassifiedFeedback,
   modelPreset: LLMModelPreset = "quality"
 ): boolean {
-  return modelPreset === "quality" &&
-    (classifiedFeedback.complexity === "moderate" || classifiedFeedback.complexity === "complex");
+  return modelPreset === "quality" && classifiedFeedback.complexity === "moderate";
 }
 
 export function selectOpenAIModel(

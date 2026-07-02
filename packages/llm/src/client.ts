@@ -8,6 +8,7 @@ import { enforceRepoRateLimit } from "./rate-limiter.js";
 import { trackUsage } from "./token-tracker.js";
 
 export const ANTHROPIC_MODEL_IDS = {
+  opus: "claude-opus-4-8",
   sonnet: "claude-sonnet-5",
   haiku: "claude-haiku-4-5-20251001"
 } as const;
@@ -20,12 +21,16 @@ export const OPENAI_MODEL_IDS = {
 
 export type OpenAIReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 
-export const ANTHROPIC_ADVISOR_MODEL_ID = "claude-opus-4-8";
+export const ANTHROPIC_ADVISOR_MODEL_ID = ANTHROPIC_MODEL_IDS.opus;
 export const ANTHROPIC_ADVISOR_TOOL_BETA = "advisor-tool-2026-03-01";
 export const ANTHROPIC_ADVISOR_MAX_TOKENS = 2_048;
 
 const ANTHROPIC_ADVISOR_TOOL_TYPE = "advisor_20260301";
 const ANTHROPIC_ADVISOR_TOOL_NAME = "advisor";
+const ANTHROPIC_ADAPTIVE_REASONING_MODELS = new Set<string>([
+  ANTHROPIC_MODEL_IDS.opus,
+  ANTHROPIC_MODEL_IDS.sonnet
+]);
 
 export interface AdvisorToolOptions {
   model: string;
@@ -447,7 +452,7 @@ export class LLMClient {
           model,
           system: systemPrompt,
           max_tokens: options.maxTokens ?? 4096,
-          ...(model === ANTHROPIC_MODEL_IDS.sonnet ? {} : { temperature: options.temperature ?? 0.2 }),
+          ...(ANTHROPIC_ADAPTIVE_REASONING_MODELS.has(model) ? {} : { temperature: options.temperature ?? 0.2 }),
           messages: [{ role: "user" as const, content: userMessage }]
         };
         const requestOptions = options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : undefined;

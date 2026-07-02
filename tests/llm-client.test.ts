@@ -88,17 +88,21 @@ describe("LLMClient", () => {
     });
   });
 
-  it("omits per-request timeout when none is provided", async () => {
+  it.each([
+    ANTHROPIC_MODEL_IDS.sonnet,
+    ANTHROPIC_MODEL_IDS.opus
+  ])("omits unsupported temperature for current Anthropic model %s", async (model) => {
     const client = new LLMClient({
       mode: "platform",
-      platformApiKey: "test-key"
+      platformApiKey: "test-key",
+      model
     });
 
     await client.complete("system", "user");
 
     expect(streamMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: "claude-sonnet-5",
+        model,
         system: "system"
       }),
       undefined

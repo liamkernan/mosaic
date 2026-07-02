@@ -269,11 +269,8 @@ export class FeedbackPipelineWorker {
     const openAISelection = repoConfig.llmProvider === "openai"
       ? selectOpenAIModel(classifiedFeedback, repoConfig.llmModelPreset, options.issueMode)
       : undefined;
-    const generationModel = openAISelection?.model ?? (
-      selectGenerationModelTier(classifiedFeedback, repoConfig.llmModelPreset) === "sonnet"
-        ? ANTHROPIC_MODEL_IDS.sonnet
-        : ANTHROPIC_MODEL_IDS.haiku
-    );
+    const generationModel = openAISelection?.model ??
+      ANTHROPIC_MODEL_IDS[selectGenerationModelTier(classifiedFeedback, repoConfig.llmModelPreset)];
     const advisorTool = repoConfig.llmProvider === "anthropic" && shouldUseAdvisorTool(classifiedFeedback, repoConfig.llmModelPreset)
       ? {
           model: ANTHROPIC_ADVISOR_MODEL_ID,
@@ -294,9 +291,8 @@ export class FeedbackPipelineWorker {
     const feedbackText = `${classifiedFeedback.summary}\n${classifiedFeedback.rawContent}`;
 
     if (completeSolution) {
-      const planningModel = openAISelection?.model ?? (selectPlanningModelTier() === "sonnet"
-        ? ANTHROPIC_MODEL_IDS.sonnet
-        : ANTHROPIC_MODEL_IDS.haiku);
+      const planningModel = openAISelection?.model ??
+        ANTHROPIC_MODEL_IDS[selectPlanningModelTier(classifiedFeedback, repoConfig.llmModelPreset)];
       const planner = new ImplementationPlanner(this.createLlmClient(
         repoConfig.llmProvider,
         repoConfig.llmKeyMode,

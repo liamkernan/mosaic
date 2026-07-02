@@ -133,7 +133,7 @@ export const llmProviderOptions = [
   {
     value: "anthropic",
     label: "Anthropic",
-    description: "Uses the existing Claude routing and Opus advisor behavior."
+    description: "Uses Claude routing with direct Opus execution for complex quality-mode work."
   },
   {
     value: "openai",
@@ -150,7 +150,7 @@ export const llmModelPresetOptions = [
   {
     value: "quality",
     label: "Quality (Recommended)",
-    description: "Uses provider-specific quality routing; Anthropic enables Opus advice and OpenAI routes review-heavy work to GPT-5.5."
+    description: "Uses provider-specific quality routing; Anthropic runs complex work on Opus and OpenAI routes review-heavy work to GPT-5.5."
   },
   {
     value: "balanced",

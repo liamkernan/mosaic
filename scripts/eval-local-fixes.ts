@@ -864,7 +864,9 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     classifiedFeedback = await classifier.classify(classifiedFeedback, visibleFileTreePaths(repoIndexer, repoContext, evalCase));
   }
 
-  const planningModel = options.preset === "direct" ? options.model : selectPlanningModelTier();
+  const planningModel = options.preset === "direct"
+    ? options.model
+    : selectPlanningModelTier(classifiedFeedback, options.preset);
   const generationModel = options.preset === "direct"
     ? options.model
     : selectGenerationModelTier(classifiedFeedback, options.preset);

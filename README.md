@@ -322,7 +322,7 @@ Use these values for a segmented control or select:
 
 | Value | Label | Behavior |
 | --- | --- | --- |
-| `quality` | Quality (Recommended) | Anthropic uses automatic Haiku/Sonnet routing plus Opus advice for moderate/complex work. OpenAI uses GPT-5.5 for complex and moderate-review-needed work, GPT-5.4 for moderate-safe and simple work, and GPT-5.4 mini for trivial work. |
+| `quality` | Quality (Recommended) | Anthropic uses Haiku/Sonnet routing, Opus advice for moderate work, and direct Opus 4.8 planning and generation for complex work. OpenAI uses GPT-5.5 for complex and moderate-review-needed work, GPT-5.4 for moderate-safe and simple work, and GPT-5.4 mini for trivial work. |
 | `balanced` | Balanced | Uses cost-conscious provider routing and disables Anthropic advisor calls. |
 
 Anthropic remains the production default. To switch the hosted platform globally,

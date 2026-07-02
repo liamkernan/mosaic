@@ -52,18 +52,19 @@ describe("model routing", () => {
     ).toBe(true);
   });
 
-  it("routes complex feature work to sonnet", () => {
+  it("routes complex feature work to Opus in quality mode", () => {
     const complexFeedback = {
       ...baseFeedback,
       category: "feature_request",
       complexity: "complex"
     } as const;
 
-    expect(selectGenerationModelTier(complexFeedback)).toBe("sonnet");
+    expect(selectGenerationModelTier(complexFeedback)).toBe("opus");
     expect(
       shouldEscalateClassification(complexFeedback)
     ).toBe(true);
-    expect(shouldUseAdvisorTool(complexFeedback)).toBe(true);
+    expect(selectPlanningModelTier(complexFeedback)).toBe("opus");
+    expect(shouldUseAdvisorTool(complexFeedback)).toBe(false);
   });
 
   it("routes moderate feature work to sonnet", () => {
@@ -164,13 +165,15 @@ describe("model routing", () => {
     } as const;
 
     expect(selectGenerationModelTier(complexFeedback, "balanced")).toBe("sonnet");
-    expect(selectPlanningModelTier()).toBe("sonnet");
+    expect(selectPlanningModelTier(complexFeedback, "balanced")).toBe("sonnet");
+    expect(selectPlanningModelTier(moderateFeedback, "balanced")).toBe("sonnet");
     expect(shouldUseAdvisorTool(complexFeedback, "balanced")).toBe(false);
     expect(shouldUseAdvisorTool(moderateFeedback, "balanced")).toBe(false);
 
-    expect(selectGenerationModelTier(complexFeedback, "quality")).toBe("sonnet");
-    expect(selectPlanningModelTier()).toBe("sonnet");
-    expect(shouldUseAdvisorTool(complexFeedback, "quality")).toBe(true);
+    expect(selectGenerationModelTier(complexFeedback, "quality")).toBe("opus");
+    expect(selectPlanningModelTier(complexFeedback, "quality")).toBe("opus");
+    expect(selectPlanningModelTier(moderateFeedback, "quality")).toBe("sonnet");
+    expect(shouldUseAdvisorTool(complexFeedback, "quality")).toBe(false);
     expect(shouldUseAdvisorTool(moderateFeedback, "quality")).toBe(true);
   });
 

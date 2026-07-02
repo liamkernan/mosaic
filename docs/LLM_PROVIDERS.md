@@ -49,8 +49,8 @@ configuration. If `provider` is omitted, the repository inherits
 | Trivial | `gpt-5.4-mini` | `none` | Haiku |
 | Simple | `gpt-5.4` | `low` | Haiku unless existing escalation rules apply |
 | Moderate-safe | `gpt-5.4` | `low` | Sonnet 5 |
-| Moderate-review-needed | `gpt-5.5` | `medium` | Sonnet 5 with Opus advisor |
-| Complex / complex-review-needed | `gpt-5.5` | `high` | Sonnet 5 with Opus advisor |
+| Moderate-review-needed | `gpt-5.5` | `medium` | Sonnet 5 with Opus 4.8 advisor |
+| Complex / complex-review-needed | `gpt-5.5` | `high` | Opus 4.8 |
 
 OpenAI classification begins on `gpt-5.4-mini`; non-trivial classifications are
 re-run on their final routed model. Planning, generation, structured-output
