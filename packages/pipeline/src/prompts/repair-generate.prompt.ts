@@ -56,6 +56,7 @@ Your job:
 - Do not summarize.
 - Do not drop fields.
 - Preserve either <change> full-file blocks or <edit> search/replace blocks.
+- Preserve operation order. Multiple operations for one file are applied atomically to an in-memory working copy and returned as one finished file.
 - Put complete file contents and search/replace blocks inside <![CDATA[ ... ]]> blocks.
 - If the content is too incomplete to repair safely, return exactly <changes></changes>.
 
@@ -140,7 +141,8 @@ INSTRUCTIONS:
 - If JavaScript is needed for new interactive UI, include the matching script changes in the same response.
 - Return ONLY the response format below. No markdown fences. No prose before or after.
 - For existing files, prefer exact <edit> search/replace blocks when the repair is localized. Use <change> full-file blocks only when search/replace cannot express the repair safely or when creating a new file.
-- Every <edit> search block must match the original file exactly once. Include enough surrounding context to make it unique.
+- File operations are applied atomically in response order to an in-memory working copy. Multiple <edit> blocks for one file are allowed and produce one finished file; if any operation fails, none of that file's edits are accepted.
+- Every <edit> search block must match the current in-memory version of that file exactly once at its position in the response. Include enough surrounding context to make it unique.
 - Put complete updated file contents or search/replace blocks inside CDATA.
 - If you cannot repair safely, return exactly <changes></changes>.
 

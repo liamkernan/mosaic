@@ -243,7 +243,8 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("data-driven behavior");
     expect(prompt).toContain("interactive UI as atomic");
     expect(prompt).toContain("<edit>");
-    expect(prompt).toContain("search block must match the original file exactly once");
+    expect(prompt).toContain("applied atomically in response order");
+    expect(prompt).toContain("current in-memory version of that file exactly once");
   });
 
   it("encourages supplemental assets for large static frontend changes", () => {

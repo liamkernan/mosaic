@@ -149,6 +149,136 @@ export const target = "new";
     ]);
   });
 
+  it("atomically composes multiple ordered edits to the same file", async () => {
+    const complete = vi.fn(async () => `<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<head></head>]]></search>
+    <replace><![CDATA[<head><link rel="stylesheet" href="./modal.css" /></head>]]></replace>
+    <explanation>Link the modal stylesheet.</explanation>
+  </edit>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<main></main>]]></search>
+    <replace><![CDATA[<main><dialog id="modal"></dialog></main>]]></replace>
+    <explanation>Add the modal markup.</explanation>
+  </edit>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<dialog id="modal"></dialog>]]></search>
+    <replace><![CDATA[<dialog id="modal" aria-modal="true"></dialog>]]></replace>
+    <explanation>Make the dialog accessible.</explanation>
+  </edit>
+</changes>`);
+    const original = "<html><head></head><body><main></main></body></html>";
+
+    const changes = await new CodeGenerator(createPipelineLlmClient(complete)).generate(
+      buildClassifiedFeedback({
+        rawContent: "Add an accessible modal",
+        category: "feature_request",
+        complexity: "moderate",
+        summary: "Add an accessible modal",
+        relevantFiles: ["index.html"],
+        confidence: 0.8
+      }),
+      [{ path: "index.html", content: original, reason: "markup" }],
+      ["index.html"]
+    );
+
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(changes).toEqual([{
+      filePath: "index.html",
+      originalContent: original,
+      modifiedContent: '<html><head><link rel="stylesheet" href="./modal.css" /></head><body><main><dialog id="modal" aria-modal="true"></dialog></main></body></html>',
+      explanation: "Link the modal stylesheet; Add the modal markup; Make the dialog accessible."
+    }]);
+  });
+
+  it("fails the entire same-file transaction when a later edit cannot be applied", async () => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce(`<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<head></head>]]></search>
+    <replace><![CDATA[<head><link rel="stylesheet" href="./modal.css" /></head>]]></replace>
+    <explanation>Link the modal stylesheet.</explanation>
+  </edit>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<footer>missing</footer>]]></search>
+    <replace><![CDATA[<footer>fixed</footer>]]></replace>
+    <explanation>Update the footer.</explanation>
+  </edit>
+</changes>`)
+      .mockResolvedValueOnce(`<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<head></head>]]></search>
+    <replace><![CDATA[<head><link rel="stylesheet" href="./modal.css" /></head>]]></replace>
+    <explanation>Return only the valid atomic edit.</explanation>
+  </edit>
+</changes>`);
+    const original = "<html><head></head><body><main></main></body></html>";
+
+    const changes = await new CodeGenerator(createPipelineLlmClient(complete)).generate(
+      buildClassifiedFeedback({
+        rawContent: "Add a modal stylesheet",
+        category: "feature_request",
+        complexity: "moderate",
+        summary: "Add a modal stylesheet",
+        relevantFiles: ["index.html"],
+        confidence: 0.8
+      }),
+      [{ path: "index.html", content: original, reason: "markup" }],
+      ["index.html"]
+    );
+
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1]?.[0]).toContain("STRUCTURED EDIT APPLICATION ERROR");
+    expect(changes).toEqual([{
+      filePath: "index.html",
+      originalContent: original,
+      modifiedContent: '<html><head><link rel="stylesheet" href="./modal.css" /></head><body><main></main></body></html>',
+      explanation: "Return only the valid atomic edit."
+    }]);
+  });
+
+  it("can create a file and refine it with a later edit in the same transaction", async () => {
+    const fakeClient = createPipelineLlmClient(async () => `<changes>
+  <change>
+    <filePath>modal.js</filePath>
+    <modifiedContent><![CDATA[const modal = { open: false };]]></modifiedContent>
+    <explanation>Create the modal state.</explanation>
+  </change>
+  <edit>
+    <filePath>modal.js</filePath>
+    <search><![CDATA[open: false]]></search>
+    <replace><![CDATA[open: true]]></replace>
+    <explanation>Enable the modal.</explanation>
+  </edit>
+</changes>`);
+
+    const changes = await new CodeGenerator(fakeClient).generate(
+      buildClassifiedFeedback({
+        rawContent: "Add modal behavior",
+        category: "feature_request",
+        complexity: "moderate",
+        summary: "Add modal behavior",
+        relevantFiles: ["index.html"],
+        confidence: 0.8
+      }),
+      [{ path: "index.html", content: "<main></main>", reason: "markup" }],
+      ["index.html"]
+    );
+
+    expect(changes).toEqual([{
+      filePath: "modal.js",
+      originalContent: "",
+      modifiedContent: "const modal = { open: true };",
+      explanation: "Create the modal state; Enable the modal."
+    }]);
+  });
+
   it.each([
     ["zero matches", "<p>Stale</p>"],
     ["multiple matches", "<p>Repeated</p>"]

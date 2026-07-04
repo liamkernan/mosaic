@@ -65,7 +65,7 @@ ${response}
 CURRENT BOUNDED FILE EXCERPTS:
 ${excerpts}
 
-Return a corrected <changes> payload. Every search block must match current content exactly once. Use a larger unique anchor when the old search matched multiple locations. If a bounded excerpt contains the whole file, a complete modifiedContent replacement is allowed. Preserve all unrelated content and changes.`;
+Return a corrected <changes> payload. Operations are applied atomically in response order to an in-memory working copy. Every search block must match the current version of its file exactly once at that point in the response. Use a larger unique anchor when the old search matched multiple locations. If a bounded excerpt contains the whole file, a complete modifiedContent replacement is allowed. Preserve all unrelated content and changes.`;
 }
 
 function estimateGenerationMaxTokens(relevantFiles: RelevantFile[], options: GenerationOptions = {}): number {
@@ -531,44 +531,65 @@ export class CodeGenerator {
       originals.set(file.path, file.content);
     }
 
-    const changes: GeneratedChange[] = [];
+    const workingFiles = new Map<string, {
+      originalContent: string;
+      modifiedContent: string;
+      explanations: string[];
+    }>();
+
     for (const change of parsed) {
-      const originalContent = originals.get(change.filePath) ?? "";
-      let modifiedContent: string;
+      const existing = workingFiles.get(change.filePath);
+      const originalContent = existing?.originalContent ?? originals.get(change.filePath) ?? "";
+      const currentContent = existing?.modifiedContent ?? originalContent;
+      let nextContent: string;
       if (change.modifiedContent !== undefined) {
-        modifiedContent = change.modifiedContent;
+        nextContent = change.modifiedContent;
       } else {
         if (change.search === undefined || change.replace === undefined) {
           throw new LLMError(`Change for ${change.filePath} did not include modifiedContent or search/replace edit`);
         }
 
-        if (originalContent.length === 0) {
+        if (!existing && !originals.has(change.filePath)) {
           throw new LLMError(`Search/replace edit cannot create new file ${change.filePath}`);
         }
 
-        const firstIndex = originalContent.indexOf(change.search);
+        const firstIndex = currentContent.indexOf(change.search);
         if (firstIndex === -1) {
           throw new LLMError(`Search block for ${change.filePath} was not found exactly once`);
         }
 
-        if (originalContent.indexOf(change.search, firstIndex + change.search.length) !== -1) {
+        if (currentContent.indexOf(change.search, firstIndex + change.search.length) !== -1) {
           throw new LLMError(`Search block for ${change.filePath} matched more than once`);
         }
 
-        modifiedContent = originalContent.slice(0, firstIndex) + change.replace + originalContent.slice(firstIndex + change.search.length);
+        nextContent = currentContent.slice(0, firstIndex) + change.replace + currentContent.slice(firstIndex + change.search.length);
       }
 
-      if (originalContent !== modifiedContent) {
-        changes.push({
-          filePath: change.filePath,
-          originalContent,
-          modifiedContent,
-          explanation: change.explanation
-        });
+      const explanations = existing?.explanations ?? [];
+      if (currentContent !== nextContent && !explanations.includes(change.explanation)) {
+        explanations.push(change.explanation);
       }
+      workingFiles.set(change.filePath, {
+        originalContent,
+        modifiedContent: nextContent,
+        explanations
+      });
     }
 
-    return changes;
+    return [...workingFiles.entries()].flatMap(([filePath, file]) =>
+      file.originalContent === file.modifiedContent
+        ? []
+        : [{
+            filePath,
+            originalContent: file.originalContent,
+            modifiedContent: file.modifiedContent,
+            explanation: file.explanations
+              .map((explanation, index) => index === file.explanations.length - 1
+                ? explanation
+                : explanation.replace(/[.;]\s*$/, ""))
+              .join("; ")
+          }]
+    );
   }
 
   async generate(

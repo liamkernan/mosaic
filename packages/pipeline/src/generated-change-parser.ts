@@ -29,6 +29,7 @@ function stripBoundaryNewlines(value: string): string {
 
 const fullFileChangePattern = /<change>\s*<filePath>([\s\S]*?)<\/filePath>\s*<modifiedContent><!\[CDATA\[([\s\S]*?)\]\]><\/modifiedContent>\s*<explanation>([\s\S]*?)<\/explanation>\s*<\/change>/gi;
 const editChangePattern = /<edit>\s*<filePath>([\s\S]*?)<\/filePath>\s*<search><!\[CDATA\[([\s\S]*?)\]\]><\/search>\s*<replace><!\[CDATA\[([\s\S]*?)\]\]><\/replace>\s*<explanation>([\s\S]*?)<\/explanation>\s*<\/edit>/gi;
+const taggedChangeBlockPattern = /<(change|edit)>[\s\S]*?<\/\1>/gi;
 
 function parseTaggedChanges(response: string): GeneratedChangeResponse[] {
   if (!/<(?:change|edit)\b/i.test(response)) {
@@ -39,24 +40,33 @@ function parseTaggedChanges(response: string): GeneratedChangeResponse[] {
   const source = changesMatch?.[1] ?? response;
   const changes: GeneratedChangeResponse[] = [];
 
-  fullFileChangePattern.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = fullFileChangePattern.exec(source)) !== null) {
-    changes.push({
-      filePath: decodeXmlText(match[1].trim()),
-      modifiedContent: stripBoundaryNewlines(match[2]),
-      explanation: decodeXmlText(match[3].trim())
-    });
-  }
+  taggedChangeBlockPattern.lastIndex = 0;
+  let blockMatch: RegExpExecArray | null;
+  while ((blockMatch = taggedChangeBlockPattern.exec(source)) !== null) {
+    const block = blockMatch[0];
+    if (blockMatch[1].toLowerCase() === "change") {
+      fullFileChangePattern.lastIndex = 0;
+      const match = fullFileChangePattern.exec(block);
+      if (match) {
+        changes.push({
+          filePath: decodeXmlText(match[1].trim()),
+          modifiedContent: stripBoundaryNewlines(match[2]),
+          explanation: decodeXmlText(match[3].trim())
+        });
+      }
+      continue;
+    }
 
-  editChangePattern.lastIndex = 0;
-  while ((match = editChangePattern.exec(source)) !== null) {
-    changes.push({
-      filePath: decodeXmlText(match[1].trim()),
-      search: stripBoundaryNewlines(match[2]),
-      replace: stripBoundaryNewlines(match[3]),
-      explanation: decodeXmlText(match[4].trim())
-    });
+    editChangePattern.lastIndex = 0;
+    const match = editChangePattern.exec(block);
+    if (match) {
+      changes.push({
+        filePath: decodeXmlText(match[1].trim()),
+        search: stripBoundaryNewlines(match[2]),
+        replace: stripBoundaryNewlines(match[3]),
+        explanation: decodeXmlText(match[4].trim())
+      });
+    }
   }
 
   return changes;

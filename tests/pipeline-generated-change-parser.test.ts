@@ -57,6 +57,34 @@ body {
     ]);
   });
 
+  it("preserves mixed change and edit operations in response order", () => {
+    const parsed = parseGeneratedChanges(`<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<head></head>]]></search>
+    <replace><![CDATA[<head><link rel="stylesheet" href="./modal.css" /></head>]]></replace>
+    <explanation>Link styles first.</explanation>
+  </edit>
+  <change>
+    <filePath>modal.css</filePath>
+    <modifiedContent><![CDATA[dialog { display: block; }]]></modifiedContent>
+    <explanation>Add modal styles second.</explanation>
+  </change>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<main></main>]]></search>
+    <replace><![CDATA[<main><dialog></dialog></main>]]></replace>
+    <explanation>Add markup third.</explanation>
+  </edit>
+</changes>`);
+
+    expect(parsed.map(({ filePath, explanation }) => ({ filePath, explanation }))).toEqual([
+      { filePath: "index.html", explanation: "Link styles first." },
+      { filePath: "modal.css", explanation: "Add modal styles second." },
+      { filePath: "index.html", explanation: "Add markup third." }
+    ]);
+  });
+
   it("extracts json arrays from fenced code blocks", () => {
     const parsed = parseGeneratedChanges(
       '```json\n[{"filePath":"styles.css","modifiedContent":"body {}","explanation":"Fix alignment."}]\n```'
