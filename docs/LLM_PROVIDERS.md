@@ -26,6 +26,26 @@ your secret manager; Mosaic reads only the selected platform key.
 
 The existing `.env` is intentionally not modified by this implementation.
 
+## Local provider evaluation
+
+The local-fix harness accepts an explicit provider and keeps paid runs behind a
+hard cost cap plus a dated pricing fixture. For example:
+
+```bash
+pnpm eval:local -- \
+  --provider openai \
+  --preset quality \
+  --case sampleformosaic-product-details \
+  --generate \
+  --max-cost-usd 1.50 \
+  --pricing evals/openai-model-pricing-2026-07-03.json
+```
+
+OpenAI quality evaluations reuse production routing: review-heavy moderate work
+uses GPT-5.5 with medium reasoning, while complex work uses GPT-5.5 with high
+reasoning. Anthropic remains the harness default when `--provider` is omitted.
+Evaluation oracles stay hidden and immutable for both providers.
+
 ## Per-repository switch and BYOK
 
 A repository can override the global provider:

@@ -359,6 +359,7 @@ export interface ModelPricing {
   outputUsdPerMillion: number;
   cacheReadUsdPerMillion: number;
   cacheCreationUsdPerMillion: number;
+  inputTokensIncludeCacheReads?: boolean;
 }
 
 export interface UsageTokenCounts {
@@ -374,8 +375,11 @@ export interface ModelUsageIteration extends UsageTokenCounts {
 }
 
 export function calculateUsageCostUsd(usage: UsageTokenCounts, pricing: ModelPricing): number {
+  const uncachedInputTokens = pricing.inputTokensIncludeCacheReads
+    ? Math.max(0, usage.inputTokens - usage.cacheReadInputTokens)
+    : usage.inputTokens;
   return (
-    usage.inputTokens * pricing.inputUsdPerMillion +
+    uncachedInputTokens * pricing.inputUsdPerMillion +
     usage.outputTokens * pricing.outputUsdPerMillion +
     usage.cacheReadInputTokens * pricing.cacheReadUsdPerMillion +
     usage.cacheCreationInputTokens * pricing.cacheCreationUsdPerMillion

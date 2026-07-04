@@ -9,11 +9,6 @@ import { CodeGenerator, scopeValidationPattern } from "../packages/pipeline/src/
 import { mergeGeneratedChanges } from "../packages/pipeline/src/change-set.js";
 import { FeedbackClassifier } from "../packages/pipeline/src/classifier.js";
 import { ImplementationPlanner, type ImplementationPlan } from "../packages/pipeline/src/implementation-planner.js";
-import {
-  selectGenerationModelTier,
-  selectPlanningModelTier,
-  shouldUseAdvisorTool
-} from "../packages/pipeline/src/model-routing.js";
 import { pruneChangesToPlanScope, validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
 import { assessRepairProgress } from "../packages/pipeline/src/repair-progress.js";
 import { RepoIndexer } from "../packages/pipeline/src/repo-indexer.js";
@@ -21,17 +16,21 @@ import { validate } from "../packages/pipeline/src/validator.js";
 import { applyValidationFallbacks, applyVerificationFallbacks } from "../packages/pipeline/src/validation-repair.js";
 import { getEnv } from "../packages/core/src/config.js";
 import { LLMError } from "../packages/core/src/errors.js";
-import type { ClassifiedFeedback, ComplexityLevel, FeedbackCategory, FeedbackSource, FileNode, GeneratedChange, RepoContext } from "../packages/core/src/types.js";
+import type { ClassifiedFeedback, ComplexityLevel, FeedbackCategory, FeedbackSource, FileNode, GeneratedChange, LLMProvider, RepoContext } from "../packages/core/src/types.js";
 import {
-  ANTHROPIC_MODEL_IDS,
-  ANTHROPIC_ADVISOR_MAX_TOKENS,
-  ANTHROPIC_ADVISOR_MODEL_ID,
   LLMClient,
-  type AdvisorToolOptions,
   type LLMRequestAuthorization,
   type LLMUsageIteration,
-  type LLMUsageObservation
+  type LLMUsageObservation,
+  type OpenAIReasoningEffort
 } from "../packages/llm/src/client.js";
+import {
+  defaultEvalModelKey,
+  isEvalModelKey,
+  resolveEvalLlmRoutes,
+  type EvalClientRoute,
+  type EvalModelKey
+} from "./eval-llm-routing.js";
 import {
   EvalBudget,
   DEFAULT_EVAL_CASE_TIMEOUT_MS,
@@ -162,7 +161,8 @@ function parseArgs(argv: string[]): {
   keep: boolean;
   repoRoot: string;
   casesPath: string;
-  model: keyof typeof ANTHROPIC_MODEL_IDS;
+  provider: LLMProvider;
+  model: EvalModelKey;
   caseTimeoutMs: number;
   outputDir: string;
   internalCase?: string;
@@ -182,7 +182,8 @@ function parseArgs(argv: string[]): {
     keep: false,
     repoRoot: process.env.MOSAIC_EVAL_REPO_ROOT ?? resolve(process.env.HOME ?? ".", "Documents"),
     casesPath: "evals/local-fix-cases.json",
-    model: "sonnet" as keyof typeof ANTHROPIC_MODEL_IDS,
+    provider: "anthropic" as LLMProvider,
+    model: undefined as EvalModelKey | undefined,
     caseTimeoutMs: Number(process.env.MOSAIC_EVAL_CASE_TIMEOUT_MS ?? DEFAULT_EVAL_CASE_TIMEOUT_MS),
     outputDir: resolve(process.env.MOSAIC_EVAL_OUTPUT_DIR ?? join("evals", "runs", runTimestamp)),
     internalCase: undefined as string | undefined,
@@ -209,12 +210,14 @@ function parseArgs(argv: string[]): {
       args.repoRoot = argv[++index];
     } else if (arg === "--cases") {
       args.casesPath = argv[++index];
-    } else if (arg === "--model") {
-      const model = argv[++index] as keyof typeof ANTHROPIC_MODEL_IDS;
-      if (!(model in ANTHROPIC_MODEL_IDS)) {
-        throw new Error(`Unknown model tier: ${model}`);
+    } else if (arg === "--provider") {
+      const provider = argv[++index];
+      if (provider !== "anthropic" && provider !== "openai") {
+        throw new Error("--provider must be anthropic or openai");
       }
-      args.model = model;
+      args.provider = provider;
+    } else if (arg === "--model") {
+      args.model = argv[++index] as EvalModelKey;
     } else if (arg === "--case-timeout-ms") {
       args.caseTimeoutMs = Number(argv[++index]);
       if (!Number.isFinite(args.caseTimeoutMs) || args.caseTimeoutMs <= 0) {
@@ -261,7 +264,12 @@ function parseArgs(argv: string[]): {
     }
   }
 
-  return args;
+  const model = args.model ?? defaultEvalModelKey(args.provider);
+  if (!isEvalModelKey(args.provider, model)) {
+    throw new Error(`Unknown ${args.provider} model tier: ${model}`);
+  }
+
+  return { ...args, model };
 }
 
 function detectLanguage(filePath: string): string | undefined {
@@ -328,17 +336,19 @@ async function copyRepoAtRef(sourceRepo: string, baseRef: string): Promise<strin
 }
 
 function createEvalLlmClient(
-  model: keyof typeof ANTHROPIC_MODEL_IDS,
+  provider: LLMProvider,
+  route: EvalClientRoute,
   telemetry?: EvalTelemetry,
-  phase = "unspecified",
-  advisorTool?: AdvisorToolOptions
+  phase = "unspecified"
 ): LLMClient {
   const env = getEnv();
   return new LLMClient({
+    provider,
     mode: "platform",
-    platformApiKey: env.ANTHROPIC_API_KEY,
-    model: ANTHROPIC_MODEL_IDS[model],
-    advisorTool,
+    platformApiKey: provider === "openai" ? env.OPENAI_API_KEY : env.ANTHROPIC_API_KEY,
+    model: route.model,
+    reasoningEffort: route.reasoningEffort as OpenAIReasoningEffort | undefined,
+    advisorTool: route.advisorTool,
     disableUsageTracking: true,
     authorizeRequest: telemetry?.authorize,
     observeUsage: telemetry ? (event) => telemetry.observe(phase, event) : undefined
@@ -859,20 +869,28 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     ...evalCase.feedback
   };
 
-  if (options.classify) {
-    const classifier = new FeedbackClassifier(createEvalLlmClient("haiku", telemetry, "classification"));
-    classifiedFeedback = await classifier.classify(classifiedFeedback, visibleFileTreePaths(repoIndexer, repoContext, evalCase));
-  }
+  let routes = resolveEvalLlmRoutes({
+    provider: options.provider,
+    model: options.model,
+    preset: options.preset,
+    feedback: classifiedFeedback
+  });
 
-  const planningModel = options.preset === "direct"
-    ? options.model
-    : selectPlanningModelTier(classifiedFeedback, options.preset);
-  const generationModel = options.preset === "direct"
-    ? options.model
-    : selectGenerationModelTier(classifiedFeedback, options.preset);
-  const advisorTool = options.preset !== "direct" && shouldUseAdvisorTool(classifiedFeedback, options.preset)
-    ? { model: ANTHROPIC_ADVISOR_MODEL_ID, maxUses: 1, maxTokens: ANTHROPIC_ADVISOR_MAX_TOKENS }
-    : undefined;
+  if (options.classify) {
+    const classifier = new FeedbackClassifier(createEvalLlmClient(
+      options.provider,
+      routes.classification,
+      telemetry,
+      "classification"
+    ));
+    classifiedFeedback = await classifier.classify(classifiedFeedback, visibleFileTreePaths(repoIndexer, repoContext, evalCase));
+    routes = resolveEvalLlmRoutes({
+      provider: options.provider,
+      model: options.model,
+      preset: options.preset,
+      feedback: classifiedFeedback
+    });
+  }
 
   let relevantFiles = await repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
   relevantFiles = partitionVisibleContext(
@@ -914,7 +932,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   if (options.generate) {
     generated = true;
     const fileTree = visibleFileTreePaths(repoIndexer, repoContext, evalCase);
-    const planner = new ImplementationPlanner(createEvalLlmClient(planningModel, telemetry, "planning", advisorTool));
+    const planner = new ImplementationPlanner(createEvalLlmClient(options.provider, routes.planning, telemetry, "planning"));
     const plannedImplementation = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
     implementationPlan = sanitizePlanForImmutablePaths(plannedImplementation, {
       oraclePaths: evalCase.oracleTestPaths ?? [],
@@ -930,7 +948,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     );
     relevantFiles = partitionedPlannedFiles.visible;
     await persistArtifacts();
-    const generator = new CodeGenerator(createEvalLlmClient(generationModel, telemetry, "generation-and-repair", advisorTool));
+    const generator = new CodeGenerator(createEvalLlmClient(options.provider, routes.generation, telemetry, "generation-and-repair"));
     try {
       changes = await generateValidatedChanges(
         generator,
@@ -1372,6 +1390,7 @@ function childArguments(
     "--result-path", resultPath,
     "--cases", options.casesPath,
     "--repo-root", options.repoRoot,
+    "--provider", options.provider,
     "--model", options.model,
     "--preset", options.preset,
     "--case-timeout-ms", String(options.caseTimeoutMs),

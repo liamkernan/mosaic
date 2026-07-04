@@ -309,6 +309,21 @@ describe("local fix evaluation harness", () => {
     })).toBeCloseTo(5.4, 10);
   });
 
+  it("does not double-count OpenAI cached tokens included in total input usage", () => {
+    expect(calculateUsageCostUsd({
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      cacheReadInputTokens: 200_000,
+      cacheCreationInputTokens: 0
+    }, {
+      inputUsdPerMillion: 5,
+      outputUsdPerMillion: 30,
+      cacheReadUsdPerMillion: 0.5,
+      cacheCreationUsdPerMillion: 5,
+      inputTokensIncludeCacheReads: true
+    })).toBeCloseTo(4.1, 10);
+  });
+
   it("calculates executor and advisor iterations at their exact model rates", () => {
     expect(calculateUsageIterationsCostUsd([
       {
