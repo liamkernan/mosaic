@@ -1079,7 +1079,12 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   if (options.generate && checkErrors.length > 0) {
     const preRepairChanges = changes;
     const fileTree = visibleFileTreePaths(repoIndexer, repoContext, evalCase);
-    const planner = new ImplementationPlanner(createEvalLlmClient(planningModel, telemetry, "check-repair-planning", advisorTool));
+    const planner = new ImplementationPlanner(createEvalLlmClient(
+      options.provider,
+      routes.planning,
+      telemetry,
+      "check-repair-planning"
+    ));
     const repairedImplementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
     implementationPlan = sanitizePlanForImmutablePaths(repairedImplementationPlan, {
       oraclePaths: evalCase.oracleTestPaths ?? [],
@@ -1087,7 +1092,12 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
       generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
     });
     await persistArtifacts();
-    const generator = new CodeGenerator(createEvalLlmClient(generationModel, telemetry, "check-repair", advisorTool));
+    const generator = new CodeGenerator(createEvalLlmClient(
+      options.provider,
+      routes.generation,
+      telemetry,
+      "check-repair"
+    ));
     let repairedChanges = await repairVerificationFailure(
       generator,
       classifiedFeedback,

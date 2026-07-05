@@ -32,6 +32,15 @@ describe("local fix evaluation harness", () => {
     await tempDirs.cleanup();
   });
 
+  it("uses provider-aware routes for every evaluation client call", async () => {
+    const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
+
+    expect(source).not.toMatch(/createEvalLlmClient\(\s*(?:planningModel|generationModel)/);
+    expect(source).not.toContain("advisorTool));");
+    expect(source).toContain("routes.planning");
+    expect(source).toContain("routes.generation");
+  });
+
   it("uses the source-of-truth seven-minute case timeout", () => {
     expect(DEFAULT_EVAL_CASE_TIMEOUT_MS).toBe(420_000);
   });
