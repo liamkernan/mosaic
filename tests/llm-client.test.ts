@@ -496,4 +496,36 @@ describe("LLMClient", () => {
       undefined
     );
   });
+
+  it("records usage and rejects partial OpenAI output when max_output_tokens is reached", async () => {
+    responsesCreateMock.mockResolvedValueOnce({
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output_text: "<changes><change>truncated",
+      usage: {
+        input_tokens: 2_000,
+        output_tokens: 8_192,
+        input_tokens_details: { cached_tokens: 500 }
+      }
+    });
+    const observeUsage = vi.fn();
+    const client = new LLMClient({
+      provider: "openai",
+      mode: "platform",
+      platformApiKey: "openai-test-key",
+      model: OPENAI_MODEL_IDS.frontier,
+      disableUsageTracking: true,
+      observeUsage
+    });
+
+    await expect(client.complete("system", "user", { maxTokens: 8_192 }))
+      .rejects.toThrow("OpenAI response incomplete: max_output_tokens after 8192 output tokens");
+
+    expect(responsesCreateMock).toHaveBeenCalledTimes(1);
+    expect(observeUsage).toHaveBeenCalledWith(expect.objectContaining({
+      inputTokens: 2_000,
+      outputTokens: 8_192,
+      retries: 0
+    }));
+  });
 });

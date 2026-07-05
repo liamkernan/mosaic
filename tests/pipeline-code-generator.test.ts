@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { LLMError } from "../packages/core/src/errors.js";
+import { OpenAIOutputLimitError } from "../packages/llm/src/client.js";
 import { CodeGenerator } from "../packages/pipeline/src/code-generator.js";
 import { buildClassifiedFeedback, createPipelineLlmClient } from "./helpers/pipeline.js";
 
@@ -431,6 +432,56 @@ const retrySucceeded = true;
     expect(prompts[1]).toContain("journal-section");
     expect(prompts[1]).toContain("LARGE STATIC FRONTEND NOTE");
     expect(changes).toHaveLength(1);
+  });
+
+  it("retries truncated OpenAI frontend output with compact context before parsing", async () => {
+    const prompts: string[] = [];
+    const userMessages: string[] = [];
+    const maxTokens: number[] = [];
+    const fakeClient = createPipelineLlmClient(async (systemPrompt: string, userMessage: string, options: { maxTokens?: number }) => {
+      prompts.push(systemPrompt);
+      userMessages.push(userMessage);
+      maxTokens.push(options.maxTokens ?? 0);
+      if (prompts.length === 1) {
+        throw new OpenAIOutputLimitError(8_192);
+      }
+
+      return `<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<main></main>]]></search>
+    <replace><![CDATA[<main><button class="product-card" type="button">Details</button></main>]]></replace>
+    <explanation>Add an accessible product details trigger.</explanation>
+  </edit>
+</changes>`;
+    });
+    const largeHtml = `<main></main>\n${"<div>catalog filler</div>\n".repeat(500)}`;
+
+    const changes = await new CodeGenerator(fakeClient).generate(
+      buildClassifiedFeedback({
+        rawContent: "Add product details",
+        category: "feature_request",
+        complexity: "complex",
+        summary: "Add product details",
+        relevantFiles: ["index.html", "script.js", "styles.css"],
+        confidence: 0.8
+      }),
+      [
+        { path: "index.html", content: largeHtml, reason: "markup" },
+        { path: "script.js", content: "console.log('ready');", reason: "behavior" },
+        { path: "styles.css", content: ".product { display: block; }", reason: "styles" }
+      ],
+      ["index.html", "script.js", "styles.css"],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(prompts).toHaveLength(2);
+    expect(userMessages[1]).toContain("hit the OpenAI max_output_tokens limit");
+    expect(userMessages[1]).toContain("compact, complete <changes> payload");
+    expect(prompts[1]).toContain("middle line(s) of index.html omitted");
+    expect(maxTokens[1]).toBeLessThanOrEqual(8_192);
+    expect(changes[0]?.modifiedContent).toContain('class="product-card"');
   });
 
   it("uses compact repair instructions when validation says the patch is too large", async () => {

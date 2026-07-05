@@ -94,6 +94,23 @@ export interface UsageContext {
   feedbackId: string;
 }
 
+export class OpenAIOutputLimitError extends LLMError {
+  readonly incompleteReason = "max_output_tokens" as const;
+
+  constructor(outputTokens: number) {
+    super(`OpenAI response incomplete: max_output_tokens after ${outputTokens} output tokens; partial output was discarded`);
+  }
+}
+
+export function isOpenAIOutputLimitError(error: unknown): error is OpenAIOutputLimitError {
+  return error instanceof OpenAIOutputLimitError || (
+    typeof error === "object" &&
+    error !== null &&
+    "incompleteReason" in error &&
+    error.incompleteReason === "max_output_tokens"
+  );
+}
+
 type TextContentBlock = {
   type: "text";
   text: string;
@@ -394,9 +411,22 @@ export class LLMClient {
           });
         }
 
+        if (response.status === "incomplete") {
+          if (response.incomplete_details?.reason === "max_output_tokens") {
+            throw new OpenAIOutputLimitError(outputTokens);
+          }
+
+          throw new LLMError(
+            `OpenAI response incomplete: ${response.incomplete_details?.reason ?? "unknown reason"}; partial output was discarded`
+          );
+        }
+
         return response.output_text.trim();
       } catch (error) {
         attempt += 1;
+        if (isOpenAIOutputLimitError(error)) {
+          throw error;
+        }
         const { status, name: errorName, message: errorMessage } = getAnthropicErrorDetails(error);
         if (status === 429 && attempt < maxRetries) {
           const delayMs = 2 ** attempt * 1_000;

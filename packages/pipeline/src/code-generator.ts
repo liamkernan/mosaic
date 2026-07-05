@@ -1,4 +1,5 @@
 import { LLMError, type ClassifiedFeedback, type GeneratedChange, type RelevantFile } from "@mosaic/core";
+import { isOpenAIOutputLimitError } from "@mosaic/llm";
 
 import { parseGeneratedChanges } from "./generated-change-parser.js";
 import type { PipelineLlmClient } from "./pipeline-llm-client.js";
@@ -97,6 +98,10 @@ function shouldCompactStaticFrontendContext(relevantFiles: RelevantFile[]): bool
 }
 
 function shouldRetryStaticFrontendGeneration(relevantFiles: RelevantFile[], error: unknown): boolean {
+  if (isOpenAIOutputLimitError(error)) {
+    return relevantFiles.some((file) => isStaticFrontendFile(file.path));
+  }
+
   if (!(error instanceof Error)) {
     return false;
   }
@@ -330,13 +335,13 @@ function promptRelevantFiles(relevantFiles: RelevantFile[], options: PromptFileO
   return relevantFiles.map((file) => compactLargeSourceContent(compactFileContent(file, options), options));
 }
 
-function retryPromptRelevantFiles(relevantFiles: RelevantFile[], keywords: string[]): RelevantFile[] {
-  let shouldCompact = false;
+function retryPromptRelevantFiles(relevantFiles: RelevantFile[], keywords: string[], forceCompact = false): RelevantFile[] {
+  let shouldCompact = forceCompact;
   let totalStaticBytes = 0;
   for (const file of relevantFiles) {
     if (isStaticFrontendFile(file.path)) {
       totalStaticBytes += fileContentByteLength(file);
-      if (totalStaticBytes > STATIC_FRONTEND_RETRY_BYTES) {
+      if (!shouldCompact && totalStaticBytes > STATIC_FRONTEND_RETRY_BYTES) {
         shouldCompact = true;
         break;
       }
@@ -639,10 +644,18 @@ export class CodeGenerator {
         throw error;
       }
 
-      const retryFiles = retryPromptRelevantFiles(relevantFiles, extractKeywords(promptKeywordText(feedback, implementationPlan)));
+      const outputLimitReached = isOpenAIOutputLimitError(error);
+      const retryFiles = retryPromptRelevantFiles(
+        relevantFiles,
+        extractKeywords(promptKeywordText(feedback, implementationPlan)),
+        outputLimitReached
+      );
+      const retryReason = outputLimitReached
+        ? "hit the OpenAI max_output_tokens limit"
+        : "timed out";
       response = await this.llmClient.complete(
         buildGenerationPrompt(feedback.summary, retryFiles, fileTree, implementationPlan, options),
-        "The previous static frontend generation timed out. Return only a small localized <changes> payload: prefer exact <edit> blocks or new scoped supplemental JS/CSS files linked from HTML. Do not rewrite full existing HTML/CSS/JS files. Implement one reusable data-driven modal/dialog and matching behavior/styles.",
+        `The previous static frontend generation ${retryReason}. Return only a compact, complete <changes> payload: prefer exact <edit> blocks or new scoped supplemental JS/CSS files linked from HTML. Do not rewrite full existing HTML/CSS/JS files. Implement one reusable data-driven modal/dialog and matching behavior/styles.`,
         {
           temperature: 0.2,
           maxTokens: Math.min(estimateGenerationMaxTokens(retryFiles, options), STATIC_FRONTEND_RETRY_MAX_TOKENS),
