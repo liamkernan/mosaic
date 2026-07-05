@@ -10,7 +10,7 @@ import { mergeGeneratedChanges } from "../packages/pipeline/src/change-set.js";
 import { FeedbackClassifier } from "../packages/pipeline/src/classifier.js";
 import { ImplementationPlanner, type ImplementationPlan } from "../packages/pipeline/src/implementation-planner.js";
 import { pruneChangesToPlanScope, validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
-import { assessRepairProgress } from "../packages/pipeline/src/repair-progress.js";
+import { assessRepairProgress, findUnplannedAddedFiles } from "../packages/pipeline/src/repair-progress.js";
 import { RepoIndexer } from "../packages/pipeline/src/repo-indexer.js";
 import { validate } from "../packages/pipeline/src/validator.js";
 import { applyValidationFallbacks, applyVerificationFallbacks } from "../packages/pipeline/src/validation-repair.js";
@@ -1001,7 +1001,9 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
           await writeGeneratedChanges(repoPath, completedChanges);
           repoContext.fileTree = await buildFileTree(repoPath);
           const completedVerificationErrors = await runVerification(evalCase, repoPath, completedChanges);
-          const progress = assessRepairProgress(changes, completedChanges, verificationErrors, completedVerificationErrors);
+          const progress = assessRepairProgress(changes, completedChanges, verificationErrors, completedVerificationErrors, {
+            plannedFiles: implementationPlan.requiredFiles.map((file) => file.path)
+          });
           verificationHistory.push({
             stage: `verification-deterministic-repair-${progress.trend}`,
             errors: completedVerificationErrors
@@ -1048,7 +1050,8 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
           preRepairChanges,
           repairedChanges,
           verificationErrors,
-          repairedVerificationErrors
+          repairedVerificationErrors,
+          { plannedFiles: implementationPlan.requiredFiles.map((file) => file.path) }
         );
         verificationHistory.push({
           stage: `verification-repair-${progress.trend}`,
@@ -1137,7 +1140,8 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
         preRepairChanges,
         repairedChanges,
         checkErrors,
-        [...repairedVerificationErrors, ...repairedCheckErrors]
+        [...repairedVerificationErrors, ...repairedCheckErrors],
+        { plannedFiles: implementationPlan.requiredFiles.map((file) => file.path) }
       );
       verificationHistory.push({
         stage: `check-repair-${progress.trend}`,
@@ -1249,7 +1253,9 @@ async function generateValidatedChanges(
             errors: [...candidateValidation.errors, ...repairedPlanErrors]
           };
         }
-        const progress = assessRepairProgress(changes, candidateChanges, validation.errors, candidateValidation.errors);
+        const progress = assessRepairProgress(changes, candidateChanges, validation.errors, candidateValidation.errors, {
+          plannedFiles: implementationPlan.requiredFiles.map((file) => file.path)
+        });
         recordValidation(
           `model-repair-${progress.trend}-${attempt + 1}`,
           candidateValidation.errors,
@@ -1279,7 +1285,9 @@ async function generateValidatedChanges(
             errors: [...completedValidation.errors, ...completedPlanErrors]
           };
         }
-        const progress = assessRepairProgress(changes, completedChanges, validation.errors, completedValidation.errors);
+        const progress = assessRepairProgress(changes, completedChanges, validation.errors, completedValidation.errors, {
+          plannedFiles: implementationPlan.requiredFiles.map((file) => file.path)
+        });
         recordValidation(
           `deterministic-repair-${progress.trend}-${attempt + 1}`,
           completedValidation.errors,
@@ -1342,14 +1350,16 @@ async function repairVerificationFailure(
   }
 
   repairedChanges = mergeGeneratedChanges(currentChanges, repairedChanges);
-  const scopeProgress = assessRepairProgress(
+  const unplannedAddedFiles = findUnplannedAddedFiles(
     currentChanges,
     repairedChanges,
-    verificationErrors,
-    verificationErrors
+    implementationPlan.requiredFiles.map((file) => file.path)
   );
-  if (!scopeProgress.accepted) {
-    recordValidation(`verification-repair-${scopeProgress.trend}`, verificationErrors);
+  if (unplannedAddedFiles.length > 0) {
+    recordValidation("verification-repair-increased", [
+      ...verificationErrors,
+      `Repair added files outside the implementation plan: ${unplannedAddedFiles.join(", ")}`
+    ]);
     return [];
   }
 

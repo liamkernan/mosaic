@@ -6,7 +6,12 @@ export interface RepairProgressAssessment {
   accepted: boolean;
   trend: RepairTrend;
   addedFiles: string[];
+  unplannedAddedFiles: string[];
   introducedCategories: string[];
+}
+
+export interface RepairProgressOptions {
+  plannedFiles?: Iterable<string>;
 }
 
 const errorCategoryPatterns: Array<[string, RegExp]> = [
@@ -43,21 +48,46 @@ function errorCategories(errors: string[]): Set<string> {
   return new Set(errors.map(repairErrorCategory));
 }
 
+function addedFilePaths(
+  currentChanges: GeneratedChange[],
+  candidateChanges: GeneratedChange[]
+): string[] {
+  const currentPaths = new Set(currentChanges.map((change) => change.filePath));
+  return [...new Set(candidateChanges
+    .map((change) => change.filePath)
+    .filter((filePath) => !currentPaths.has(filePath)))];
+}
+
+export function findUnplannedAddedFiles(
+  currentChanges: GeneratedChange[],
+  candidateChanges: GeneratedChange[],
+  plannedFiles: Iterable<string> = []
+): string[] {
+  const plannedPaths = new Set(plannedFiles);
+  return addedFilePaths(currentChanges, candidateChanges)
+    .filter((filePath) => !plannedPaths.has(filePath));
+}
+
 export function assessRepairProgress(
   currentChanges: GeneratedChange[],
   candidateChanges: GeneratedChange[],
   beforeErrors: string[],
-  afterErrors: string[]
+  afterErrors: string[],
+  options: RepairProgressOptions = {}
 ): RepairProgressAssessment {
-  const currentPaths = new Set(currentChanges.map((change) => change.filePath));
-  const addedFiles = candidateChanges
-    .map((change) => change.filePath)
-    .filter((filePath) => !currentPaths.has(filePath));
+  const addedFiles = addedFilePaths(currentChanges, candidateChanges);
+  const unplannedAddedFiles = findUnplannedAddedFiles(
+    currentChanges,
+    candidateChanges,
+    options.plannedFiles
+  );
   const beforeCategories = errorCategories(beforeErrors);
   const introducedCategories = [...errorCategories(afterErrors)]
     .filter((category) => !beforeCategories.has(category))
     .sort();
-  const increased = addedFiles.length > 0 ||
+  const plannedFilesWithoutProgress = addedFiles.length > 0 && afterErrors.length >= beforeErrors.length;
+  const increased = unplannedAddedFiles.length > 0 ||
+    plannedFilesWithoutProgress ||
     introducedCategories.length > 0 ||
     afterErrors.length > beforeErrors.length;
   const trend: RepairTrend = increased
@@ -70,6 +100,7 @@ export function assessRepairProgress(
     accepted: !increased,
     trend,
     addedFiles,
+    unplannedAddedFiles,
     introducedCategories
   };
 }

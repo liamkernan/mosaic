@@ -385,7 +385,9 @@ export class FeedbackPipelineWorker {
             implementationPlan,
             feedbackText
           );
-          const progress = assessRepairProgress(changes, candidateChanges, validation.errors, candidateValidation.errors);
+          const progress = assessRepairProgress(changes, candidateChanges, validation.errors, candidateValidation.errors, {
+            plannedFiles: implementationPlan?.requiredFiles.map((file) => file.path)
+          });
           logger.info({ repairProgress: progress, feedbackId: classifiedFeedback.id }, "Assessed validation repair progress");
           if (progress.accepted) {
             changes = candidateChanges;
@@ -409,7 +411,9 @@ export class FeedbackPipelineWorker {
             implementationPlan,
             feedbackText
           );
-          const progress = assessRepairProgress(changes, completedChanges, validation.errors, completedValidation.errors);
+          const progress = assessRepairProgress(changes, completedChanges, validation.errors, completedValidation.errors, {
+            plannedFiles: implementationPlan?.requiredFiles.map((file) => file.path)
+          });
           logger.info({ repairProgress: progress, feedbackId: classifiedFeedback.id }, "Assessed deterministic repair progress");
           if (progress.accepted) {
             changes = completedChanges;
@@ -446,7 +450,9 @@ export class FeedbackPipelineWorker {
         );
         if (completedValidation.valid) {
           const completedVerification = await runVerificationCommands(completedChanges, repoContext, implementationPlan);
-          const progress = assessRepairProgress(changes, completedChanges, verification.errors, completedVerification.errors);
+          const progress = assessRepairProgress(changes, completedChanges, verification.errors, completedVerification.errors, {
+            plannedFiles: implementationPlan?.requiredFiles.map((file) => file.path)
+          });
           logger.info({ repairProgress: progress, feedbackId: classifiedFeedback.id }, "Assessed deterministic verification repair progress");
           if (progress.accepted) {
             changes = completedChanges;
@@ -477,7 +483,9 @@ export class FeedbackPipelineWorker {
 
           if (completeRepairedValidation.valid) {
             const repairedVerification = await runVerificationCommands(candidateChanges, repoContext, implementationPlan);
-            const progress = assessRepairProgress(changes, candidateChanges, verification.errors, repairedVerification.errors);
+            const progress = assessRepairProgress(changes, candidateChanges, verification.errors, repairedVerification.errors, {
+              plannedFiles: implementationPlan?.requiredFiles.map((file) => file.path)
+            });
             logger.info({ repairProgress: progress, feedbackId: classifiedFeedback.id }, "Assessed verification repair progress");
             if (progress.accepted) {
               changes = candidateChanges;

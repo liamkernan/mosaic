@@ -23,11 +23,39 @@ describe("repair progress", () => {
       accepted: true,
       trend: "reduced",
       addedFiles: [],
+      unplannedAddedFiles: [],
       introducedCategories: []
     });
   });
 
-  it("rejects a repair that introduces a new file", () => {
+  it("accepts a planned new file when it reduces errors without adding a category", () => {
+    expect(assessRepairProgress(
+      [existingChange],
+      [
+        existingChange,
+        {
+          filePath: "styles.css",
+          originalContent: "",
+          modifiedContent: ".product { display: grid; }\n",
+          explanation: "Add the planned presentation layer."
+        }
+      ],
+      [
+        "Matching selectors in changed stylesheets are required",
+        "Frontend assertion failed: expected element not found"
+      ],
+      ["Frontend assertion failed: expected element not found"],
+      { plannedFiles: ["index.html", "script.js", "styles.css"] }
+    )).toEqual({
+      accepted: true,
+      trend: "reduced",
+      addedFiles: ["styles.css"],
+      unplannedAddedFiles: [],
+      introducedCategories: []
+    });
+  });
+
+  it("rejects an outside-plan file even when it reduces errors", () => {
     expect(assessRepairProgress(
       [existingChange],
       [
@@ -40,11 +68,35 @@ describe("repair progress", () => {
         }
       ],
       ["Syntax validation failed for src/service.ts: invalid token"],
-      []
+      [],
+      { plannedFiles: ["src/service.ts"] }
     )).toEqual(expect.objectContaining({
       accepted: false,
       trend: "increased",
-      addedFiles: ["src/unplanned.ts"]
+      addedFiles: ["src/unplanned.ts"],
+      unplannedAddedFiles: ["src/unplanned.ts"]
+    }));
+  });
+
+  it("rejects a planned new file when it does not reduce errors", () => {
+    const plannedChange = {
+      filePath: "styles.css",
+      originalContent: "",
+      modifiedContent: ".product { display: grid; }\n",
+      explanation: "Add the planned presentation layer."
+    };
+
+    expect(assessRepairProgress(
+      [existingChange],
+      [existingChange, plannedChange],
+      ["Frontend assertion failed: expected element not found"],
+      ["Frontend assertion failed: expected element not found"],
+      { plannedFiles: ["styles.css"] }
+    )).toEqual(expect.objectContaining({
+      accepted: false,
+      trend: "increased",
+      addedFiles: ["styles.css"],
+      unplannedAddedFiles: []
     }));
   });
 
