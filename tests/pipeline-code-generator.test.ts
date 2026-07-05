@@ -5,6 +5,58 @@ import { CodeGenerator } from "../packages/pipeline/src/code-generator.js";
 import { buildClassifiedFeedback, createPipelineLlmClient } from "./helpers/pipeline.js";
 
 describe("CodeGenerator", () => {
+  it("uses focused complete-layer repair instructions when planned CSS is missing", async () => {
+    let capturedUserMessage = "";
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {
+      capturedUserMessage = userMessage;
+      return `<changes>
+  <change>
+    <filePath>styles.css</filePath>
+    <modifiedContent><![CDATA[
+.product-card { cursor: pointer; }
+]]></modifiedContent>
+    <explanation>Add the missing planned CSS layer.</explanation>
+  </change>
+</changes>`;
+    });
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      buildClassifiedFeedback({
+        rawContent: "Add product details",
+        category: "feature_request",
+        complexity: "complex",
+        summary: "Add product details",
+        relevantFiles: ["index.html", "script.js", "styles.css"],
+        confidence: 0.8
+      }),
+      [
+        { path: "index.html", content: "<main></main>", reason: "markup" },
+        { path: "script.js", content: "", reason: "behavior" },
+        { path: "styles.css", content: "", reason: "styles" }
+      ],
+      ["index.html", "script.js", "styles.css"],
+      [],
+      ["[missing-frontend-layer:css] Implementation plan requires complete HTML, JavaScript, and CSS layers, but generated changes omit the CSS layer. Planned CSS files: styles.css"],
+      {
+        requiredFiles: [
+          { path: "index.html", reason: "markup" },
+          { path: "script.js", reason: "behavior" },
+          { path: "styles.css", reason: "styles" }
+        ],
+        acceptanceCriteria: [],
+        implementationChecklist: [],
+        verificationChecklist: [],
+        verificationCommands: []
+      },
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("adds every missing frontend layer named by validation");
+    expect(capturedUserMessage).toContain("HTML hooks must match JavaScript selectors");
+    expect(capturedUserMessage).toContain("keyboard accessible");
+    expect(capturedUserMessage).toContain("Do not omit an existing layer or add files outside the implementation plan");
+  });
+
   it("compacts large static JS/CSS prompt context while preserving original diff inputs", async () => {
     let capturedPrompt = "";
     let capturedUserMessage = "";

@@ -14,6 +14,20 @@ const idempotencyPlanPattern = /\b(?:dedupe|duplicate|idempotent|idempotency|ret
 const endpointPathPattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+(`?)(\/[a-zA-Z0-9_./:-]+)\1/g;
 const quotedEndpointPathPattern = /["'`](\/[a-zA-Z0-9_./:-]+)["'`]/g;
 
+const frontendLayerPatterns = {
+  html: /\.html?$/i,
+  javascript: /\.[cm]?js$/i,
+  css: /\.css$/i
+} as const;
+
+const frontendLayerLabels = {
+  html: "HTML",
+  javascript: "JavaScript",
+  css: "CSS"
+} as const;
+
+type FrontendLayer = keyof typeof frontendLayerPatterns;
+
 interface PlannedScope {
   requiredPaths: PathFacts[];
   requiredPathList: string[];
@@ -444,6 +458,39 @@ function planRequiresRuntimeChange(plan: ImplementationPlan): boolean {
   );
 }
 
+function missingRequiredFrontendLayerErrors(
+  changes: GeneratedChange[],
+  plan: ImplementationPlan
+): string[] {
+  const plannedPathsByLayer = new Map<FrontendLayer, string[]>();
+  for (const layer of Object.keys(frontendLayerPatterns) as FrontendLayer[]) {
+    const pattern = frontendLayerPatterns[layer];
+    plannedPathsByLayer.set(
+      layer,
+      plan.requiredFiles
+        .map((file) => normalizeRepoPath(file.path))
+        .filter((path) => pattern.test(path))
+    );
+  }
+
+  if ([...plannedPathsByLayer.values()].some((paths) => paths.length === 0)) {
+    return [];
+  }
+
+  const changedPaths = changes.map((change) => normalizeRepoPath(change.filePath));
+  const errors: string[] = [];
+  for (const [layer, pattern] of Object.entries(frontendLayerPatterns) as Array<[FrontendLayer, RegExp]>) {
+    if (!changedPaths.some((path) => pattern.test(path))) {
+      const label = frontendLayerLabels[layer];
+      errors.push(
+        `[missing-frontend-layer:${layer}] Implementation plan requires complete HTML, JavaScript, and CSS layers, but generated changes omit the ${label} layer. Planned ${label} files: ${plannedPathsByLayer.get(layer)?.join(", ")}`
+      );
+    }
+  }
+
+  return errors;
+}
+
 function orderedClauseTerms(clause: string): string[] {
   const normalized = clause
     .replace(/\bORDER\s+BY\b/gi, "")
@@ -583,6 +630,7 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
   const errors: string[] = [];
   errors.push(...generatedTestListFieldErrors(changes));
   errors.push(...validatePlannedChangeScope(changes, plan, sourceText));
+  errors.push(...missingRequiredFrontendLayerErrors(changes, plan));
 
   const { testChanges, runtimeChanges, runtimeChangeFacts } = collectCompletionChangeGroups(changes);
   if (planRequiresBehavioralTests(plan, text) && testChanges.length === 0) {

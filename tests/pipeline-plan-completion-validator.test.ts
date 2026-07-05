@@ -6,6 +6,72 @@ import { buildImplementationPlan } from "./helpers/pipeline.js";
 const basePlan = buildImplementationPlan();
 
 describe("validatePlanCompletion", () => {
+  it("reports a structured missing CSS layer before frontend verification", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>\n",
+          modifiedContent: '<main><button class="product-card" data-product="vase">Details</button><dialog id="product-details"></dialog></main>\n',
+          explanation: "add accessible product details markup"
+        },
+        {
+          filePath: "script.js",
+          originalContent: "",
+          modifiedContent: "document.querySelectorAll('.product-card').forEach((button) => button.addEventListener('click', openProductDetails));\n",
+          explanation: "wire product details behavior"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "index.html", reason: "add product details markup" },
+          { path: "script.js", reason: "add product details behavior" },
+          { path: "styles.css", reason: "style the product details dialog" }
+        ]
+      }
+    );
+
+    expect(errors).toContain(
+      "[missing-frontend-layer:css] Implementation plan requires complete HTML, JavaScript, and CSS layers, but generated changes omit the CSS layer. Planned CSS files: styles.css"
+    );
+  });
+
+  it("accepts complete planned HTML, JavaScript, and CSS layers", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>\n",
+          modifiedContent: '<main><button class="product-card" data-product="vase">Details</button><dialog id="product-details"></dialog></main>\n',
+          explanation: "add accessible product details markup"
+        },
+        {
+          filePath: "script.js",
+          originalContent: "",
+          modifiedContent: "document.querySelectorAll('.product-card').forEach((button) => button.addEventListener('click', openProductDetails));\n",
+          explanation: "wire product details behavior"
+        },
+        {
+          filePath: "styles.css",
+          originalContent: "",
+          modifiedContent: ".product-card { cursor: pointer; }\n#product-details { padding: 1rem; }\n",
+          explanation: "style product details"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "index.html", reason: "add product details markup" },
+          { path: "script.js", reason: "add product details behavior" },
+          { path: "styles.css", reason: "style the product details dialog" }
+        ]
+      }
+    );
+
+    expect(errors).toEqual([]);
+  });
+
   it("rejects substituted ordered tie-breakers from acceptance criteria", () => {
     const errors = validatePlanCompletion(
       [

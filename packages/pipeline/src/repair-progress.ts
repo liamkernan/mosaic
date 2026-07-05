@@ -16,6 +16,7 @@ export interface RepairProgressOptions {
 
 const errorCategoryPatterns: Array<[string, RegExp]> = [
   ["scope", /outside the implementation plan scope|unrelated protected symbol/i],
+  ["frontend-layer", /\[missing-frontend-layer:(?:html|javascript|css)\]/i],
   ["syntax", /syntax validation failed|invalid syntax|parser error/i],
   ["accessibility", /non-interactive container|keyboard activation|accessible role|tabindex|inert link/i],
   ["modal-behavior", /modal UI hooks without complete|missing interactive behavior|matching behavior/i],

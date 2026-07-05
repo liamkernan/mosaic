@@ -375,6 +375,10 @@ function hasMissingHtmlHookValidationError(validationErrors: string[]): boolean 
   return validationErrors.some((error) => /queries missing HTML id|queries selector/i.test(error));
 }
 
+function hasMissingFrontendLayerError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) => /\[missing-frontend-layer:(?:html|javascript|css)\]/i.test(error));
+}
+
 function hasMissingBehavioralTestCoverageError(validationErrors: string[]): boolean {
   return validationErrors.some((error) => /requires behavioral test coverage|does not modify any test\/spec file/i.test(error));
 }
@@ -448,6 +452,12 @@ const VALIDATION_REPAIR_ROUTES: ValidationRepairRoute[] = [
   {
     match: hasSyntaxValidationError,
     instruction: "Return only a repaired <changes> payload focused on syntax validity. Fix the reported parser error in the changed source file while preserving the intended behavior, existing tests, and public API. Do not remove the affected feature or weaken tests to make parsing pass.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasMissingFrontendLayerError,
+    instruction: "Return only a repaired <changes> payload that preserves the useful current changes and adds every missing frontend layer named by validation. Modify the planned HTML, JavaScript, and CSS files together as a complete implementation: HTML hooks must match JavaScript selectors, interactive behavior must be keyboard accessible, and CSS must style the exact classes/ids used by the markup. Do not omit an existing layer or add files outside the implementation plan.",
     maxTokens: focusedValidationRepairMaxTokens,
     timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
   },
