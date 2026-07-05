@@ -97,8 +97,15 @@ function shouldCompactStaticFrontendContext(relevantFiles: RelevantFile[]): bool
   return totalStaticFrontendBytes(relevantFiles) > LARGE_STATIC_FRONTEND_BYTES;
 }
 
+function isOpenAIOutputLimitFailure(error: unknown): boolean {
+  return isOpenAIOutputLimitError(error) || (
+    error instanceof Error &&
+    /OpenAI response incomplete:\s*max_output_tokens/i.test(error.message)
+  );
+}
+
 function shouldRetryStaticFrontendGeneration(relevantFiles: RelevantFile[], error: unknown): boolean {
-  if (isOpenAIOutputLimitError(error)) {
+  if (isOpenAIOutputLimitFailure(error)) {
     return relevantFiles.some((file) => isStaticFrontendFile(file.path));
   }
 
@@ -644,7 +651,7 @@ export class CodeGenerator {
         throw error;
       }
 
-      const outputLimitReached = isOpenAIOutputLimitError(error);
+      const outputLimitReached = isOpenAIOutputLimitFailure(error);
       const retryFiles = retryPromptRelevantFiles(
         relevantFiles,
         extractKeywords(promptKeywordText(feedback, implementationPlan)),

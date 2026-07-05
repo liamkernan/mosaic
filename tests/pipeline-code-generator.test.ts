@@ -434,7 +434,10 @@ const retrySucceeded = true;
     expect(changes).toHaveLength(1);
   });
 
-  it("retries truncated OpenAI frontend output with compact context before parsing", async () => {
+  it.each([
+    ["typed", () => new OpenAIOutputLimitError(8_192)],
+    ["cross-boundary", () => new LLMError("OpenAI response incomplete: max_output_tokens after 8192 output tokens; partial output was discarded")]
+  ])("retries %s truncated OpenAI frontend output with compact context before parsing", async (_label, createError) => {
     const prompts: string[] = [];
     const userMessages: string[] = [];
     const maxTokens: number[] = [];
@@ -443,7 +446,7 @@ const retrySucceeded = true;
       userMessages.push(userMessage);
       maxTokens.push(options.maxTokens ?? 0);
       if (prompts.length === 1) {
-        throw new OpenAIOutputLimitError(8_192);
+        throw createError();
       }
 
       return `<changes>
