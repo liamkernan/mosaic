@@ -436,7 +436,8 @@ const retrySucceeded = true;
 
   it.each([
     ["typed", () => new OpenAIOutputLimitError(8_192)],
-    ["cross-boundary", () => new LLMError("OpenAI response incomplete: max_output_tokens after 8192 output tokens; partial output was discarded")]
+    ["cross-boundary", () => new LLMError("OpenAI response incomplete: max_output_tokens after 8192 output tokens; partial output was discarded")],
+    ["error-like object", () => ({ message: "OpenAI response incomplete: max_output_tokens after 8192 output tokens; partial output was discarded" })]
   ])("retries %s truncated OpenAI frontend output with compact context before parsing", async (_label, createError) => {
     const prompts: string[] = [];
     const userMessages: string[] = [];

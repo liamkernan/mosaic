@@ -98,10 +98,14 @@ function shouldCompactStaticFrontendContext(relevantFiles: RelevantFile[]): bool
 }
 
 function isOpenAIOutputLimitFailure(error: unknown): boolean {
-  return isOpenAIOutputLimitError(error) || (
-    error instanceof Error &&
-    /OpenAI response incomplete:\s*max_output_tokens/i.test(error.message)
-  );
+  if (isOpenAIOutputLimitError(error)) {
+    return true;
+  }
+
+  const message = typeof error === "object" && error !== null && "message" in error
+    ? String(error.message)
+    : String(error);
+  return /OpenAI response incomplete:\s*max_output_tokens/i.test(message);
 }
 
 function shouldRetryStaticFrontendGeneration(relevantFiles: RelevantFile[], error: unknown): boolean {
