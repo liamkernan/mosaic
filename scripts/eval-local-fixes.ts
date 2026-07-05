@@ -1079,6 +1079,73 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     generated
   );
 
+  if (options.generate && implementationPlan && checkErrors.length > 0) {
+    const preRepairChanges = changes;
+    const completedChanges = applyVerificationFallbacks(changes, checkErrors);
+    if (completedChanges) {
+      assertGeneratedPathsAllowed(completedChanges.map((change) => change.filePath), {
+        oraclePaths: evalCase.oracleTestPaths ?? [],
+        oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
+        generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
+      });
+      let completedValidation = await validate(completedChanges, repoContext);
+      const completedPlanErrors = validatePlanCompletion(
+        completedChanges,
+        implementationPlan,
+        `${classifiedFeedback.summary}\n${classifiedFeedback.rawContent}`
+      );
+      if (completedPlanErrors.length > 0) {
+        completedValidation = {
+          valid: false,
+          errors: [...completedValidation.errors, ...completedPlanErrors]
+        };
+      }
+      validationHistory.push({ stage: "check-deterministic-repair", errors: completedValidation.errors });
+      validationCandidates.push({
+        stage: "check-deterministic-repair",
+        selected: false,
+        changes: completedChanges
+      });
+
+      if (completedValidation.valid) {
+        await writeGeneratedChanges(repoPath, completedChanges);
+        repoContext.fileTree = await buildFileTree(repoPath);
+        const completedVerificationErrors = await runVerification(evalCase, repoPath, completedChanges);
+        const completedCheckErrors = completedVerificationErrors.length > 0
+          ? checkErrors
+          : await evaluateChecks(
+              evalCase,
+              repoPath,
+              referenceFiles.map((file) => file.path),
+              relevantFiles.map((file) => file.path),
+              completedChanges,
+              generated
+            );
+        const progress = assessRepairProgress(
+          changes,
+          completedChanges,
+          checkErrors,
+          [...completedVerificationErrors, ...completedCheckErrors],
+          { plannedFiles: implementationPlan.requiredFiles.map((file) => file.path) }
+        );
+        verificationHistory.push({
+          stage: `check-deterministic-repair-${progress.trend}`,
+          errors: [...completedVerificationErrors, ...completedCheckErrors]
+        });
+        if (progress.accepted) {
+          validationCandidates[validationCandidates.length - 1].selected = true;
+          changes = completedChanges;
+          errors.push(...completedVerificationErrors);
+          checkErrors = completedCheckErrors;
+        } else {
+          await writeGeneratedChanges(repoPath, preRepairChanges);
+          repoContext.fileTree = await buildFileTree(repoPath);
+        }
+      }
+      await persistArtifacts();
+    }
+  }
+
   if (options.generate && checkErrors.length > 0) {
     const preRepairChanges = changes;
     const fileTree = visibleFileTreePaths(repoIndexer, repoContext, evalCase);

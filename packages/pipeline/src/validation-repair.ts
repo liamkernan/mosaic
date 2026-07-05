@@ -15,7 +15,13 @@ const unlinkedStaticAssetPattern = /New static asset ([^\s]+) is not linked from
 const missingHtmlIdPattern = /queries missing HTML id\(s\): (.+)$/;
 const missingHtmlSelectorPattern = /queries selector\(s\) with no matching HTML: (.+)$/;
 const missingPythonImportPattern = /Change for ([^\s]+\.py) calls (.+) from ([^\s]+)\.py but does not import or define (.+)$/;
+const frontendRepairRequirementPrefix = "Frontend repair requirement: ";
 const filePathByNameCache = new WeakMap<RepoContext["fileTree"], Map<string, string | null>>();
+
+interface FrontendSelectorRequirement {
+  selectorAlternatives: string[];
+  expectation: { kind: string };
+}
 
 function createChangeUpdater(changes: GeneratedChange[]): ChangeUpdater {
   const indexesByPath = new Map<string, number[]>();
@@ -421,6 +427,111 @@ function addClassToTag(tag: string, className: string): string {
   }
 
   return tag.replace(/\s*\/?>$/, ` class="${className}"$&`);
+}
+
+function tagHasAttributeValue(tag: string, attributeName: string, attributeValue: string): boolean {
+  const escapedName = attributeName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedValue = attributeValue.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escapedName}\\s*=\\s*(["'])${escapedValue}\\1`, "i").test(tag);
+}
+
+function addClassToUniqueAttributeMatch(
+  html: string,
+  className: string,
+  attributeName: string,
+  attributeValue: string
+): string {
+  const matches = [...html.matchAll(/<[a-z][a-z0-9-]*(?:\s[^<>]*)?>/gi)]
+    .filter((match) => tagHasAttributeValue(match[0], attributeName, attributeValue));
+  if (matches.length !== 1 || tagHasClass(matches[0][0], className)) {
+    return html;
+  }
+
+  const match = matches[0];
+  const index = match.index;
+  const updatedTag = addClassToTag(match[0], className);
+  return html.slice(0, index) + updatedTag + html.slice(index + match[0].length);
+}
+
+function extractFrontendSelectorRequirements(errors: string[]): FrontendSelectorRequirement[] {
+  const requirements: FrontendSelectorRequirement[] = [];
+  for (const error of errors) {
+    const prefixIndex = error.indexOf(frontendRepairRequirementPrefix);
+    if (prefixIndex < 0) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(error.slice(prefixIndex + frontendRepairRequirementPrefix.length)) as Partial<FrontendSelectorRequirement>;
+      if (
+        parsed.expectation?.kind === "exists" &&
+        Array.isArray(parsed.selectorAlternatives) &&
+        parsed.selectorAlternatives.every((selector) => typeof selector === "string")
+      ) {
+        requirements.push(parsed as FrontendSelectorRequirement);
+      }
+    } catch {
+      // Malformed evaluator output is not safe to repair deterministically.
+    }
+  }
+  return requirements;
+}
+
+function applyFrontendSelectorFallbacks(
+  changes: GeneratedChange[],
+  verificationErrors: string[]
+): GeneratedChange[] | null {
+  const requirements = extractFrontendSelectorRequirements(verificationErrors);
+  if (requirements.length === 0) {
+    return null;
+  }
+
+  let completedChanges = changes;
+  let changed = false;
+  for (const requirement of requirements) {
+    const candidates: Array<{ changeIndex: number; modifiedContent: string }> = [];
+    for (const rawSelector of requirement.selectorAlternatives) {
+      const selector = rawSelector.match(/^\.([a-zA-Z0-9_-]+)\[([a-zA-Z0-9_-]+)=["']([^"']+)["']\]$/);
+      if (!selector) {
+        continue;
+      }
+      for (let index = 0; index < completedChanges.length; index += 1) {
+        const change = completedChanges[index];
+        if (!/\.html?$/i.test(change.filePath)) {
+          continue;
+        }
+        const modifiedContent = addClassToUniqueAttributeMatch(
+          change.modifiedContent,
+          selector[1],
+          selector[2],
+          selector[3]
+        );
+        if (modifiedContent !== change.modifiedContent) {
+          candidates.push({ changeIndex: index, modifiedContent });
+        }
+      }
+      if (candidates.length > 0) {
+        break;
+      }
+    }
+
+    if (candidates.length !== 1) {
+      continue;
+    }
+
+    const candidate = candidates[0];
+    completedChanges = completedChanges.map((change, index) => index === candidate.changeIndex
+      ? {
+          ...change,
+          modifiedContent: candidate.modifiedContent,
+          explanation: `${change.explanation} Added the exact frontend selector hook exposed by verification.`
+        }
+      : change
+    );
+    changed = true;
+  }
+
+  return changed ? completedChanges : null;
 }
 
 function inferAttributeValue(html: string, tagIndex: number, className: string, count: number): string {
@@ -889,6 +1000,11 @@ export function applyVerificationFallbacks(
   changes: GeneratedChange[],
   verificationErrors: string[]
 ): GeneratedChange[] | null {
+  const frontendFallback = applyFrontendSelectorFallbacks(changes, verificationErrors);
+  if (frontendFallback) {
+    return frontendFallback;
+  }
+
   const missingFields = new Set<string>();
   for (const error of verificationErrors) {
     for (const match of error.matchAll(/KeyError:\s*["']([A-Za-z_]\w*)["']/g)) {

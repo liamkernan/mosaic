@@ -292,6 +292,60 @@ describe("applyValidationFallbacks", () => {
 });
 
 describe("applyVerificationFallbacks", () => {
+  it("adds an exact exposed selector class to the unique matching product card", () => {
+    const originalContent = '<article class="product-card" data-product-key="sandstone-vase" role="button" tabindex="0"><button>Add</button></article>\n';
+    const completed = applyVerificationFallbacks([{
+      filePath: "index.html",
+      originalContent,
+      modifiedContent: originalContent,
+      explanation: "add product details"
+    }], [
+      "Frontend repair requirement: " + JSON.stringify({
+        assertion: "Featured product opens detail view",
+        action: "click",
+        selectorAlternatives: ['.product-card-clickable[data-product-key="sandstone-vase"]'],
+        expectation: { kind: "exists" },
+        actual: { matchCount: 0 }
+      })
+    ]);
+
+    expect(completed).not.toBeNull();
+    expect(completed?.[0]?.modifiedContent).toContain(
+      'class="product-card product-card-clickable" data-product-key="sandstone-vase" role="button" tabindex="0"'
+    );
+    expect(completed?.[0]?.modifiedContent).toContain("<button>Add</button>");
+  });
+
+  it("refuses ambiguous or content-bearing frontend selector repairs", () => {
+    const duplicateCards = [
+      '<article class="product-card" data-product-key="sandstone-vase"></article>',
+      '<article class="product-card" data-product-key="sandstone-vase"></article>'
+    ].join("\n");
+    const change = {
+      filePath: "index.html",
+      originalContent: duplicateCards,
+      modifiedContent: duplicateCards,
+      explanation: "add products"
+    };
+    const requirement = {
+      assertion: "Featured product opens detail view",
+      action: "click",
+      selectorAlternatives: ['.product-card-clickable[data-product-key="sandstone-vase"]'],
+      expectation: { kind: "exists" },
+      actual: { matchCount: 0 }
+    };
+
+    expect(applyVerificationFallbacks([change], [
+      "Frontend repair requirement: " + JSON.stringify(requirement)
+    ])).toBeNull();
+    expect(applyVerificationFallbacks([change], [
+      "Frontend repair requirement: " + JSON.stringify({
+        ...requirement,
+        expectation: { kind: "text_includes", value: "Material" }
+      })
+    ])).toBeNull();
+  });
+
   it("adds one already-supported field to the unique list result projection after a KeyError", () => {
     const originalContent = [
       "def get_request(conn):",
