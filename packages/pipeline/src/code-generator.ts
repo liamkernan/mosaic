@@ -376,6 +376,16 @@ function hasOversizedPatchValidationError(validationErrors: string[]): boolean {
   );
 }
 
+function hasClickableAccessibilityValidationError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) =>
+    /non-interactive container|accessible non-native control|keyboard activation behavior|inert link/i.test(error)
+  );
+}
+
+function hasOversizedClickableAccessibilityValidationError(validationErrors: string[]): boolean {
+  return hasOversizedPatchValidationError(validationErrors) && hasClickableAccessibilityValidationError(validationErrors);
+}
+
 function hasSyntaxValidationError(validationErrors: string[]): boolean {
   return validationErrors.some((error) => /Syntax validation failed/i.test(error));
 }
@@ -456,6 +466,18 @@ const VALIDATION_REPAIR_ROUTES: ValidationRepairRoute[] = [
   {
     match: hasScopeValidationError,
     instruction: "Return only a corrected <changes> payload that removes every file outside the implementation plan scope. Keep the necessary implementation and focused companion test/config/asset edits, but do not include unrelated files from other packages, examples, docs, or apps unless they are explicitly listed in the implementation plan.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasOversizedClickableAccessibilityValidationError,
+    instruction: "Return only a compact accessible repaired <changes> payload. The current patch is both too large and accessibility-invalid: reduce repeated markup/data while replacing click-only div/article/section/card targets with native <button type=\"button\"> or <a> elements wherever possible. Preserve required selector contracts by putting exact clickable classes and data attributes on the native control itself, for example .product-card-clickable[data-product-key], not on a surrounding non-interactive article. If a non-native target must remain, include role=\"button\", tabindex=\"0\", and Enter and Space keyboard activation in the same JavaScript repair. Use one reusable data-driven detail view/modal with shared JS/CSS instead of duplicating per-card detail markup.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasClickableAccessibilityValidationError,
+    instruction: "Return only an accessible repaired <changes> payload focused on controls that look clickable. Replace click-only div/article/section/card targets with native <button type=\"button\"> or <a> elements wherever possible. Preserve required selector contracts by putting exact clickable classes and data attributes on the native control itself. If a non-native target must remain, add role=\"button\", tabindex=\"0\", and Enter and Space keyboard activation in JavaScript in the same response. Remove or wire inert href=\"#\" and javascript:void(0) links; do not weaken the workflow.",
     maxTokens: focusedValidationRepairMaxTokens,
     timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
   },

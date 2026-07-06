@@ -67,6 +67,7 @@ INSTRUCTIONS:
 - Keep static frontend changes compact enough to pass validation limits; prefer data-driven behavior and scoped selectors over hundreds of lines of repeated HTML.
 - Treat interactive UI as atomic: if you add modal/dialog/overlay markup or clickable triggers, the same response must include the JavaScript that opens, populates, closes, and keyboard-wires that UI using the exact ids/classes/data attributes from the markup.
 - For clickable UI, use native <button> or <a> elements whenever possible. Do not attach click-only behavior to plain div/article/section/card containers unless you also make them accessible with role, tabindex, and keyboard handling.
+- For clickable product/card detail triggers, put the required clickable class and data attributes on the native <button type="button"> or <a> target itself whenever possible; style that control as the card instead of adding a clickable class to a surrounding article/div.
 - Do not leave visible links with href="#" or javascript:void(0). If a link or control is visible, it must navigate, submit, open the intended UI, or be removed.
 - If you add or change UI classes, ids, modal/dialog/overlay markup, or interactive HTML hooks, also update the matching stylesheet or script in the same response so the UI is complete.
 - Do not introduce modal, dialog, or overlay classes such as modal-content unless the response also includes matching CSS selectors for every new modal/dialog/overlay class.

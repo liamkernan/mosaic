@@ -106,6 +106,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("also update the matching stylesheet or script");
     expect(prompt).toContain("matching CSS selectors");
     expect(prompt).toContain("use native <button> or <a>");
+    expect(prompt).toContain("put the required clickable class and data attributes on the native");
     expect(prompt).toContain("href=\"#\"");
   });
 
@@ -283,6 +284,34 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("implementation-only and validation reports missing behavioral coverage");
     expect(prompt).toContain("dedupe/idempotency/retry validation failures");
     expect(prompt).toContain("missing endpoint route validation failures");
+  });
+
+  it("adds clickable accessibility guidance to validation repair prompts", () => {
+    const prompt = buildValidationRepairPrompt(
+      "Add product detail cards",
+      [
+        { path: "index.html", content: "<main></main>" },
+        { path: "script.js", content: "console.log('ready');" },
+        { path: "styles.css", content: ".product-card { display: block; }" }
+      ],
+      [
+        {
+          filePath: "index.html",
+          modifiedContent: '<article class="product-card product-card-clickable" data-product-key="sandstone-vase">Sandstone vase</article>',
+          explanation: "add clickable card"
+        }
+      ],
+      [
+        "Change for index.html makes non-interactive container(s) appear clickable; use native button/link elements or accessible role, tabindex, and keyboard behavior",
+        "Total new code added exceeds limit: 413 lines"
+      ],
+      ["index.html", "script.js", "styles.css"]
+    );
+
+    expect(prompt).toContain("CLICKABLE ACCESSIBILITY REPAIR MODE");
+    expect(prompt).toContain("moving required clickable classes and data attributes onto the native control");
+    expect(prompt).toContain("same repair also has an oversized-patch error");
+    expect(prompt).toContain("put those hooks on the native button/link target itself");
   });
 
   it("compacts large invalid change bodies in validation repair prompts", () => {

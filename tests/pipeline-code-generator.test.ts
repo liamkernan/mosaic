@@ -541,6 +541,63 @@ const retrySucceeded = true;
     expect(capturedTimeoutMs).toBe(120_000);
   });
 
+  it("prioritizes combined oversized and clickable-accessibility repair instructions", async () => {
+    let capturedUserMessage = "";
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {
+      capturedUserMessage = userMessage;
+      return `<changes>
+  <change>
+    <filePath>index.html</filePath>
+    <modifiedContent><![CDATA[
+<button class="product-card product-card-clickable" data-product-key="sandstone-vase" type="button">Sandstone vase</button>
+]]></modifiedContent>
+    <explanation>Use a native card button for the product detail trigger.</explanation>
+  </change>
+</changes>`;
+    });
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      buildClassifiedFeedback({
+        rawContent: "Add product detail view",
+        category: "feature_request",
+        complexity: "complex",
+        summary: "Add product detail view",
+        relevantFiles: ["index.html", "script.js", "styles.css"],
+        confidence: 0.8
+      }),
+      [
+        { path: "index.html", content: "<main></main>", reason: "markup" },
+        { path: "script.js", content: "console.log('ready');", reason: "behavior" },
+        { path: "styles.css", content: ".product-card { display: block; }", reason: "styles" }
+      ],
+      ["index.html", "script.js", "styles.css"],
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>",
+          modifiedContent: [
+            "<main>",
+            '<article class="product-card product-card-clickable" data-product-key="sandstone-vase">Sandstone vase</article>',
+            ...Array.from({ length: 420 }, (_, index) => `<section>Duplicated product detail ${index}</section>`),
+            "</main>"
+          ].join("\n"),
+          explanation: "add product cards and details"
+        }
+      ],
+      [
+        'Change for index.html makes non-interactive container(s) appear clickable; use native button/link elements or accessible role, tabindex, and keyboard behavior: <article class="product-card product-card-clickable" data-product-key="sandstone-vase">',
+        "Total new code added exceeds limit: 413 lines"
+      ],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("both too large and accessibility-invalid");
+    expect(capturedUserMessage).toContain("native <button type=\"button\"> or <a>");
+    expect(capturedUserMessage).toContain(".product-card-clickable[data-product-key]");
+    expect(capturedUserMessage).toContain("one reusable data-driven detail view/modal");
+  });
+
   it("uses focused syntax repair instructions for parser failures", async () => {
     let capturedUserMessage = "";
     const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {

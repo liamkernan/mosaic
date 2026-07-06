@@ -99,6 +99,9 @@ export function buildValidationRepairPrompt(
   const oversizedPatchSection = validationErrors.some((error) => /too large|exceeds limit|total new code added/i.test(error))
     ? "\nOVERSIZED PATCH REPAIR MODE:\n- The current change set is too large to accept. Replace repeated or duplicated UI with one reusable component and compact data.\n- For repeated popups/modals, keep one shared overlay/dialog and fill its title, description, items, and reviews from JavaScript data or existing data attributes.\n- Preserve the requested user-visible behavior, but aggressively remove duplicated markup and verbose sample content.\n"
     : "";
+  const clickableAccessibilitySection = validationErrors.some((error) => /non-interactive container|accessible non-native control|keyboard activation behavior|inert link/i.test(error))
+    ? "\nCLICKABLE ACCESSIBILITY REPAIR MODE:\n- One or more visible controls look clickable without native semantics or complete keyboard behavior. Prefer replacing card/article/div/section targets with native <button type=\"button\"> or <a> elements.\n- Preserve exact selector contracts by moving required clickable classes and data attributes onto the native control itself; do not satisfy selectors by marking a surrounding article/div as clickable unless it is fully role/tabindex/keyboard wired.\n- If the same repair also has an oversized-patch error, solve both together with one compact data-driven detail view instead of duplicating per-card markup.\n"
+    : "";
 
   return `You are repairing a generated code change that failed validation.
 
@@ -112,6 +115,7 @@ ${promptFileTree}
 ${planSection}
 ${largeStaticFrontendSection}
 ${oversizedPatchSection}
+${clickableAccessibilitySection}
 
 ORIGINAL RELEVANT FILES:
 ${formatPromptFileBlocks(relevantFiles)}
@@ -136,6 +140,7 @@ INSTRUCTIONS:
 - If validation says modal/dialog/overlay behavior is missing, return script changes that wire every new trigger to the exact new modal/dialog/overlay ids/classes/data attributes. Do not return HTML/CSS-only repairs for interactive UI.
 - Modal/dialog/overlay behavior must at minimum open on click, support keyboard activation for non-native triggers, close by close button/backdrop/Escape where applicable, and update aria-hidden or native dialog state consistently.
 - Replace click-only div/article/section/card containers with native buttons or links where possible; otherwise add role, tabindex, and keyboard handling.
+- When a clickable selector contract names classes/data attributes such as .product-card-clickable[data-product-key], put those hooks on the native button/link target itself when possible, not only on a surrounding non-interactive container.
 - Remove or wire any visible href="#" or javascript:void(0) links so every visible control performs the requested workflow.
 - If HTML adds modal/dialog/overlay classes or hooks, include matching CSS selectors in the stylesheet in the same response.
 - If JavaScript is needed for new interactive UI, include the matching script changes in the same response.
