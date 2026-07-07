@@ -24,6 +24,9 @@ async function main(): Promise<void> {
   const provider = providerInput.trim().toLowerCase() === "openai" ? "openai" : "anthropic";
   const anthropicKey = provider === "anthropic" ? await rl.question("Anthropic API key (optional): ") : "";
   const openAIKey = provider === "openai" ? await rl.question("OpenAI API key (optional): ") : "";
+  const azureOpenAIEndpoint = provider === "openai" ? await rl.question("Azure OpenAI endpoint (optional): ") : "";
+  const azureOpenAIKey = provider === "openai" ? await rl.question("Azure OpenAI key (optional): ") : "";
+  const openAIModel = provider === "openai" ? await rl.question("OpenAI/Azure deployment override (optional): ") : "";
   rl.close();
 
   const envContents = [
@@ -33,7 +36,10 @@ async function main(): Promise<void> {
     `REDIS_URL=${redisUrl || "redis://localhost:6379"}`,
     `MOSAIC_LLM_PROVIDER=${provider}`,
     `ANTHROPIC_API_KEY=${anthropicKey}`,
-    `OPENAI_API_KEY=${openAIKey}`
+    `OPENAI_API_KEY=${openAIKey}`,
+    `AZURE_OPENAI_ENDPOINT=${azureOpenAIEndpoint}`,
+    `AZURE_OPENAI_API_KEY=${azureOpenAIKey}`,
+    `MOSAIC_OPENAI_MODEL=${openAIModel}`
   ].join("\n");
 
   await writeFile(join(cwd, ".env"), `${envContents}\n`, "utf8");

@@ -24,6 +24,7 @@ import {
   type LLMUsageObservation,
   type OpenAIReasoningEffort
 } from "../packages/llm/src/client.js";
+import { resolveOpenAIBaseURL } from "../packages/llm/src/openai.js";
 import {
   defaultEvalModelKey,
   isEvalModelKey,
@@ -342,11 +343,13 @@ function createEvalLlmClient(
   phase = "unspecified"
 ): LLMClient {
   const env = getEnv();
+  const isOpenAI = provider === "openai";
   return new LLMClient({
     provider,
     mode: "platform",
-    platformApiKey: provider === "openai" ? env.OPENAI_API_KEY : env.ANTHROPIC_API_KEY,
-    model: route.model,
+    platformApiKey: isOpenAI ? env.AZURE_OPENAI_API_KEY ?? env.OPENAI_API_KEY : env.ANTHROPIC_API_KEY,
+    openAIBaseURL: isOpenAI ? resolveOpenAIBaseURL(env.OPENAI_BASE_URL, env.AZURE_OPENAI_ENDPOINT) : undefined,
+    model: isOpenAI ? env.MOSAIC_OPENAI_MODEL ?? route.model : route.model,
     reasoningEffort: route.reasoningEffort as OpenAIReasoningEffort | undefined,
     advisorTool: route.advisorTool,
     disableUsageTracking: true,

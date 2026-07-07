@@ -31,13 +31,17 @@ vi.mock("../packages/llm/src/anthropic.js", () => ({
   }))
 }));
 
-vi.mock("../packages/llm/src/openai.js", () => ({
-  createOpenAIClient: createOpenAIClientMock.mockImplementation(() => ({
-    responses: {
-      create: responsesCreateMock
-    }
-  }))
-}));
+vi.mock("../packages/llm/src/openai.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../packages/llm/src/openai.js")>();
+  return {
+    ...actual,
+    createOpenAIClient: createOpenAIClientMock.mockImplementation(() => ({
+      responses: {
+        create: responsesCreateMock
+      }
+    }))
+  };
+});
 
 vi.mock("../packages/llm/src/rate-limiter.js", () => ({
   enforceRepoRateLimit: enforceRepoRateLimitMock
@@ -55,6 +59,7 @@ import {
   OPENAI_MODEL_IDS,
   LLMClient
 } from "../packages/llm/src/client.js";
+import { resolveOpenAIBaseURL } from "../packages/llm/src/openai.js";
 
 describe("LLMClient", () => {
   beforeEach(() => {
@@ -495,6 +500,35 @@ describe("LLMClient", () => {
       expect.objectContaining({ model: "gpt-5.4", store: false }),
       undefined
     );
+  });
+
+  it("configures the OpenAI SDK with an Azure OpenAI v1 base URL", async () => {
+    const client = new LLMClient({
+      provider: "openai",
+      mode: "platform",
+      platformApiKey: "azure-openai-key",
+      openAIBaseURL: "https://mosaicopenai.openai.azure.com/openai/v1/",
+      model: OPENAI_MODEL_IDS.frontier,
+      disableUsageTracking: true
+    });
+
+    await client.complete("system", "user");
+
+    expect(createOpenAIClientMock).toHaveBeenCalledWith("azure-openai-key", {
+      baseURL: "https://mosaicopenai.openai.azure.com/openai/v1/"
+    });
+    expect(responsesCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gpt-5.5" }),
+      undefined
+    );
+  });
+
+  it.each([
+    [undefined, "https://mosaicopenai.openai.azure.com/", "https://mosaicopenai.openai.azure.com/openai/v1/"],
+    [undefined, "https://mosaicopenai.openai.azure.com/openai/v1", "https://mosaicopenai.openai.azure.com/openai/v1/"],
+    ["https://proxy.example.test/openai/v1", "https://mosaicopenai.openai.azure.com/", "https://proxy.example.test/openai/v1/"]
+  ])("normalizes OpenAI base URLs for Azure endpoint config", (baseURL, azureEndpoint, expected) => {
+    expect(resolveOpenAIBaseURL(baseURL, azureEndpoint)).toBe(expected);
   });
 
   it("records usage and rejects partial OpenAI output when max_output_tokens is reached", async () => {

@@ -20,6 +20,16 @@ MOSAIC_LLM_PROVIDER=openai
 OPENAI_API_KEY=your-openai-key
 ```
 
+Azure OpenAI / Microsoft Foundry Models configuration:
+
+```dotenv
+MOSAIC_LLM_PROVIDER=openai
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+AZURE_OPENAI_API_KEY=your-azure-openai-key
+# Optional: force every OpenAI route to one Azure deployment name.
+MOSAIC_OPENAI_MODEL=gpt-5.5
+```
+
 Restart the pipeline worker after changing the environment. To roll back, set
 `MOSAIC_LLM_PROVIDER=anthropic` and restart. You may leave both provider keys in
 your secret manager; Mosaic reads only the selected platform key.
@@ -75,6 +85,10 @@ configuration. If `provider` is omitted, the repository inherits
 OpenAI classification begins on `gpt-5.4-mini`; non-trivial classifications are
 re-run on their final routed model. Planning, generation, structured-output
 repair, validation repair, and verification repair all use the same final route.
+When `MOSAIC_OPENAI_MODEL` is set, that value overrides every OpenAI route at
+client creation time. This is intended for Azure deployments where the request
+`model` must be the deployment name and the account only has one deployed model,
+for example a `gpt-5.5` deployment on Azure for Students.
 
 OpenAI does not expose an Anthropic-style advisor tool. Mosaic therefore makes
 no synthetic advisor call: GPT-5.5 itself handles review-heavy quality work, and
@@ -107,6 +121,13 @@ preventing default response storage. Prompts remain split into top-level
 `instructions` and `input`. OpenAI reasoning effort replaces temperature as the
 primary quality control for these GPT-5 models; Mosaic retains the existing
 temperature behavior on Anthropic.
+
+For Azure OpenAI, set `AZURE_OPENAI_ENDPOINT` to the resource endpoint from
+Azure's **Keys and Endpoint** page. Mosaic normalizes that endpoint to the
+Microsoft Foundry v1 API shape, `https://<resource>.openai.azure.com/openai/v1/`,
+and uses `AZURE_OPENAI_API_KEY` as the OpenAI SDK key. `OPENAI_BASE_URL` is also
+supported for proxies or non-Azure OpenAI-compatible endpoints and takes
+precedence over `AZURE_OPENAI_ENDPOINT`.
 
 ## Guardrails and operational behavior
 

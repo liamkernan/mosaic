@@ -62,6 +62,10 @@ const envSchema = z.object({
   REDIS_URL: z.string().url().default("redis://localhost:6379"),
   ANTHROPIC_API_KEY: optionalNonEmptyString(),
   OPENAI_API_KEY: optionalNonEmptyString(),
+  OPENAI_BASE_URL: optionalNonEmptyString(),
+  AZURE_OPENAI_API_KEY: optionalNonEmptyString(),
+  AZURE_OPENAI_ENDPOINT: optionalNonEmptyString(),
+  MOSAIC_OPENAI_MODEL: optionalNonEmptyString(),
   MOSAIC_LLM_PROVIDER: z.enum(["anthropic", "openai"]).default("anthropic"),
   EMAIL_IMAP_HOST: optionalNonEmptyString(),
   EMAIL_IMAP_PORT: z.coerce.number().int().positive().default(993),
@@ -138,7 +142,7 @@ export const llmProviderOptions = [
   {
     value: "openai",
     label: "OpenAI",
-    description: "Uses GPT-5.5, GPT-5.4, and GPT-5.4 mini through the Responses API."
+    description: "Uses GPT-5.5, GPT-5.4, and GPT-5.4 mini through the Responses API, including Azure OpenAI v1-compatible endpoints."
   }
 ] as const satisfies ReadonlyArray<{
   value: LLMProvider;

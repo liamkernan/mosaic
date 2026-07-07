@@ -6,6 +6,7 @@ import {
   ANTHROPIC_MODEL_IDS,
   LLMClient,
   OPENAI_MODEL_IDS,
+  resolveOpenAIBaseURL,
   type AdvisorToolOptions,
   type OpenAIReasoningEffort
 } from "@mosaic/llm";
@@ -163,14 +164,16 @@ export class FeedbackPipelineWorker {
     advisorTool?: AdvisorToolOptions
   ): LLMClient {
     const env = getEnv();
+    const isOpenAI = provider === "openai";
     return this.llmClientFactory({
       provider,
       mode,
       apiKey,
-      platformApiKey: provider === "openai" ? env.OPENAI_API_KEY : env.ANTHROPIC_API_KEY,
-      model,
+      platformApiKey: isOpenAI ? env.AZURE_OPENAI_API_KEY ?? env.OPENAI_API_KEY : env.ANTHROPIC_API_KEY,
+      openAIBaseURL: isOpenAI ? resolveOpenAIBaseURL(env.OPENAI_BASE_URL, env.AZURE_OPENAI_ENDPOINT) : undefined,
+      model: isOpenAI ? env.MOSAIC_OPENAI_MODEL ?? model : model,
       reasoningEffort,
-      advisorTool: provider === "anthropic" ? advisorTool : undefined
+      advisorTool: isOpenAI ? undefined : advisorTool
     });
   }
 

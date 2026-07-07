@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { resetEnvForTests } from "../packages/core/src/config.js";
 import type { FeedbackItem, RepoContext } from "../packages/core/src/types.js";
 import { LLMClient } from "../packages/llm/src/client.js";
 import type { ArtifactRecord } from "../packages/pipeline/src/artifact-store.js";
@@ -66,6 +67,11 @@ function workerDependencies(classification: Record<string, unknown>) {
 }
 
 describe("FeedbackPipelineWorker", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetEnvForTests();
+  });
+
   it("skips feedback that already has a recorded artifact", async () => {
     const setup = workerDependencies({});
     setup.getArtifact.mockResolvedValue({
@@ -138,5 +144,35 @@ describe("FeedbackPipelineWorker", () => {
       outcome: "succeeded",
       reason: "Quarantined feedback because unsafe content"
     });
+  });
+
+  it("uses Azure OpenAI endpoint, key, and deployment override for OpenAI repos", async () => {
+    vi.stubEnv("AZURE_OPENAI_API_KEY", "azure-openai-key");
+    vi.stubEnv("OPENAI_API_KEY", "generic-openai-key");
+    vi.stubEnv("AZURE_OPENAI_ENDPOINT", "https://mosaicopenai.openai.azure.com/");
+    vi.stubEnv("MOSAIC_OPENAI_MODEL", "gpt-5.5");
+    resetEnvForTests();
+
+    const setup = workerDependencies({
+      category: "other",
+      complexity: "simple",
+      summary: "Needs unsupported work",
+      relevantFiles: [],
+      confidence: 0.95
+    });
+    setup.dependencies.loadRepoRuntimeConfig = vi.fn(async () => ({
+      repoFullName: "owner/repo",
+      ...defaultRuntimeConfig,
+      llmProvider: "openai"
+    }));
+
+    await new FeedbackPipelineWorker(setup.dependencies).process(feedback);
+
+    expect(setup.dependencies.createLlmClient).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "openai",
+      platformApiKey: "azure-openai-key",
+      openAIBaseURL: "https://mosaicopenai.openai.azure.com/openai/v1/",
+      model: "gpt-5.5"
+    }));
   });
 });

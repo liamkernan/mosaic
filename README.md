@@ -333,6 +333,11 @@ continue to use `MOSAIC_LLM_KEY` for whichever provider they select. See
 [LLM provider switching](docs/LLM_PROVIDERS.md) for the complete API mapping,
 routing table, rollback steps, and advisor behavior.
 
+For Azure OpenAI / Microsoft Foundry Models, keep `MOSAIC_LLM_PROVIDER=openai`
+and set `AZURE_OPENAI_ENDPOINT` plus `AZURE_OPENAI_API_KEY`. Azure uses the
+deployment name as the request `model`; set `MOSAIC_OPENAI_MODEL=gpt-5.5` when
+the account has a single GPT-5.5 deployment.
+
 ## Scripts
 
 - `pnpm dev`: runs Redis, webhook forwarding via Smee, intake server, pipeline worker, GitHub App, Discord bot, and Slack bot.

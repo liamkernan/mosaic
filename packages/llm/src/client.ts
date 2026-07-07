@@ -43,6 +43,7 @@ export interface LLMClientOptions {
   mode: LLMKeyMode;
   apiKey?: string;
   platformApiKey?: string;
+  openAIBaseURL?: string;
   model?: string;
   advisorTool?: AdvisorToolOptions;
   reasoningEffort?: OpenAIReasoningEffort;
@@ -301,6 +302,7 @@ export class LLMClient {
     mode,
     apiKey,
     platformApiKey,
+    openAIBaseURL,
     model,
     advisorTool,
     reasoningEffort,
@@ -315,7 +317,9 @@ export class LLMClient {
 
     this.provider = provider;
     if (provider === "openai") {
-      this.openaiClient = createOpenAIClient(resolvedApiKey);
+      this.openaiClient = openAIBaseURL
+        ? createOpenAIClient(resolvedApiKey, { baseURL: openAIBaseURL })
+        : createOpenAIClient(resolvedApiKey);
     } else {
       this.anthropicClient = createAnthropicClient(resolvedApiKey);
     }
