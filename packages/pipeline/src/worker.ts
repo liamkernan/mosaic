@@ -731,8 +731,8 @@ export class FeedbackPipelineWorker {
         "openai",
         repoConfig.llmKeyMode,
         repoConfig.llmApiKey,
-        OPENAI_MODEL_IDS.mini,
-        "none"
+        OPENAI_MODEL_IDS.luna,
+        "high"
       );
       classifiedFeedback = await new FeedbackClassifier(initialClient).classify(feedbackItem, topLevelFileTree);
       if (classifiedFeedback.complexity !== "trivial") {

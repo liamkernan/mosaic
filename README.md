@@ -313,7 +313,7 @@ Production repo config supports a simple frontend-facing LLM preset at `llm.mode
 
 ```yaml
 llm:
-  provider: anthropic # anthropic | openai; optional when using the global switch
+  provider: openai # openai | anthropic; optional when using the global switch
   mode: platform
   model_preset: quality # quality | balanced
 ```
@@ -322,21 +322,20 @@ Use these values for a segmented control or select:
 
 | Value | Label | Behavior |
 | --- | --- | --- |
-| `quality` | Quality (Recommended) | Anthropic uses Haiku/Sonnet routing, Opus advice for moderate work, and direct Opus 4.8 planning and generation for complex work. OpenAI uses GPT-5.5 for complex and moderate-review-needed work, GPT-5.4 for moderate-safe and simple work, and GPT-5.4 mini for trivial work. |
-| `balanced` | Balanced | Uses cost-conscious provider routing and disables Anthropic advisor calls. |
+| `quality` | Quality (Recommended) | Anthropic uses Haiku/Sonnet routing, Opus advice for moderate work, and direct Opus 4.8 planning and generation for complex work. OpenAI uses GPT-5.6 Sol/xhigh for complex work, Sol/high for moderate review-needed work, Terra/xhigh for moderate-safe work, Terra/high for simple work, and Luna/high for trivial work. |
+| `balanced` | Balanced | Keeps the configured OpenAI tiers; Anthropic uses cost-conscious routing and disables advisor calls. |
 
-Anthropic remains the production default. To switch the hosted platform globally,
-set `MOSAIC_LLM_PROVIDER=openai` and `OPENAI_API_KEY`, then restart the pipeline
-worker. No existing `.env` or repository config is changed automatically. A
-repository can override the global choice with `llm.provider`; BYOK repositories
-continue to use `MOSAIC_LLM_KEY` for whichever provider they select. See
+OpenAI is the production default; set `OPENAI_API_KEY` and restart the pipeline
+worker. A repository can override the global choice with `llm.provider`; BYOK
+repositories continue to use `MOSAIC_LLM_KEY` for whichever provider they
+select. See
 [LLM provider switching](docs/LLM_PROVIDERS.md) for the complete API mapping,
 routing table, rollback steps, and advisor behavior.
 
 For Azure OpenAI / Microsoft Foundry Models, keep `MOSAIC_LLM_PROVIDER=openai`
 and set `AZURE_OPENAI_ENDPOINT` plus `AZURE_OPENAI_API_KEY`. Azure uses the
-deployment name as the request `model`; set `MOSAIC_OPENAI_MODEL=gpt-5.5` when
-the account has a single GPT-5.5 deployment. High-reasoning eval runs can also
+deployment name as the request `model`; set `MOSAIC_OPENAI_MODEL=gpt-5.6-sol` when
+the account has a single GPT-5.6 Sol deployment. High-reasoning eval runs can also
 set `MOSAIC_OPENAI_MIN_OUTPUT_TOKENS` and `MOSAIC_OPENAI_MIN_TIMEOUT_MS` to
 avoid truncating or timing out large patch output.
 

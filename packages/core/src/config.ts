@@ -92,9 +92,9 @@ const envSchema = z.object({
       const trimmed = value.trim();
       return trimmed.length === 0 ? undefined : trimmed;
     },
-    z.enum(["minimal", "low", "medium", "high"]).optional()
+    z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).optional()
   ),
-  MOSAIC_LLM_PROVIDER: z.enum(["anthropic", "openai"]).default("anthropic"),
+  MOSAIC_LLM_PROVIDER: z.enum(["anthropic", "openai"]).default("openai"),
   EMAIL_IMAP_HOST: optionalNonEmptyString(),
   EMAIL_IMAP_PORT: z.coerce.number().int().positive().default(993),
   EMAIL_IMAP_USER: optionalNonEmptyString(),
@@ -170,7 +170,7 @@ export const llmProviderOptions = [
   {
     value: "openai",
     label: "OpenAI",
-    description: "Uses GPT-5.5, GPT-5.4, and GPT-5.4 mini through the Responses API, including Azure OpenAI v1-compatible endpoints."
+    description: "Uses GPT-5.6 Sol, Terra, and Luna through the Responses API, including Azure OpenAI v1-compatible endpoints."
   }
 ] as const satisfies ReadonlyArray<{
   value: LLMProvider;
@@ -182,12 +182,12 @@ export const llmModelPresetOptions = [
   {
     value: "quality",
     label: "Quality (Recommended)",
-    description: "Uses provider-specific quality routing; Anthropic runs complex work on Opus and OpenAI routes review-heavy work to GPT-5.5."
+    description: "Uses provider-specific quality routing; Anthropic runs complex work on Opus and OpenAI uses the configured GPT-5.6 complexity tiers."
   },
   {
     value: "balanced",
     label: "Balanced",
-    description: "Uses cost-conscious provider routing and disables Anthropic advisor calls."
+    description: "Keeps the configured OpenAI tiering; Anthropic uses cost-conscious routing and disables advisor calls."
   }
 ] as const satisfies ReadonlyArray<{
   value: LLMModelPreset;

@@ -15,7 +15,7 @@ export const mosaicConfigSchema = z.object({
     reviewers: z.array(z.string().min(1)).default([])
   }).default({}),
   llm: z.object({
-    provider: llmProviderSchema.default("anthropic"),
+    provider: llmProviderSchema.default("openai"),
     mode: z.enum(["byok", "platform"]).default("byok"),
     model_preset: llmModelPresetSchema.default("quality")
   }).default({}),

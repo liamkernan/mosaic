@@ -48,7 +48,7 @@ export const defaultRuntimeConfig: Omit<RepoRuntimeConfig, "repoFullName"> = {
   intakeSources: ["web_form", "github_issue"],
   allowedCategories: ["bug_report", "copy_change", "ui_tweak"],
   maxComplexity: "simple",
-  llmProvider: "anthropic",
+  llmProvider: "openai",
   llmKeyMode: "platform",
   llmModelPreset: "quality",
   branchPrefix: "mosaic/",
@@ -60,7 +60,7 @@ export const defaultRuntimeConfig: Omit<RepoRuntimeConfig, "repoFullName"> = {
 };
 
 function platformLlmProvider() {
-  return llmProviderSchema.parse(process.env.MOSAIC_LLM_PROVIDER ?? "anthropic");
+  return llmProviderSchema.parse(process.env.MOSAIC_LLM_PROVIDER ?? "openai");
 }
 
 async function resolveRepoConfigPath(repoRoot: string): Promise<string | null> {

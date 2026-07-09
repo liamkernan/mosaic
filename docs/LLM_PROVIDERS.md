@@ -1,23 +1,23 @@
 # LLM provider switching
 
 Mosaic supports Anthropic and OpenAI behind the same production `LLMClient`
-interface. Anthropic remains the default, so existing deployments continue to
-behave exactly as before until a provider is explicitly changed.
+interface. OpenAI is the default; repositories can still explicitly select
+Anthropic when needed.
 
 ## Global platform switch
 
-Current Anthropic configuration:
-
-```dotenv
-MOSAIC_LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=your-anthropic-key
-```
-
-OpenAI configuration:
+Default OpenAI configuration:
 
 ```dotenv
 MOSAIC_LLM_PROVIDER=openai
 OPENAI_API_KEY=your-openai-key
+```
+
+Anthropic override:
+
+```dotenv
+MOSAIC_LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=your-anthropic-key
 ```
 
 Azure OpenAI / Microsoft Foundry Models configuration:
@@ -27,7 +27,7 @@ MOSAIC_LLM_PROVIDER=openai
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_OPENAI_API_KEY=your-azure-openai-key
 # Optional: force every OpenAI route to one Azure deployment name.
-MOSAIC_OPENAI_MODEL=gpt-5.5
+MOSAIC_OPENAI_MODEL=gpt-5.6-sol
 # Optional: force reasoning effort for all OpenAI calls.
 MOSAIC_OPENAI_REASONING_EFFORT=high
 # Optional: raise max_output_tokens for high-reasoning eval runs.
@@ -58,8 +58,9 @@ pnpm eval:local -- \
 ```
 
 OpenAI quality evaluations reuse production routing: review-heavy moderate work
-uses GPT-5.5 with medium reasoning, while complex work uses GPT-5.5 with high
-reasoning. Anthropic remains the harness default when `--provider` is omitted.
+uses GPT-5.6 Sol with high reasoning, while complex work uses GPT-5.6 Sol with
+extra-high reasoning. Anthropic remains the harness default when `--provider`
+is omitted.
 Evaluation oracles stay hidden and immutable for both providers.
 
 ## Per-repository switch and BYOK
@@ -76,25 +77,25 @@ llm:
 With `mode: byok`, put the selected provider's key in `MOSAIC_LLM_KEY`. This
 preserves the existing BYOK contract and avoids storing a key in repository
 configuration. If `provider` is omitted, the repository inherits
-`MOSAIC_LLM_PROVIDER`; if both are omitted, Anthropic is used.
+`MOSAIC_LLM_PROVIDER`; if both are omitted, OpenAI is used.
 
 ## Quality routing
 
 | Work classification | OpenAI model | Reasoning | Anthropic behavior |
 | --- | --- | --- | --- |
-| Trivial | `gpt-5.4-mini` | `none` | Haiku |
-| Simple | `gpt-5.4` | `low` | Haiku unless existing escalation rules apply |
-| Moderate-safe | `gpt-5.4` | `low` | Sonnet 5 |
-| Moderate-review-needed | `gpt-5.5` | `medium` | Sonnet 5 with Opus 4.8 advisor |
-| Complex / complex-review-needed | `gpt-5.5` | `high` | Opus 4.8 |
+| Trivial | `gpt-5.6-luna` | `high` | Haiku |
+| Simple | `gpt-5.6-terra` | `high` | Haiku unless existing escalation rules apply |
+| Moderate-safe | `gpt-5.6-terra` | `xhigh` | Sonnet 5 |
+| Moderate-review-needed | `gpt-5.6-sol` | `high` | Sonnet 5 with Opus 4.8 advisor |
+| Complex / complex-review-needed | `gpt-5.6-sol` | `xhigh` | Opus 4.8 |
 
-OpenAI classification begins on `gpt-5.4-mini`; non-trivial classifications are
+OpenAI classification begins on `gpt-5.6-luna` with high reasoning; non-trivial classifications are
 re-run on their final routed model. Planning, generation, structured-output
 repair, validation repair, and verification repair all use the same final route.
 When `MOSAIC_OPENAI_MODEL` is set, that value overrides every OpenAI route at
 client creation time. This is intended for Azure deployments where the request
 `model` must be the deployment name and the account only has one deployed model,
-for example a `gpt-5.5` deployment on Azure for Students.
+for example a `gpt-5.6-sol` deployment on Azure.
 When `MOSAIC_OPENAI_REASONING_EFFORT` is set, Mosaic uses that effort for every
 OpenAI route. This is mainly useful for controlled evaluations or Azure
 deployments where the selected model supports a narrower reasoning-effort set.
@@ -107,7 +108,7 @@ timeout while preserving higher per-call timeouts. This is useful when large
 high-reasoning responses need more time than the normal frontend repair timeout.
 
 OpenAI does not expose an Anthropic-style advisor tool. Mosaic therefore makes
-no synthetic advisor call: GPT-5.5 itself handles review-heavy quality work, and
+no synthetic advisor call: GPT-5.6 Sol itself handles review-heavy quality work, and
 telemetry records `advisorOffered: false` and `advisorUsed: false`.
 
 ## Direct API mapping
@@ -153,7 +154,7 @@ verification isolation, accessibility checks, or PR creation rules. Provider
 keys are not passed to generated-code verification processes.
 
 The implementation follows the official OpenAI documentation for
-[GPT-5.5](https://developers.openai.com/api/docs/guides/latest-model),
+[GPT-5.6](https://developers.openai.com/api/docs/guides/latest-model),
 [the Responses API](https://developers.openai.com/api/docs/guides/migrate-to-responses),
 [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
 and [streaming lifecycle events](https://developers.openai.com/api/docs/guides/streaming-responses).

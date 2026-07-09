@@ -14,9 +14,9 @@ export const ANTHROPIC_MODEL_IDS = {
 } as const;
 
 export const OPENAI_MODEL_IDS = {
-  frontier: "gpt-5.5",
-  standard: "gpt-5.4",
-  mini: "gpt-5.4-mini"
+  sol: "gpt-5.6-sol",
+  terra: "gpt-5.6-terra",
+  luna: "gpt-5.6-luna"
 } as const;
 
 export type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -339,7 +339,7 @@ export class LLMClient {
     }
     this.openAIMinOutputTokens = provider === "openai" ? openAIMinOutputTokens : undefined;
     this.openAIMinTimeoutMs = provider === "openai" ? openAIMinTimeoutMs : undefined;
-    this.defaultModel = model ?? (provider === "openai" ? OPENAI_MODEL_IDS.standard : ANTHROPIC_MODEL_IDS.sonnet);
+    this.defaultModel = model ?? (provider === "openai" ? OPENAI_MODEL_IDS.terra : ANTHROPIC_MODEL_IDS.sonnet);
     this.advisorTool = provider === "anthropic" ? advisorTool : undefined;
     this.reasoningEffort = reasoningEffort;
     this.disableUsageTracking = disableUsageTracking;

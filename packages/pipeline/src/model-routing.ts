@@ -85,26 +85,30 @@ export function shouldUseAdvisorTool(
 
 export function selectOpenAIModel(
   classifiedFeedback: ClassifiedFeedback,
-  modelPreset: LLMModelPreset = "quality",
+  _modelPreset: LLMModelPreset = "quality",
   reviewMode?: ReviewMode
 ): OpenAIModelSelection {
   if (classifiedFeedback.complexity === "trivial") {
-    return { model: OPENAI_MODEL_IDS.mini, reasoningEffort: "none" };
+    return { model: OPENAI_MODEL_IDS.luna, reasoningEffort: "high" };
   }
 
-  if (modelPreset === "quality" && (
-    classifiedFeedback.complexity === "complex" ||
-    reviewMode === "moderate-review-needed" ||
-    reviewMode === "complex-review-needed"
-  )) {
+  if (classifiedFeedback.complexity === "complex") {
     return {
-      model: OPENAI_MODEL_IDS.frontier,
-      reasoningEffort: classifiedFeedback.complexity === "complex" ? "high" : "medium"
+      model: OPENAI_MODEL_IDS.sol,
+      reasoningEffort: "xhigh"
     };
   }
 
+  if (reviewMode === "moderate-review-needed" || reviewMode === "complex-review-needed") {
+    return { model: OPENAI_MODEL_IDS.sol, reasoningEffort: "high" };
+  }
+
+  if (classifiedFeedback.complexity === "moderate") {
+    return { model: OPENAI_MODEL_IDS.terra, reasoningEffort: "xhigh" };
+  }
+
   return {
-    model: OPENAI_MODEL_IDS.standard,
-    reasoningEffort: "low"
+    model: OPENAI_MODEL_IDS.terra,
+    reasoningEffort: "high"
   };
 }

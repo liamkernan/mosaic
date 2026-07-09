@@ -440,7 +440,7 @@ describe("LLMClient", () => {
       provider: "openai",
       mode: "platform",
       platformApiKey: "openai-test-key",
-      model: OPENAI_MODEL_IDS.frontier,
+      model: OPENAI_MODEL_IDS.sol,
       reasoningEffort: "high",
       advisorTool: {
         model: ANTHROPIC_ADVISOR_MODEL_ID,
@@ -455,7 +455,7 @@ describe("LLMClient", () => {
 
     expect(createOpenAIClientMock).toHaveBeenCalledWith("openai-test-key");
     expect(responsesCreateMock).toHaveBeenCalledWith({
-      model: "gpt-5.5",
+      model: "gpt-5.6-sol",
       instructions: "system",
       input: "user",
       max_output_tokens: 900,
@@ -464,12 +464,12 @@ describe("LLMClient", () => {
       store: false
     }, { timeout: 1234 });
     expect(authorizeRequest).toHaveBeenCalledWith(expect.objectContaining({
-      model: "gpt-5.5",
+      model: "gpt-5.6-sol",
       maxOutputTokens: 900
     }));
     expect(authorizeRequest.mock.calls[0]?.[0]).not.toHaveProperty("advisorModel");
     expect(observeUsage).toHaveBeenCalledWith(expect.objectContaining({
-      model: "gpt-5.5",
+      model: "gpt-5.6-sol",
       inputTokens: 10,
       outputTokens: 5,
       cacheReadInputTokens: 2,
@@ -477,7 +477,7 @@ describe("LLMClient", () => {
       advisorUsed: false,
       iterations: [{
         type: "message",
-        model: "gpt-5.5",
+        model: "gpt-5.6-sol",
         inputTokens: 10,
         outputTokens: 5,
         cacheReadInputTokens: 2,
@@ -498,7 +498,7 @@ describe("LLMClient", () => {
 
     expect(createOpenAIClientMock).toHaveBeenCalledWith("repo-openai-key");
     expect(responsesCreateMock).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "gpt-5.4", store: false }),
+      expect.objectContaining({ model: "gpt-5.6-terra", store: false }),
       undefined
     );
   });
@@ -509,7 +509,7 @@ describe("LLMClient", () => {
       mode: "platform",
       platformApiKey: "azure-openai-key",
       openAIBaseURL: "https://mosaicopenai.openai.azure.com/openai/v1/",
-      model: OPENAI_MODEL_IDS.frontier,
+      model: OPENAI_MODEL_IDS.sol,
       disableUsageTracking: true
     });
 
@@ -519,7 +519,7 @@ describe("LLMClient", () => {
       baseURL: "https://mosaicopenai.openai.azure.com/openai/v1/"
     });
     expect(responsesCreateMock).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "gpt-5.5" }),
+      expect.objectContaining({ model: "gpt-5.6-sol" }),
       undefined
     );
   });
@@ -598,7 +598,7 @@ describe("LLMClient", () => {
       provider: "openai",
       mode: "platform",
       platformApiKey: "openai-test-key",
-      model: OPENAI_MODEL_IDS.frontier,
+      model: OPENAI_MODEL_IDS.sol,
       disableUsageTracking: true,
       observeUsage
     });

@@ -27,15 +27,15 @@ describe("core config helpers", () => {
     expect(llmModelPresetOptions.map((option) => option.label)).toEqual(["Quality (Recommended)", "Balanced"]);
   });
 
-  it("keeps Anthropic as the default provider and accepts an explicit OpenAI switch", () => {
+  it("uses OpenAI as the default provider and accepts an explicit Anthropic switch", () => {
     vi.stubEnv("MOSAIC_LLM_PROVIDER", undefined);
     resetEnvForTests();
-    expect(getEnv().MOSAIC_LLM_PROVIDER).toBe("anthropic");
+    expect(getEnv().MOSAIC_LLM_PROVIDER).toBe("openai");
     expect(llmProviderOptions.map((option) => option.value)).toEqual(["anthropic", "openai"]);
 
-    vi.stubEnv("MOSAIC_LLM_PROVIDER", "openai");
+    vi.stubEnv("MOSAIC_LLM_PROVIDER", "anthropic");
     resetEnvForTests();
-    expect(getEnv().MOSAIC_LLM_PROVIDER).toBe("openai");
+    expect(getEnv().MOSAIC_LLM_PROVIDER).toBe("anthropic");
 
   });
 
@@ -48,6 +48,10 @@ describe("core config helpers", () => {
     expect(getEnv().MOSAIC_OPENAI_MIN_OUTPUT_TOKENS).toBe(16_384);
     expect(getEnv().MOSAIC_OPENAI_MIN_TIMEOUT_MS).toBe(300_000);
     expect(getEnv().MOSAIC_OPENAI_REASONING_EFFORT).toBe("high");
+
+    vi.stubEnv("MOSAIC_OPENAI_REASONING_EFFORT", "xhigh");
+    resetEnvForTests();
+    expect(getEnv().MOSAIC_OPENAI_REASONING_EFFORT).toBe("xhigh");
 
     vi.stubEnv("MOSAIC_OPENAI_MIN_OUTPUT_TOKENS", "");
     vi.stubEnv("MOSAIC_OPENAI_MIN_TIMEOUT_MS", "");

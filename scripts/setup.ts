@@ -20,8 +20,8 @@ async function main(): Promise<void> {
   const githubAppId = await rl.question("GitHub App ID: ");
   const webhookSecret = await rl.question("GitHub webhook secret: ");
   const redisUrl = await rl.question("Redis URL [redis://localhost:6379]: ");
-  const providerInput = await rl.question("LLM provider [anthropic]: ");
-  const provider = providerInput.trim().toLowerCase() === "openai" ? "openai" : "anthropic";
+  const providerInput = await rl.question("LLM provider [openai]: ");
+  const provider = providerInput.trim().toLowerCase() === "anthropic" ? "anthropic" : "openai";
   const anthropicKey = provider === "anthropic" ? await rl.question("Anthropic API key (optional): ") : "";
   const openAIKey = provider === "openai" ? await rl.question("OpenAI API key (optional): ") : "";
   const azureOpenAIEndpoint = provider === "openai" ? await rl.question("Azure OpenAI endpoint (optional): ") : "";

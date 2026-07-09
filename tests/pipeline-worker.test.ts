@@ -150,7 +150,7 @@ describe("FeedbackPipelineWorker", () => {
     vi.stubEnv("AZURE_OPENAI_API_KEY", "azure-openai-key");
     vi.stubEnv("OPENAI_API_KEY", "generic-openai-key");
     vi.stubEnv("AZURE_OPENAI_ENDPOINT", "https://mosaicopenai.openai.azure.com/");
-    vi.stubEnv("MOSAIC_OPENAI_MODEL", "gpt-5.5");
+    vi.stubEnv("MOSAIC_OPENAI_MODEL", "gpt-5.6-sol");
     vi.stubEnv("MOSAIC_OPENAI_REASONING_EFFORT", "high");
     vi.stubEnv("MOSAIC_OPENAI_MIN_OUTPUT_TOKENS", "16384");
     vi.stubEnv("MOSAIC_OPENAI_MIN_TIMEOUT_MS", "300000");
@@ -177,7 +177,7 @@ describe("FeedbackPipelineWorker", () => {
       openAIBaseURL: "https://mosaicopenai.openai.azure.com/openai/v1/",
       openAIMinOutputTokens: 16_384,
       openAIMinTimeoutMs: 300_000,
-      model: "gpt-5.5",
+      model: "gpt-5.6-sol",
       reasoningEffort: "high"
     }));
   });

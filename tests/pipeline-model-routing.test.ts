@@ -178,15 +178,22 @@ describe("model routing", () => {
   });
 
   it.each([
-    ["trivial", undefined, "gpt-5.4-mini", "none"],
-    ["simple", undefined, "gpt-5.4", "low"],
-    ["moderate", "moderate-safe", "gpt-5.4", "low"],
-    ["moderate", "moderate-review-needed", "gpt-5.5", "medium"],
-    ["complex", "complex-review-needed", "gpt-5.5", "high"]
+    ["trivial", undefined, "gpt-5.6-luna", "high"],
+    ["simple", undefined, "gpt-5.6-terra", "high"],
+    ["moderate", "moderate-safe", "gpt-5.6-terra", "xhigh"],
+    ["moderate", "moderate-review-needed", "gpt-5.6-sol", "high"],
+    ["complex", "complex-review-needed", "gpt-5.6-sol", "xhigh"]
   ] as const)("routes %s OpenAI quality work", (complexity, issueMode, model, reasoningEffort) => {
     expect(selectOpenAIModel({ ...baseFeedback, complexity }, "quality", issueMode)).toEqual({
       model,
       reasoningEffort
+    });
+  });
+
+  it("keeps the configured OpenAI tiers when the balanced preset is selected", () => {
+    expect(selectOpenAIModel({ ...baseFeedback, complexity: "moderate" }, "balanced", "moderate-safe")).toEqual({
+      model: "gpt-5.6-terra",
+      reasoningEffort: "xhigh"
     });
   });
 });

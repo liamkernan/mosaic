@@ -28,7 +28,7 @@ describe("repo runtime config", () => {
     const repoRoot = await makeRepoConfig();
 
     await expect(loadRepoRuntimeConfig(repoRoot, "owner/repo")).resolves.toMatchObject({
-      llmProvider: "anthropic",
+      llmProvider: "openai",
       llmModelPreset: "quality"
     });
   });
