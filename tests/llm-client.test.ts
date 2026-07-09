@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type * as OpenAIClientModule from "../packages/llm/src/openai.js";
 
 const {
   streamMock,
@@ -32,7 +33,7 @@ vi.mock("../packages/llm/src/anthropic.js", () => ({
 }));
 
 vi.mock("../packages/llm/src/openai.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../packages/llm/src/openai.js")>();
+  const actual = await importOriginal<typeof OpenAIClientModule>();
   return {
     ...actual,
     createOpenAIClient: createOpenAIClientMock.mockImplementation(() => ({
