@@ -75,11 +75,14 @@ export function validateImplementationPlan(
   feedback: ClassifiedFeedback
 ): string[] {
   const endpoint = `${feedback.summary}\n${feedback.rawContent}`.match(endpointPattern)?.[1];
+  const errors: string[] = [];
+  if (plan.requiredFiles.length === 0) {
+    errors.push("Implementation plan must identify at least one required file");
+  }
   if (!endpoint) {
-    return [];
+    return errors;
   }
 
-  const errors: string[] = [];
   const planText = JSON.stringify(plan).toLowerCase();
   const runtimeFiles = plan.requiredFiles.filter((file) => !testPathPattern.test(file.path));
   const testFiles = plan.requiredFiles.filter((file) => testPathPattern.test(file.path));

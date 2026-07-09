@@ -6,6 +6,7 @@ import type { PipelineLlmClient } from "./pipeline-llm-client.js";
 import { buildGenerationPrompt } from "./prompts/generate.prompt.js";
 import { buildGenerationRepairPrompt, buildValidationRepairPrompt } from "./prompts/repair-generate.prompt.js";
 import type { ImplementationPlan } from "./implementation-planner.js";
+import { normalizeRepoRelativePath } from "./repo-paths.js";
 
 const GENERATION_TIMEOUT_MS = 180_000;
 const STATIC_FRONTEND_GENERATION_TIMEOUT_MS = 45_000;
@@ -606,12 +607,19 @@ export class CodeGenerator {
 
   private toGeneratedChanges(
     parsed: Array<{ filePath: string; modifiedContent?: string; search?: string; replace?: string; explanation: string }>,
-    relevantFiles: RelevantFile[]
+    relevantFiles: RelevantFile[],
+    fileTree: string[]
   ): GeneratedChange[] {
     const originals = new Map<string, string>();
     for (const file of relevantFiles) {
-      originals.set(file.path, file.content);
+      const filePath = normalizeRepoRelativePath(file.path);
+      if (filePath) {
+        originals.set(filePath, file.content);
+      }
     }
+    const knownExistingPaths = new Set(fileTree
+      .map((filePath) => normalizeRepoRelativePath(filePath))
+      .filter((filePath): filePath is string => filePath !== null));
 
     const workingFiles = new Map<string, {
       originalContent: string;
@@ -620,28 +628,36 @@ export class CodeGenerator {
     }>();
 
     for (const change of parsed) {
-      const existing = workingFiles.get(change.filePath);
-      const originalContent = existing?.originalContent ?? originals.get(change.filePath) ?? "";
+      const filePath = normalizeRepoRelativePath(change.filePath);
+      if (!filePath) {
+        throw new LLMError(`Change used an unsafe file path: ${change.filePath}`);
+      }
+
+      const existing = workingFiles.get(filePath);
+      const originalContent = existing?.originalContent ?? originals.get(filePath) ?? "";
       const currentContent = existing?.modifiedContent ?? originalContent;
       let nextContent: string;
       if (change.modifiedContent !== undefined) {
+        if (!existing && !originals.has(filePath) && knownExistingPaths.has(filePath)) {
+          throw new LLMError(`Full-file change cannot replace unloaded existing file ${filePath}`);
+        }
         nextContent = change.modifiedContent;
       } else {
         if (change.search === undefined || change.replace === undefined) {
-          throw new LLMError(`Change for ${change.filePath} did not include modifiedContent or search/replace edit`);
+          throw new LLMError(`Change for ${filePath} did not include modifiedContent or search/replace edit`);
         }
 
-        if (!existing && !originals.has(change.filePath)) {
-          throw new LLMError(`Search/replace edit cannot create new file ${change.filePath}`);
+        if (!existing && !originals.has(filePath)) {
+          throw new LLMError(`Search/replace edit cannot create new file ${filePath}`);
         }
 
         const firstIndex = currentContent.indexOf(change.search);
         if (firstIndex === -1) {
-          throw new LLMError(`Search block for ${change.filePath} was not found exactly once`);
+          throw new LLMError(`Search block for ${filePath} was not found exactly once`);
         }
 
         if (currentContent.indexOf(change.search, firstIndex + change.search.length) !== -1) {
-          throw new LLMError(`Search block for ${change.filePath} matched more than once`);
+          throw new LLMError(`Search block for ${filePath} matched more than once`);
         }
 
         nextContent = currentContent.slice(0, firstIndex) + change.replace + currentContent.slice(firstIndex + change.search.length);
@@ -651,7 +667,7 @@ export class CodeGenerator {
       if (currentContent !== nextContent && !explanations.includes(change.explanation)) {
         explanations.push(change.explanation);
       }
-      workingFiles.set(change.filePath, {
+      workingFiles.set(filePath, {
         originalContent,
         modifiedContent: nextContent,
         explanations
@@ -749,11 +765,12 @@ export class CodeGenerator {
         }
       );
 
+      response = repairedResponse;
       parsed = parseGeneratedChanges(repairedResponse);
     }
 
     try {
-      return this.toGeneratedChanges(parsed, relevantFiles);
+      return this.toGeneratedChanges(parsed, relevantFiles, fileTree);
     } catch (error) {
       if (!(error instanceof LLMError) || !error.message.startsWith("Search block for ")) {
         throw error;
@@ -768,7 +785,7 @@ export class CodeGenerator {
           timeoutMs: GENERATION_TIMEOUT_MS
         }
       );
-      return this.toGeneratedChanges(parseGeneratedChanges(reanchoredResponse), relevantFiles);
+      return this.toGeneratedChanges(parseGeneratedChanges(reanchoredResponse), relevantFiles, fileTree);
     }
   }
 
@@ -803,6 +820,6 @@ export class CodeGenerator {
       }
     );
 
-    return this.toGeneratedChanges(parseGeneratedChanges(response), relevantFiles);
+    return this.toGeneratedChanges(parseGeneratedChanges(response), relevantFiles, fileTree);
   }
 }

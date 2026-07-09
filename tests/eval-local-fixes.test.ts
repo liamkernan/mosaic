@@ -41,6 +41,20 @@ describe("local fix evaluation harness", () => {
     expect(source).toContain("routes.generation");
   });
 
+  it("hydrates and re-partitions context selected by check-repair planning", async () => {
+    const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
+    const checkRepairStart = source.indexOf("const repairedImplementationPlan");
+    const checkRepairEnd = source.indexOf("const generator = new CodeGenerator", checkRepairStart);
+    const checkRepairPlanning = source.slice(checkRepairStart, checkRepairEnd);
+
+    expect(checkRepairPlanning).toContain("const loadedPaths = new Set(relevantFiles.map((file) => file.path))");
+    expect(checkRepairPlanning).toContain("repoIndexer.readFiles(");
+    expect(checkRepairPlanning).toContain("implementationPlan.requiredFiles.filter((file) => !loadedPaths.has(file.path))");
+    expect(checkRepairPlanning).toContain("relevantFiles = mergeFiles(relevantFiles, plannedFiles)");
+    expect(checkRepairPlanning).toContain("relevantFiles = partitionVisibleContext(");
+    expect(checkRepairPlanning).toContain("evalCase.oracleTestPathPrefixes ?? []");
+  });
+
   it("uses the source-of-truth seven-minute case timeout", () => {
     expect(DEFAULT_EVAL_CASE_TIMEOUT_MS).toBe(420_000);
   });

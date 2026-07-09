@@ -135,6 +135,10 @@ function startsWithJsonArray(response: string): boolean {
   return false;
 }
 
+function isExplicitEmptyChangesPayload(response: string): boolean {
+  return /^<changes>\s*<\/changes>$/i.test(response.trim());
+}
+
 export function parseGeneratedChanges(response: string): GeneratedChangeResponse[] {
   if (startsWithJsonArray(response)) {
     try {
@@ -145,7 +149,7 @@ export function parseGeneratedChanges(response: string): GeneratedChangeResponse
   }
 
   const taggedChanges = parseTaggedChanges(response);
-  if (taggedChanges.length > 0) {
+  if (taggedChanges.length > 0 || isExplicitEmptyChangesPayload(response)) {
     return taggedChanges;
   }
 

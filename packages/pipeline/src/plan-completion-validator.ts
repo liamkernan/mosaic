@@ -451,11 +451,10 @@ function planRequiresBehavioralTests(plan: ImplementationPlan, text: string): bo
   return behavioralKeywords.test(text) && (checklistRequestsTestChanges || requiredTestFileChange);
 }
 
-function planRequiresRuntimeChange(plan: ImplementationPlan): boolean {
-  return plan.requiredFiles.some((file) =>
-    !testPathPattern.test(file.path) &&
-    !documentationPathPattern.test(file.path)
-  );
+function plannedRuntimePaths(plan: ImplementationPlan): Set<string> {
+  return new Set(plan.requiredFiles
+    .map((file) => normalizeRepoPath(file.path))
+    .filter((path) => !testPathPattern.test(path) && !documentationPathPattern.test(path)));
 }
 
 function missingRequiredFrontendLayerErrors(
@@ -633,12 +632,16 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
   errors.push(...missingRequiredFrontendLayerErrors(changes, plan));
 
   const { testChanges, runtimeChanges, runtimeChangeFacts } = collectCompletionChangeGroups(changes);
+  const requiredRuntimePaths = plannedRuntimePaths(plan);
   if (planRequiresBehavioralTests(plan, text) && testChanges.length === 0) {
     errors.push("Implementation plan requires behavioral test coverage, but the generated change does not modify any test/spec file");
   }
 
-  if (planRequiresRuntimeChange(plan) && runtimeChanges.length === 0) {
+  if (requiredRuntimePaths.size > 0 && runtimeChanges.length === 0) {
     errors.push("Implementation plan requires runtime/source changes, but the generated change only modifies tests or documentation");
+  }
+  if (requiredRuntimePaths.size > 0 && !changes.some((change) => requiredRuntimePaths.has(normalizeRepoPath(change.filePath)))) {
+    errors.push("Implementation plan requires a change to at least one planned runtime/source file, but generated changes only add companion files");
   }
 
   const requiredEndpointPaths = extractEndpointPaths(sourceText);

@@ -38,6 +38,35 @@ describe("ImplementationPlanner", () => {
     ]);
   });
 
+  it("repairs an empty non-endpoint plan before generation", async () => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce("{}")
+      .mockResolvedValueOnce(JSON.stringify({
+        requiredFiles: [{ path: "src/service.ts", reason: "fix the reported behavior" }],
+        acceptanceCriteria: ["The reported service behavior is corrected."],
+        implementationChecklist: ["Update the service implementation."],
+        verificationChecklist: ["Run the focused service tests."],
+        verificationCommands: ["pnpm test"]
+      }));
+
+    const plan = await new ImplementationPlanner(createPipelineLlmClient(complete)).plan(
+      buildClassifiedFeedback({
+        rawContent: "Fix the service behavior",
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Fix the service behavior",
+        relevantFiles: ["src/service.ts"],
+        confidence: 0.8
+      }),
+      [],
+      ["src/service.ts"]
+    );
+
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1]?.[0]).toContain("Implementation plan must identify at least one required file");
+    expect(plan.requiredFiles).toEqual([{ path: "src/service.ts", reason: "fix the reported behavior" }]);
+  });
+
   it("repairs an endpoint plan that omits required test work before generation", async () => {
     const complete = vi.fn()
       .mockResolvedValueOnce(JSON.stringify({

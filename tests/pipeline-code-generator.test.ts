@@ -202,6 +202,79 @@ export const target = "new";
     ]);
   });
 
+  it("returns no changes when generation explicitly declines an unsafe edit", async () => {
+    const complete = vi.fn(async () => "<changes></changes>");
+
+    const changes = await new CodeGenerator(createPipelineLlmClient(complete)).generate(
+      buildClassifiedFeedback({
+        rawContent: "Make an unsafe change",
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Make an unsafe change",
+        relevantFiles: ["index.html"],
+        confidence: 0.8
+      }),
+      [{ path: "index.html", content: "<main></main>", reason: "markup" }],
+      ["index.html"]
+    );
+
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(changes).toEqual([]);
+  });
+
+  it("rejects full replacements for existing files that were not loaded", async () => {
+    const fakeClient = createPipelineLlmClient(async () => `<changes>
+  <change>
+    <filePath>src/unloaded.ts</filePath>
+    <modifiedContent><![CDATA[export const overwritten = true;\n]]></modifiedContent>
+    <explanation>Replace the unloaded source file.</explanation>
+  </change>
+</changes>`);
+
+    await expect(new CodeGenerator(fakeClient).generate(
+      buildClassifiedFeedback({
+        rawContent: "Change the unloaded source file",
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Change the unloaded source file",
+        relevantFiles: ["index.html"],
+        confidence: 0.8
+      }),
+      [{ path: "index.html", content: "<main></main>", reason: "markup" }],
+      ["index.html", "src/unloaded.ts"]
+    )).rejects.toThrow("Full-file change cannot replace unloaded existing file src/unloaded.ts");
+  });
+
+  it("normalizes JSON change paths before looking up loaded originals", async () => {
+    const fakeClient = createPipelineLlmClient(async () => JSON.stringify([
+      {
+        filePath: " src\\service.ts ",
+        modifiedContent: "export const value = 2;\n",
+        explanation: "Update the value."
+      }
+    ]));
+
+    const changes = await new CodeGenerator(fakeClient).generate(
+      buildClassifiedFeedback({
+        rawContent: "Update the service value",
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Update the service value",
+        relevantFiles: ["src/service.ts"],
+        confidence: 0.8
+      }),
+      [{ path: "src/service.ts", content: "export const value = 1;\n", reason: "implementation" }],
+      ["src/service.ts"]
+    );
+
+    expect(changes).toEqual([{
+      filePath: "src/service.ts",
+      originalContent: "export const value = 1;\n",
+      modifiedContent: "export const value = 2;\n",
+      explanation: "Update the value."
+    }]);
+  });
+
   it("atomically composes multiple ordered edits to the same file", async () => {
     const complete = vi.fn(async () => `<changes>
   <edit>
@@ -372,6 +445,45 @@ export const target = "new";
     expect(complete.mock.calls[1]?.[0]).toContain("STRUCTURED EDIT APPLICATION ERROR");
     expect(complete.mock.calls[1]?.[0]).toContain("<main><p>Repeated</p><p>Repeated</p></main>");
     expect(changes[0]?.modifiedContent).toBe("<main><button>Open</button></main>");
+  });
+
+  it("re-anchors against the repaired structured payload after malformed output", async () => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce("MALFORMED_INITIAL_PAYLOAD")
+      .mockResolvedValueOnce(`<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<footer>stale</footer>]]></search>
+    <replace><![CDATA[<footer>fixed</footer>]]></replace>
+    <explanation>REPAIRED_PAYLOAD_MARKER</explanation>
+  </edit>
+</changes>`)
+      .mockResolvedValueOnce(`<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<main><p>Old</p></main>]]></search>
+    <replace><![CDATA[<main><button type="button">Open</button></main>]]></replace>
+    <explanation>Re-anchor the repaired edit.</explanation>
+  </edit>
+</changes>`);
+
+    const changes = await new CodeGenerator(createPipelineLlmClient(complete)).generate(
+      buildClassifiedFeedback({
+        rawContent: "Add details",
+        category: "feature_request",
+        complexity: "moderate",
+        summary: "Add details",
+        relevantFiles: ["index.html"],
+        confidence: 0.8
+      }),
+      [{ path: "index.html", content: "<main><p>Old</p></main>", reason: "markup" }],
+      ["index.html"]
+    );
+
+    expect(complete).toHaveBeenCalledTimes(3);
+    expect(complete.mock.calls[2]?.[0]).toContain("REPAIRED_PAYLOAD_MARKER");
+    expect(complete.mock.calls[2]?.[0]).not.toContain("MALFORMED_INITIAL_PAYLOAD");
+    expect(changes[0]?.modifiedContent).toBe('<main><button type="button">Open</button></main>');
   });
 
   it("retries static frontend generation with a lean prompt after an LLM timeout", async () => {

@@ -1,4 +1,4 @@
-import { access, mkdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -404,6 +404,44 @@ describe("runVerificationCommands", () => {
     expect(result.valid).toBe(false);
     expect(result.errors.join("\n")).toContain("Unsafe generated change path rejected");
     await expect(access(escapePath)).rejects.toThrow();
+  });
+
+  it("rejects generated writes through leaf symlinks outside the verification repo", async () => {
+    const localPath = await createPythonRepo();
+    const outsidePath = await tempDirs.create("mosaic-verification-outside-");
+    const sentinelPath = join(outsidePath, "sentinel.py");
+    await writeFile(sentinelPath, "outside sentinel\n", "utf8");
+    await symlink(sentinelPath, join(localPath, "linked.py"));
+
+    const result = await runVerificationCommands(
+      [
+        {
+          filePath: "linked.py",
+          originalContent: "outside sentinel\n",
+          modifiedContent: "overwritten\n",
+          explanation: "unsafe symlink write"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      {
+        requiredFiles: [],
+        acceptanceCriteria: [],
+        implementationChecklist: [],
+        verificationChecklist: [],
+        verificationCommands: ["python3 -m unittest tests.reported.test_example"]
+      },
+      fallbackOptions
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("Unsafe generated change path rejected: linked.py");
+    await expect(readFile(sentinelPath, "utf8")).resolves.toBe("outside sentinel\n");
   });
 
   it("runs frontend smoke verification for static site changes without test commands", async () => {

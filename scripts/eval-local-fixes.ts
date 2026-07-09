@@ -1166,6 +1166,17 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
       oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
       generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
     });
+    const loadedPaths = new Set(relevantFiles.map((file) => file.path));
+    const plannedFiles = await repoIndexer.readFiles(
+      repoContext,
+      implementationPlan.requiredFiles.filter((file) => !loadedPaths.has(file.path))
+    );
+    relevantFiles = mergeFiles(relevantFiles, plannedFiles);
+    relevantFiles = partitionVisibleContext(
+      relevantFiles,
+      evalCase.oracleTestPaths ?? [],
+      evalCase.oracleTestPathPrefixes ?? []
+    ).visible;
     await persistArtifacts();
     const generator = new CodeGenerator(createEvalLlmClient(
       options.provider,

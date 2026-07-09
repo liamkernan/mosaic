@@ -103,6 +103,25 @@ export async function resolveRepoWritePath(repoRoot: string, filePath: string): 
     return null;
   }
 
+  try {
+    const targetStat = await lstat(absolutePath);
+    if (targetStat.isSymbolicLink()) {
+      const targetRealPath = await realpath(absolutePath).catch(() => null);
+      if (!targetRealPath || !isWithinRoot(rootRealPath, targetRealPath)) {
+        return null;
+      }
+
+      return {
+        absolutePath: targetRealPath,
+        repoPath
+      };
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      return null;
+    }
+  }
+
   return {
     absolutePath,
     repoPath
