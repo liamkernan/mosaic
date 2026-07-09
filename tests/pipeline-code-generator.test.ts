@@ -222,6 +222,59 @@ export const target = "new";
     expect(changes).toEqual([]);
   });
 
+  it("rejects full replacements for existing files that were not loaded", async () => {
+    const fakeClient = createPipelineLlmClient(async () => `<changes>
+  <change>
+    <filePath>src/unloaded.ts</filePath>
+    <modifiedContent><![CDATA[export const overwritten = true;\n]]></modifiedContent>
+    <explanation>Replace the unloaded source file.</explanation>
+  </change>
+</changes>`);
+
+    await expect(new CodeGenerator(fakeClient).generate(
+      buildClassifiedFeedback({
+        rawContent: "Change the unloaded source file",
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Change the unloaded source file",
+        relevantFiles: ["index.html"],
+        confidence: 0.8
+      }),
+      [{ path: "index.html", content: "<main></main>", reason: "markup" }],
+      ["index.html", "src/unloaded.ts"]
+    )).rejects.toThrow("Full-file change cannot replace unloaded existing file src/unloaded.ts");
+  });
+
+  it("normalizes JSON change paths before looking up loaded originals", async () => {
+    const fakeClient = createPipelineLlmClient(async () => JSON.stringify([
+      {
+        filePath: " src\\service.ts ",
+        modifiedContent: "export const value = 2;\n",
+        explanation: "Update the value."
+      }
+    ]));
+
+    const changes = await new CodeGenerator(fakeClient).generate(
+      buildClassifiedFeedback({
+        rawContent: "Update the service value",
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Update the service value",
+        relevantFiles: ["src/service.ts"],
+        confidence: 0.8
+      }),
+      [{ path: "src/service.ts", content: "export const value = 1;\n", reason: "implementation" }],
+      ["src/service.ts"]
+    );
+
+    expect(changes).toEqual([{
+      filePath: "src/service.ts",
+      originalContent: "export const value = 1;\n",
+      modifiedContent: "export const value = 2;\n",
+      explanation: "Update the value."
+    }]);
+  });
+
   it("atomically composes multiple ordered edits to the same file", async () => {
     const complete = vi.fn(async () => `<changes>
   <edit>
