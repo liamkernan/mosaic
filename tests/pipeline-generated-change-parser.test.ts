@@ -57,6 +57,10 @@ body {
     ]);
   });
 
+  it("accepts the explicit empty changes payload as a safe no-op", () => {
+    expect(parseGeneratedChanges("<changes>\n\n</changes>")).toEqual([]);
+  });
+
   it("preserves mixed change and edit operations in response order", () => {
     const parsed = parseGeneratedChanges(`<changes>
   <edit>

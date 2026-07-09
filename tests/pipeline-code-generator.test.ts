@@ -202,6 +202,26 @@ export const target = "new";
     ]);
   });
 
+  it("returns no changes when generation explicitly declines an unsafe edit", async () => {
+    const complete = vi.fn(async () => "<changes></changes>");
+
+    const changes = await new CodeGenerator(createPipelineLlmClient(complete)).generate(
+      buildClassifiedFeedback({
+        rawContent: "Make an unsafe change",
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Make an unsafe change",
+        relevantFiles: ["index.html"],
+        confidence: 0.8
+      }),
+      [{ path: "index.html", content: "<main></main>", reason: "markup" }],
+      ["index.html"]
+    );
+
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(changes).toEqual([]);
+  });
+
   it("atomically composes multiple ordered edits to the same file", async () => {
     const complete = vi.fn(async () => `<changes>
   <edit>
