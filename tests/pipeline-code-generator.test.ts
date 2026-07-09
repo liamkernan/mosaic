@@ -394,6 +394,45 @@ export const target = "new";
     expect(changes[0]?.modifiedContent).toBe("<main><button>Open</button></main>");
   });
 
+  it("re-anchors against the repaired structured payload after malformed output", async () => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce("MALFORMED_INITIAL_PAYLOAD")
+      .mockResolvedValueOnce(`<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<footer>stale</footer>]]></search>
+    <replace><![CDATA[<footer>fixed</footer>]]></replace>
+    <explanation>REPAIRED_PAYLOAD_MARKER</explanation>
+  </edit>
+</changes>`)
+      .mockResolvedValueOnce(`<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[<main><p>Old</p></main>]]></search>
+    <replace><![CDATA[<main><button type="button">Open</button></main>]]></replace>
+    <explanation>Re-anchor the repaired edit.</explanation>
+  </edit>
+</changes>`);
+
+    const changes = await new CodeGenerator(createPipelineLlmClient(complete)).generate(
+      buildClassifiedFeedback({
+        rawContent: "Add details",
+        category: "feature_request",
+        complexity: "moderate",
+        summary: "Add details",
+        relevantFiles: ["index.html"],
+        confidence: 0.8
+      }),
+      [{ path: "index.html", content: "<main><p>Old</p></main>", reason: "markup" }],
+      ["index.html"]
+    );
+
+    expect(complete).toHaveBeenCalledTimes(3);
+    expect(complete.mock.calls[2]?.[0]).toContain("REPAIRED_PAYLOAD_MARKER");
+    expect(complete.mock.calls[2]?.[0]).not.toContain("MALFORMED_INITIAL_PAYLOAD");
+    expect(changes[0]?.modifiedContent).toBe('<main><button type="button">Open</button></main>');
+  });
+
   it("retries static frontend generation with a lean prompt after an LLM timeout", async () => {
     const prompts: string[] = [];
     const userMessages: string[] = [];

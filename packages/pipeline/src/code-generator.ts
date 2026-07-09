@@ -749,6 +749,7 @@ export class CodeGenerator {
         }
       );
 
+      response = repairedResponse;
       parsed = parseGeneratedChanges(repairedResponse);
     }
 
