@@ -169,6 +169,28 @@ describe("validatePlanCompletion", () => {
     expect(errors.join("\n")).toContain("requires runtime/source changes");
   });
 
+  it("requires a direct planned runtime change instead of only an adjacent source companion", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "src/unrelated.ts",
+          originalContent: "",
+          modifiedContent: "export const unrelated = true;\n",
+          explanation: "add an adjacent helper"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [{ path: "src/service.ts", reason: "fix the reported service behavior" }],
+        acceptanceCriteria: ["The reported service behavior is corrected."]
+      }
+    );
+
+    expect(errors).toContain(
+      "Implementation plan requires a change to at least one planned runtime/source file, but generated changes only add companion files"
+    );
+  });
+
   it("rejects generated changes outside the planned file scope", () => {
     const changes = [
       {
