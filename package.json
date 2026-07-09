@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "eval:local": "tsx scripts/eval-local-fixes.ts",
     "setup": "tsx scripts/setup.ts",
+    "demo": "tsx scripts/demo.ts",
     "webhooks:dev": "node scripts/dev-webhooks.mjs"
   },
   "devDependencies": {

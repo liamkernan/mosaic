@@ -18,9 +18,14 @@ interface QuarantineRedis {
   ltrim(key: string, start: number, stop: number): Promise<"OK">;
 }
 
+interface QuarantineLogger {
+  warn(bindings: Record<string, unknown>, message: string): void;
+}
+
 export class QuarantineStore {
   constructor(
-    private readonly redis: QuarantineRedis = new Redis(getEnv().REDIS_URL, { maxRetriesPerRequest: null })
+    private readonly redis: QuarantineRedis = new Redis(getEnv().REDIS_URL, { maxRetriesPerRequest: null }),
+    private readonly log: QuarantineLogger = logger
   ) {}
 
   async quarantine(feedback: ClassifiedFeedback, reason: string): Promise<void> {
@@ -39,6 +44,6 @@ export class QuarantineStore {
     const repoKey = `feedback-quarantine:${feedback.repoFullName}`;
     await this.redis.lpush(repoKey, JSON.stringify(record));
     await this.redis.ltrim(repoKey, 0, 199);
-    logger.warn({ feedbackId: feedback.id, repo: feedback.repoFullName, reason }, "Feedback quarantined");
+    this.log.warn({ feedbackId: feedback.id, repo: feedback.repoFullName, reason }, "Feedback quarantined");
   }
 }
