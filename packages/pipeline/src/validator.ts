@@ -539,6 +539,16 @@ function pythonDefinedNames(content: string): Set<string> {
     }
   }
 
+  for (const match of content.matchAll(/^from\s+[\w.]+\s+import\s+\(\s*\n([\s\S]*?)^\s*\)/gm)) {
+    for (const imported of match[1].split(",")) {
+      const withoutComment = imported.replace(/#.*$/gm, "").trim();
+      const aliasMatch = withoutComment.match(/(?:\s+as\s+)?([a-zA-Z_][a-zA-Z0-9_]*)$/);
+      if (aliasMatch) {
+        names.add(aliasMatch[1]);
+      }
+    }
+  }
+
   return names;
 }
 

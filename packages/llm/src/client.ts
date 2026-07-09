@@ -19,7 +19,7 @@ export const OPENAI_MODEL_IDS = {
   mini: "gpt-5.4-mini"
 } as const;
 
-export type OpenAIReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
+export type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export const ANTHROPIC_ADVISOR_MODEL_ID = ANTHROPIC_MODEL_IDS.opus;
 export const ANTHROPIC_ADVISOR_TOOL_BETA = "advisor-tool-2026-03-01";
@@ -44,6 +44,8 @@ export interface LLMClientOptions {
   apiKey?: string;
   platformApiKey?: string;
   openAIBaseURL?: string;
+  openAIMinOutputTokens?: number;
+  openAIMinTimeoutMs?: number;
   model?: string;
   advisorTool?: AdvisorToolOptions;
   reasoningEffort?: OpenAIReasoningEffort;
@@ -285,10 +287,20 @@ function shouldFallbackFromAdvisorError(error: unknown, advisorTool: AdvisorTool
   return mentionsAdvisorFeature && (availabilityStatus || availabilityMessage);
 }
 
+function normalizeOpenAIReasoningEffort(model: string, reasoningEffort?: OpenAIReasoningEffort): OpenAIReasoningEffort | undefined {
+  if (reasoningEffort === "none" && model === "gpt-5-mini") {
+    return "minimal";
+  }
+
+  return reasoningEffort;
+}
+
 export class LLMClient {
   private readonly provider: LLMProvider;
   private readonly anthropicClient?: Anthropic;
   private readonly openaiClient?: OpenAI;
+  private readonly openAIMinOutputTokens?: number;
+  private readonly openAIMinTimeoutMs?: number;
   private readonly defaultModel: string;
   private readonly advisorTool?: AdvisorToolOptions;
   private readonly reasoningEffort?: OpenAIReasoningEffort;
@@ -303,6 +315,8 @@ export class LLMClient {
     apiKey,
     platformApiKey,
     openAIBaseURL,
+    openAIMinOutputTokens,
+    openAIMinTimeoutMs,
     model,
     advisorTool,
     reasoningEffort,
@@ -323,6 +337,8 @@ export class LLMClient {
     } else {
       this.anthropicClient = createAnthropicClient(resolvedApiKey);
     }
+    this.openAIMinOutputTokens = provider === "openai" ? openAIMinOutputTokens : undefined;
+    this.openAIMinTimeoutMs = provider === "openai" ? openAIMinTimeoutMs : undefined;
     this.defaultModel = model ?? (provider === "openai" ? OPENAI_MODEL_IDS.standard : ANTHROPIC_MODEL_IDS.sonnet);
     this.advisorTool = provider === "anthropic" ? advisorTool : undefined;
     this.reasoningEffort = reasoningEffort;
@@ -348,6 +364,11 @@ export class LLMClient {
     let attempt = 0;
     let requestAttempts = 0;
     const model = this.defaultModel;
+    const reasoningEffort = normalizeOpenAIReasoningEffort(model, this.reasoningEffort);
+    const maxOutputTokens = Math.max(options.maxTokens ?? 4096, this.openAIMinOutputTokens ?? 0);
+    const timeoutMs = this.openAIMinTimeoutMs === undefined
+      ? options.timeoutMs
+      : Math.max(options.timeoutMs ?? 0, this.openAIMinTimeoutMs);
     const startedAt = Date.now();
 
     while (attempt < maxRetries) {
@@ -359,22 +380,22 @@ export class LLMClient {
         await this.authorizeRequest?.({
           model,
           estimatedInputTokens: Math.ceil((systemPrompt.length + userMessage.length) / 3),
-          maxOutputTokens: options.maxTokens ?? 4096
+          maxOutputTokens
         });
         requestAttempts += 1;
 
-        const requestOptions = options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : undefined;
+        const requestOptions = timeoutMs !== undefined ? { timeout: timeoutMs } : undefined;
         const response = await withHardTimeout(
           this.openaiClient.responses.create({
             model,
             instructions: systemPrompt,
             input: userMessage,
-            max_output_tokens: options.maxTokens ?? 4096,
-            ...(this.reasoningEffort ? { reasoning: { effort: this.reasoningEffort } } : {}),
+            max_output_tokens: maxOutputTokens,
+            ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
             text: { verbosity: "low" },
             store: false
           }, requestOptions),
-          options.timeoutMs,
+          timeoutMs,
           "OpenAI"
         );
 

@@ -289,6 +289,43 @@ describe("applyValidationFallbacks", () => {
     expect(completed[0]?.modifiedContent).toContain("from mosaic_demo.service import close_request");
     expect(completed[0]?.modifiedContent).not.toContain("from .service import");
   });
+
+  it("extends parenthesized Python imports without corrupting syntax", async () => {
+    const localPath = await tempDirs.create("mosaic-validation-repair-");
+    const repoContext: RepoContext = {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath,
+      installationId: 1,
+      fileTree: [
+        { path: "mosaic_demo/service.py", type: "file" },
+        { path: "tests/generated/test_close.py", type: "file" }
+      ]
+    };
+    const content = [
+      "from mosaic_demo.service import (",
+      "    create_request,",
+      "    close_request,",
+      ")",
+      "",
+      "def test_close():",
+      "    audit_log(None, 1)",
+      ""
+    ].join("\n");
+    const changes: GeneratedChange[] = [{
+      filePath: "tests/generated/test_close.py",
+      originalContent: "",
+      modifiedContent: content,
+      explanation: "test close behavior"
+    }];
+
+    const completed = await applyValidationFallbacks(changes, repoContext, [
+      "Change for tests/generated/test_close.py calls audit_log from service.py but does not import or define audit_log"
+    ]);
+
+    expect(completed[0]?.modifiedContent).toContain("    close_request,\n    audit_log,\n)");
+    expect(completed[0]?.modifiedContent).not.toContain("import (,");
+  });
 });
 
 describe("applyVerificationFallbacks", () => {

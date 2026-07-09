@@ -336,7 +336,9 @@ routing table, rollback steps, and advisor behavior.
 For Azure OpenAI / Microsoft Foundry Models, keep `MOSAIC_LLM_PROVIDER=openai`
 and set `AZURE_OPENAI_ENDPOINT` plus `AZURE_OPENAI_API_KEY`. Azure uses the
 deployment name as the request `model`; set `MOSAIC_OPENAI_MODEL=gpt-5.5` when
-the account has a single GPT-5.5 deployment.
+the account has a single GPT-5.5 deployment. High-reasoning eval runs can also
+set `MOSAIC_OPENAI_MIN_OUTPUT_TOKENS` and `MOSAIC_OPENAI_MIN_TIMEOUT_MS` to
+avoid truncating or timing out large patch output.
 
 ## Scripts
 

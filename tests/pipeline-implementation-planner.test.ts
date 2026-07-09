@@ -119,4 +119,44 @@ describe("ImplementationPlanner", () => {
     expect(complete).toHaveBeenCalledTimes(1);
     expect(plan.verificationChecklist.join("\n")).toContain("public path");
   });
+
+  it("deterministically completes endpoint verification after an incomplete repair", async () => {
+    const incompletePlan = {
+      requiredFiles: [
+        { path: "mosaic_demo/service.py", reason: "add metrics aggregation" },
+        { path: "mosaic_demo/web.py", reason: "add GET /metrics route" },
+        { path: "tests/generated/test_metrics.py", reason: "cover service and handler behavior" }
+      ],
+      acceptanceCriteria: ["GET /metrics returns open request metrics"],
+      implementationChecklist: ["add service aggregation", "add route handler"],
+      verificationChecklist: ["run the generated metrics checks"],
+      verificationCommands: ["python3 -m unittest tests.generated.test_metrics"]
+    };
+    const complete = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify(incompletePlan))
+      .mockResolvedValueOnce(JSON.stringify(incompletePlan));
+    const fakeClient = createPipelineLlmClient(complete);
+
+    const plan = await new ImplementationPlanner(fakeClient).plan(
+      buildClassifiedFeedback({
+        id: "01METRICS-NORMALIZED",
+        rawContent: "Add GET /metrics with open counts.",
+        category: "feature_request",
+        complexity: "moderate",
+        summary: "Add metrics endpoint",
+        relevantFiles: ["mosaic_demo/service.py", "mosaic_demo/web.py"],
+        confidence: 0.8
+      }),
+      [],
+      ["mosaic_demo/service.py", "mosaic_demo/web.py", "tests"]
+    );
+
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(plan.verificationChecklist).toContain(
+      "Unit test the backing behavior used by /metrics, including its empty-state response."
+    );
+    expect(plan.verificationChecklist).toContain(
+      "Test the public HTTP route for /metrics through the handler and assert its status and response body."
+    );
+  });
 });

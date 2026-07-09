@@ -28,6 +28,12 @@ AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_OPENAI_API_KEY=your-azure-openai-key
 # Optional: force every OpenAI route to one Azure deployment name.
 MOSAIC_OPENAI_MODEL=gpt-5.5
+# Optional: force reasoning effort for all OpenAI calls.
+MOSAIC_OPENAI_REASONING_EFFORT=high
+# Optional: raise max_output_tokens for high-reasoning eval runs.
+MOSAIC_OPENAI_MIN_OUTPUT_TOKENS=32768
+# Optional: raise request timeout for high-reasoning eval runs.
+MOSAIC_OPENAI_MIN_TIMEOUT_MS=300000
 ```
 
 Restart the pipeline worker after changing the environment. To roll back, set
@@ -89,6 +95,16 @@ When `MOSAIC_OPENAI_MODEL` is set, that value overrides every OpenAI route at
 client creation time. This is intended for Azure deployments where the request
 `model` must be the deployment name and the account only has one deployed model,
 for example a `gpt-5.5` deployment on Azure for Students.
+When `MOSAIC_OPENAI_REASONING_EFFORT` is set, Mosaic uses that effort for every
+OpenAI route. This is mainly useful for controlled evaluations or Azure
+deployments where the selected model supports a narrower reasoning-effort set.
+When `MOSAIC_OPENAI_MIN_OUTPUT_TOKENS` is set, OpenAI requests use at least that
+`max_output_tokens` value while preserving higher per-route caps. This is mainly
+for high-reasoning eval runs where reasoning tokens can otherwise exhaust small
+generation caps before a patch is returned.
+When `MOSAIC_OPENAI_MIN_TIMEOUT_MS` is set, OpenAI requests use at least that
+timeout while preserving higher per-call timeouts. This is useful when large
+high-reasoning responses need more time than the normal frontend repair timeout.
 
 OpenAI does not expose an Anthropic-style advisor tool. Mosaic therefore makes
 no synthetic advisor call: GPT-5.5 itself handles review-heavy quality work, and

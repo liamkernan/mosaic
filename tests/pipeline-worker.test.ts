@@ -151,6 +151,9 @@ describe("FeedbackPipelineWorker", () => {
     vi.stubEnv("OPENAI_API_KEY", "generic-openai-key");
     vi.stubEnv("AZURE_OPENAI_ENDPOINT", "https://mosaicopenai.openai.azure.com/");
     vi.stubEnv("MOSAIC_OPENAI_MODEL", "gpt-5.5");
+    vi.stubEnv("MOSAIC_OPENAI_REASONING_EFFORT", "high");
+    vi.stubEnv("MOSAIC_OPENAI_MIN_OUTPUT_TOKENS", "16384");
+    vi.stubEnv("MOSAIC_OPENAI_MIN_TIMEOUT_MS", "300000");
     resetEnvForTests();
 
     const setup = workerDependencies({
@@ -172,7 +175,10 @@ describe("FeedbackPipelineWorker", () => {
       provider: "openai",
       platformApiKey: "azure-openai-key",
       openAIBaseURL: "https://mosaicopenai.openai.azure.com/openai/v1/",
-      model: "gpt-5.5"
+      openAIMinOutputTokens: 16_384,
+      openAIMinTimeoutMs: 300_000,
+      model: "gpt-5.5",
+      reasoningEffort: "high"
     }));
   });
 });

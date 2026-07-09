@@ -39,6 +39,26 @@ describe("core config helpers", () => {
 
   });
 
+  it("parses optional OpenAI evaluation overrides", () => {
+    vi.stubEnv("MOSAIC_OPENAI_MIN_OUTPUT_TOKENS", "16384");
+    vi.stubEnv("MOSAIC_OPENAI_MIN_TIMEOUT_MS", "300000");
+    vi.stubEnv("MOSAIC_OPENAI_REASONING_EFFORT", "high");
+    resetEnvForTests();
+
+    expect(getEnv().MOSAIC_OPENAI_MIN_OUTPUT_TOKENS).toBe(16_384);
+    expect(getEnv().MOSAIC_OPENAI_MIN_TIMEOUT_MS).toBe(300_000);
+    expect(getEnv().MOSAIC_OPENAI_REASONING_EFFORT).toBe("high");
+
+    vi.stubEnv("MOSAIC_OPENAI_MIN_OUTPUT_TOKENS", "");
+    vi.stubEnv("MOSAIC_OPENAI_MIN_TIMEOUT_MS", "");
+    vi.stubEnv("MOSAIC_OPENAI_REASONING_EFFORT", "");
+    resetEnvForTests();
+
+    expect(getEnv().MOSAIC_OPENAI_MIN_OUTPUT_TOKENS).toBeUndefined();
+    expect(getEnv().MOSAIC_OPENAI_MIN_TIMEOUT_MS).toBeUndefined();
+    expect(getEnv().MOSAIC_OPENAI_REASONING_EFFORT).toBeUndefined();
+  });
+
   it("defaults the Mosaic trigger phrase when unset", () => {
     vi.stubEnv("MOSAIC_TRIGGER_PHRASE", "");
     resetEnvForTests();

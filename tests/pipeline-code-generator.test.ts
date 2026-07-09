@@ -426,7 +426,7 @@ const retrySucceeded = true;
     );
 
     expect(prompts).toHaveLength(2);
-    expect(timeoutMs).toEqual([45_000, 120_000]);
+    expect(timeoutMs).toEqual([45_000, 180_000]);
     expect(userMessages[1]).toContain("previous static frontend generation timed out");
     expect(prompts[1]).toContain("middle line(s) of index.html omitted");
     expect(prompts[1]).toContain("journal-section");
@@ -484,7 +484,7 @@ const retrySucceeded = true;
     expect(userMessages[1]).toContain("hit the OpenAI max_output_tokens limit");
     expect(userMessages[1]).toContain("compact, complete <changes> payload");
     expect(prompts[1]).toContain("middle line(s) of index.html omitted");
-    expect(maxTokens[1]).toBeLessThanOrEqual(8_192);
+    expect(maxTokens[1]).toBeLessThanOrEqual(16_384);
     expect(changes[0]?.modifiedContent).toContain('class="product-card"');
   });
 
@@ -537,8 +537,8 @@ const retrySucceeded = true;
 
     expect(capturedUserMessage).toContain("previous patch exceeded validation limits");
     expect(capturedUserMessage).toContain("one reusable data-driven implementation");
-    expect(capturedMaxTokens).toBeLessThanOrEqual(12_288);
-    expect(capturedTimeoutMs).toBe(120_000);
+    expect(capturedMaxTokens).toBeLessThanOrEqual(16_384);
+    expect(capturedTimeoutMs).toBe(180_000);
   });
 
   it("prioritizes combined oversized and clickable-accessibility repair instructions", async () => {
@@ -643,6 +643,54 @@ def queue():
     expect(capturedUserMessage).toContain("Do not remove the affected feature");
   });
 
+  it("uses localized repair instructions for protected symbol changes", async () => {
+    let capturedUserMessage = "";
+    const original = "def create_request():\n    return 1\n\ndef close_request():\n    return 2\n";
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {
+      capturedUserMessage = userMessage;
+      return `<changes>
+  <edit>
+    <filePath>mosaic_demo/service.py</filePath>
+    <search><![CDATA[
+def close_request():
+    return 2
+]]></search>
+    <replace><![CDATA[
+def close_request():
+    return 3
+]]></replace>
+    <explanation>Keep the fix localized to close_request.</explanation>
+  </edit>
+</changes>`;
+    });
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      buildClassifiedFeedback({
+        rawContent: "Fix the close audit event",
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Fix close audit event",
+        relevantFiles: ["mosaic_demo/service.py"],
+        confidence: 0.8
+      }),
+      [{ path: "mosaic_demo/service.py", content: original, reason: "implementation" }],
+      ["mosaic_demo/service.py"],
+      [{
+        filePath: "mosaic_demo/service.py",
+        originalContent: original,
+        modifiedContent: "def create_request():\n    return 99\n\ndef close_request():\n    return 3\n",
+        explanation: "fix close behavior"
+      }],
+      ["Unrelated protected symbol changed in mosaic_demo/service.py: create_request"],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("Restore every unrelated protected symbol");
+    expect(capturedUserMessage).toContain("Do not rewrite the whole source file");
+    expect(capturedUserMessage).toContain("focused test changes");
+  });
+
   it("uses focused script repair instructions when modal behavior is missing", async () => {
     let capturedUserMessage = "";
     let capturedTimeoutMs = 0;
@@ -697,7 +745,7 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
     expect(capturedUserMessage).toContain("focused on missing interactive behavior");
     expect(capturedUserMessage).toContain("opens, populates, closes, and keyboard-wires");
     expect(capturedUserMessage).toContain("do not return HTML/CSS-only repairs");
-    expect(capturedTimeoutMs).toBe(120_000);
+    expect(capturedTimeoutMs).toBe(180_000);
   });
 
   it("uses focused hook repair instructions when scripts query missing html", async () => {
@@ -801,14 +849,14 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
         }
       ],
       [
-        "Verification failed: Frontend repair requirement: " + JSON.stringify({
+        "Frontend repair requirement: " + JSON.stringify({
           assertion: "Kitchen collection opens a populated modal",
           action: "assert",
           selectorAlternatives: ["#collectionModalOverlay", "#modal-kitchen"],
           expectation: { kind: "class_any", values: ["is-open", "active"] },
           actual: { matchCount: 0 }
         }),
-        "Verification failed: Frontend repair requirement: " + JSON.stringify({
+        "Frontend repair requirement: " + JSON.stringify({
           assertion: "Kitchen collection opens a populated modal",
           action: "assert",
           selectorAlternatives: ["#collectionModalProducts > *"],
@@ -827,7 +875,7 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
     expect(capturedUserMessage).toContain("role, tabindex, and Enter and Space keyboard handling");
     expect(capturedSystemPrompt).toContain('id="colModalOverlay"');
     expect(capturedSystemPrompt).toContain('"selectorAlternatives":["#collectionModalOverlay","#modal-kitchen"]');
-    expect(capturedTimeoutMs).toBe(120_000);
+    expect(capturedTimeoutMs).toBe(180_000);
   });
 
   it("uses focused test verification repair instructions without dropping coverage", async () => {
@@ -883,7 +931,7 @@ self.assertIn("screenshot", second["body"])
     expect(capturedUserMessage).toContain("failing test or verification output");
     expect(capturedUserMessage).toContain("Preserve required behavioral test coverage");
     expect(capturedUserMessage).toContain("wrong public API shape");
-    expect(capturedTimeoutMs).toBe(120_000);
+    expect(capturedTimeoutMs).toBe(180_000);
   });
 
   it("uses focused idempotency repair instructions when update path is missing", async () => {

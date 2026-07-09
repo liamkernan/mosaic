@@ -523,6 +523,56 @@ describe("LLMClient", () => {
     );
   });
 
+  it("applies OpenAI minimum output token and timeout floors to requests and budget authorization", async () => {
+    const authorizeRequest = vi.fn();
+    const client = new LLMClient({
+      provider: "openai",
+      mode: "platform",
+      platformApiKey: "azure-openai-key",
+      model: "gpt-5-mini",
+      openAIMinOutputTokens: 16_384,
+      openAIMinTimeoutMs: 300_000,
+      disableUsageTracking: true,
+      authorizeRequest
+    });
+
+    await client.complete("system", "user", { maxTokens: 1_024, timeoutMs: 45_000 });
+
+    expect(responsesCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-5-mini",
+        max_output_tokens: 16_384
+      }),
+      { timeout: 300_000 }
+    );
+    expect(authorizeRequest).toHaveBeenCalledWith(expect.objectContaining({
+      model: "gpt-5-mini",
+      maxOutputTokens: 16_384
+    }));
+  });
+
+  it("normalizes unsupported none reasoning to minimal for Azure GPT-5 mini deployments", async () => {
+    const client = new LLMClient({
+      provider: "openai",
+      mode: "platform",
+      platformApiKey: "azure-openai-key",
+      openAIBaseURL: "https://mosaicopenai.openai.azure.com/openai/v1/",
+      model: "gpt-5-mini",
+      reasoningEffort: "none",
+      disableUsageTracking: true
+    });
+
+    await client.complete("system", "user");
+
+    expect(responsesCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-5-mini",
+        reasoning: { effort: "minimal" }
+      }),
+      undefined
+    );
+  });
+
   it.each([
     [undefined, "https://mosaicopenai.openai.azure.com/", "https://mosaicopenai.openai.azure.com/openai/v1/"],
     [undefined, "https://mosaicopenai.openai.azure.com/openai/v1", "https://mosaicopenai.openai.azure.com/openai/v1/"],

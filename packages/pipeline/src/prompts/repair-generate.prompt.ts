@@ -128,6 +128,7 @@ INSTRUCTIONS:
 - Preserve useful parts of the current invalid changes when safe.
 - Treat acceptance criteria as binding. If they name exact fields, keys, ordering clauses, or tie-breakers, implement those exact terms.
 - Treat loaded tests and verification failures as executable contracts. If a failure is a missing field/key/status/return value, update the implementation surface that should provide it.
+- Treat each structured "Frontend repair requirement" as an exact contract. Put one listed selector alternative into the repaired markup and ensure the required descendant count exists after the specified click or keyboard action.
 - Add or update focused tests when validation reports missing behavioral coverage or the plan verification checklist requires tests.
 - If the current invalid changes are implementation-only and validation reports missing behavioral coverage, return the implementation change plus a focused test/spec/reported-file change in the same payload. Do not return another implementation-only payload.
 - If a reported/regression test is loaded, extend it with a complementary assertion or edge case instead of relying on it unchanged.
@@ -142,6 +143,8 @@ INSTRUCTIONS:
 - Replace click-only div/article/section/card containers with native buttons or links where possible; otherwise add role, tabindex, and keyboard handling.
 - When a clickable selector contract names classes/data attributes such as .product-card-clickable[data-product-key], put those hooks on the native button/link target itself when possible, not only on a surrounding non-interactive container.
 - Remove or wire any visible href="#" or javascript:void(0) links so every visible control performs the requested workflow.
+- If copied static-page navigation caused inert-link errors, remove that unrelated navigation or give each retained link a real local destination. Do not copy the same invalid header/footer into more pages.
+- If validation reports an unrelated protected symbol change, restore that symbol exactly from the original relevant file and keep only localized edits to the requested function.
 - If HTML adds modal/dialog/overlay classes or hooks, include matching CSS selectors in the stylesheet in the same response.
 - If JavaScript is needed for new interactive UI, include the matching script changes in the same response.
 - Return ONLY the response format below. No markdown fences. No prose before or after.

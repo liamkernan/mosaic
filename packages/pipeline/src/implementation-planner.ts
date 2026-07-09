@@ -5,8 +5,8 @@ import { buildImplementationPlanPrompt } from "./prompts/implementation-plan.pro
 import type { PipelineLlmClient } from "./pipeline-llm-client.js";
 import { normalizeRepoRelativePath } from "./repo-paths.js";
 
-const PLAN_TIMEOUT_MS = 60_000;
-const PLAN_MAX_TOKENS = 4_096;
+const PLAN_TIMEOUT_MS = 120_000;
+const PLAN_MAX_TOKENS = 8_192;
 
 const planFileSchema = z.object({
   path: z.string().min(1),
@@ -104,6 +104,30 @@ export function validateImplementationPlan(
   return errors;
 }
 
+function completeEndpointVerificationChecklist(
+  plan: ImplementationPlan,
+  feedback: ClassifiedFeedback
+): ImplementationPlan {
+  const endpoint = `${feedback.summary}\n${feedback.rawContent}`.match(endpointPattern)?.[1];
+  if (!endpoint) {
+    return plan;
+  }
+
+  const verificationText = plan.verificationChecklist.join("\n").toLowerCase();
+  const verificationChecklist = [...plan.verificationChecklist];
+  if (!verificationText.includes("unit test")) {
+    verificationChecklist.push(`Unit test the backing behavior used by ${endpoint}, including its empty-state response.`);
+  }
+  if (!/(?:handler|route|http|public\s+path).{0,80}(?:test|assert|verify|check)|(?:test|assert|verify|check).{0,80}(?:handler|route|http|public\s+path)/.test(verificationText)) {
+    verificationChecklist.push(`Test the public HTTP route for ${endpoint} through the handler and assert its status and response body.`);
+  }
+
+  return {
+    ...plan,
+    verificationChecklist
+  };
+}
+
 export class ImplementationPlanner {
   constructor(private readonly llmClient: PipelineLlmClient) {}
 
@@ -144,7 +168,10 @@ export class ImplementationPlanner {
         timeoutMs: PLAN_TIMEOUT_MS
       }
     );
-    plan = normalizePlan(repairedResponse, relevantFiles, fileTree);
+    plan = completeEndpointVerificationChecklist(
+      normalizePlan(repairedResponse, relevantFiles, fileTree),
+      feedback
+    );
     const repairedErrors = validateImplementationPlan(plan, feedback);
     if (repairedErrors.length > 0) {
       throw new LLMError(`Implementation plan failed preflight: ${repairedErrors.join("; ")}`);

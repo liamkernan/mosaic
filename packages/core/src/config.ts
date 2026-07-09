@@ -54,6 +54,21 @@ function optionalBoolean() {
   }, z.boolean().optional());
 }
 
+function optionalPositiveInteger() {
+  return z.preprocess((value) => {
+    if (value === undefined || value === null || typeof value === "number") {
+      return value;
+    }
+
+    if (typeof value !== "string") {
+      return value;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length === 0 ? undefined : trimmed;
+  }, z.coerce.number().int().positive().optional());
+}
+
 const envSchema = z.object({
   NODE_ENV: optionalNonEmptyString(),
   GITHUB_APP_ID: optionalNonEmptyString(),
@@ -66,6 +81,19 @@ const envSchema = z.object({
   AZURE_OPENAI_API_KEY: optionalNonEmptyString(),
   AZURE_OPENAI_ENDPOINT: optionalNonEmptyString(),
   MOSAIC_OPENAI_MODEL: optionalNonEmptyString(),
+  MOSAIC_OPENAI_MIN_OUTPUT_TOKENS: optionalPositiveInteger(),
+  MOSAIC_OPENAI_MIN_TIMEOUT_MS: optionalPositiveInteger(),
+  MOSAIC_OPENAI_REASONING_EFFORT: z.preprocess(
+    (value) => {
+      if (typeof value !== "string") {
+        return value;
+      }
+
+      const trimmed = value.trim();
+      return trimmed.length === 0 ? undefined : trimmed;
+    },
+    z.enum(["minimal", "low", "medium", "high"]).optional()
+  ),
   MOSAIC_LLM_PROVIDER: z.enum(["anthropic", "openai"]).default("anthropic"),
   EMAIL_IMAP_HOST: optionalNonEmptyString(),
   EMAIL_IMAP_PORT: z.coerce.number().int().positive().default(993),

@@ -43,7 +43,8 @@ Rules:
 - Do not plan edits to existing reported/regression tests; treat them as immutable verification oracles. Plan an independent companion test in the repository's normal generated or non-reported test location for any missing edge case.
 - For sort/order/filter/ranking bugs, verification must include adversarial cases for the primary condition and every stated tie-breaker.
 - For dedupe/idempotency/retry bugs, acceptance criteria and verification must include both the duplicate/update path and the non-duplicate path where records should remain distinct.
-- For API/HTTP endpoint requests, required files and checklist items must include the route/handler surface, backing service/data surface, and a verification step that calls the public path.
+- For API/HTTP endpoint requests, required files and checklist items must include the route/handler surface, backing service/data surface, a unit test of the backing behavior, and a handler test that exercises the public path without opening a real network listener.
+- Tests must not introduce literal URLs, loopback IP addresses, wildcard hosts, or external network calls. Prefer repository-native in-process handler/request helpers.
 - Extract exact safe test commands from issue files, README/docs, or package scripts when available. Use only test commands such as python unittest, pytest, npm test, pnpm test, or vitest; omit setup, server, curl, database mutation, deploy, or destructive commands.
 - For clickable UI, modals, drawers, accordions, tabs, forms, filters, navigation, or routes, include both the UI surface and the behavior/state surface.
 - For new content experiences, include the content/data source and the rendering behavior.

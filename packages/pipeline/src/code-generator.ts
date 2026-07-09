@@ -9,16 +9,16 @@ import type { ImplementationPlan } from "./implementation-planner.js";
 
 const GENERATION_TIMEOUT_MS = 180_000;
 const STATIC_FRONTEND_GENERATION_TIMEOUT_MS = 45_000;
-const STATIC_FRONTEND_RETRY_TIMEOUT_MS = 120_000;
+const STATIC_FRONTEND_RETRY_TIMEOUT_MS = 180_000;
 const LARGE_STATIC_FRONTEND_BYTES = 25_000;
 const STATIC_FRONTEND_RETRY_BYTES = 15_000;
 const COMPACT_STATIC_ASSET_BYTES = 8_000;
 const RETRY_COMPACT_STATIC_ASSET_BYTES = 4_000;
 const COMPACT_SOURCE_FILE_BYTES = 24_000;
 const COMPACT_CONTEXT_TOTAL_BYTES = 80_000;
-const STATIC_FRONTEND_RETRY_MAX_TOKENS = 8_192;
-const VALIDATION_REPAIR_TIMEOUT_MS = 120_000;
-const VALIDATION_REPAIR_MAX_TOKENS = 12_288;
+const STATIC_FRONTEND_RETRY_MAX_TOKENS = 16_384;
+const VALIDATION_REPAIR_TIMEOUT_MS = 180_000;
+const VALIDATION_REPAIR_MAX_TOKENS = 16_384;
 const EDIT_REANCHOR_EXCERPT_CHARS = 12_000;
 export const scopeValidationPattern = /outside the implementation plan scope/i;
 
@@ -433,10 +433,26 @@ function hasScopeValidationError(validationErrors: string[]): boolean {
   return validationErrors.some((error) => scopeValidationPattern.test(error));
 }
 
+function hasProtectedSymbolValidationError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) => /unrelated protected symbol changed/i.test(error));
+}
+
+function hasUnsafeUrlOrIpValidationError(validationErrors: string[]): boolean {
+  return validationErrors.some((error) => /New (?:URL|IP address)\(s\) added/i.test(error));
+}
+
+function hasOversizedStaticPageWithInertLinks(validationErrors: string[]): boolean {
+  return hasOversizedPatchValidationError(validationErrors) &&
+    validationErrors.some((error) => /adds inert link/i.test(error));
+}
+
 function hasFrontendVerificationFailure(validationErrors: string[]): boolean {
   return validationErrors.some((error) =>
-    /Verification failed:/i.test(error) &&
-    /expected element|expected at least|expected .*matches|click target|frontend runtime|selector|hasClass|attribute/i.test(error)
+    /Frontend repair requirement:/i.test(error) ||
+    (
+      /Verification failed:/i.test(error) &&
+      /expected element|expected at least|expected .*matches|click target|frontend runtime|selector|hasClass|attribute/i.test(error)
+    )
   );
 }
 
@@ -463,6 +479,24 @@ function focusedValidationRepairMaxTokens(promptFiles: RelevantFile[]): number {
 }
 
 const VALIDATION_REPAIR_ROUTES: ValidationRepairRoute[] = [
+  {
+    match: hasProtectedSymbolValidationError,
+    instruction: "Return only a localized corrected <changes> payload. Restore every unrelated protected symbol exactly from ORIGINAL RELEVANT FILES, then preserve only the requested function-level implementation and focused test changes. Do not rewrite the whole source file or refactor neighboring functions.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasUnsafeUrlOrIpValidationError,
+    instruction: "Return only a corrected <changes> payload that removes every newly introduced URL and IP literal named by validation while preserving the requested behavior. For endpoint tests, call repository-native handlers in process without loopback hosts, listeners, or request URLs. For frontend icons, use text, CSS, existing markup, or an inline SVG element already present in HTML; do not call createElementNS with the SVG namespace URL. Also fix any syntax error reported in the same validation pass.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
+  {
+    match: hasOversizedStaticPageWithInertLinks,
+    instruction: "Return only a compact replacement <changes> payload for the static pages. Remove copied headers, footers, modal markup, and inert links. Each new detail/article page should contain only a minimal functional link back to index.html, its required title/meta/hero/content, and the existing shared stylesheet link. Keep stylesheet edits localized and under 100 added lines; do not rewrite the stylesheet or duplicate page chrome.",
+    maxTokens: focusedValidationRepairMaxTokens,
+    timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
+  },
   {
     match: hasScopeValidationError,
     instruction: "Return only a corrected <changes> payload that removes every file outside the implementation plan scope. Keep the necessary implementation and focused companion test/config/asset edits, but do not include unrelated files from other packages, examples, docs, or apps unless they are explicitly listed in the implementation plan.",

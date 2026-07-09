@@ -60,6 +60,7 @@ INSTRUCTIONS:
 - For sort/order/filter/ranking changes, cover the primary behavior and every stated tie-breaker with adversarial tests. A single happy-path example is not enough.
 - For dedupe/idempotency/retry bugs, implement the lookup/update path before insert/create, preserve the existing record identity when the stated idempotency key matches, preserve distinct record creation when the key is absent or different, and test both duplicate and non-duplicate paths.
 - For API/HTTP endpoint requests, update both the routing/handler surface and the backing service/data surface. Tests should exercise the public route path, not only the helper function.
+- Endpoint tests must use repository-native in-process handler/request helpers. Do not add literal URLs, IP addresses, wildcard hosts, real listeners, or external network calls.
 - If an acceptance criterion names exact fields, keys, ordering clauses, or tie-breakers, implement those exact terms. You may add a deterministic tertiary tie-breaker only after all required keys.
 - If an existing or planned test reads a field/key from a list, query, API response, or returned object, make sure that surface actually includes the field/key.
 - Do not use placeholder article text, placeholder data, inert buttons, empty handlers, or UI that appears clickable but does not complete the requested workflow.
@@ -68,7 +69,12 @@ INSTRUCTIONS:
 - Treat interactive UI as atomic: if you add modal/dialog/overlay markup or clickable triggers, the same response must include the JavaScript that opens, populates, closes, and keyboard-wires that UI using the exact ids/classes/data attributes from the markup.
 - For clickable UI, use native <button> or <a> elements whenever possible. Do not attach click-only behavior to plain div/article/section/card containers unless you also make them accessible with role, tabindex, and keyboard handling.
 - For clickable product/card detail triggers, put the required clickable class and data attributes on the native <button type="button"> or <a> target itself whenever possible; style that control as the card instead of adding a clickable class to a surrounding article/div.
+- For product detail triggers, use the stable compound hook .product-card-clickable[data-product-key] on the same interactive element.
+- For collection detail modals, prefer stable hooks #collectionModalOverlay, #modalItems with .modal-item-card children, and #modalReviewList with .modal-review-item children so the populated workflow remains testable.
 - Do not leave visible links with href="#" or javascript:void(0). If a link or control is visible, it must navigate, submit, open the intended UI, or be removed.
+- When creating static detail/article pages, do not copy unrelated inert navigation from an existing page. Keep only links with real local destinations and reuse shared styles through a stylesheet link.
+- Preserve unrelated functions and protected symbols byte-for-byte. Make localized edits around the requested behavior instead of rewriting a whole source file.
+- For a Python bug confined to one named function, use localized <edit> operations and do not return a whole-file <change>.
 - If you add or change UI classes, ids, modal/dialog/overlay markup, or interactive HTML hooks, also update the matching stylesheet or script in the same response so the UI is complete.
 - Do not introduce modal, dialog, or overlay classes such as modal-content unless the response also includes matching CSS selectors for every new modal/dialog/overlay class.
 - If the request is ambiguous, choose the most conservative interpretation.

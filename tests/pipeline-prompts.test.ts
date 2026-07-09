@@ -107,6 +107,9 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("matching CSS selectors");
     expect(prompt).toContain("use native <button> or <a>");
     expect(prompt).toContain("put the required clickable class and data attributes on the native");
+    expect(prompt).toContain(".product-card-clickable[data-product-key]");
+    expect(prompt).toContain("#collectionModalOverlay");
+    expect(prompt).toContain("use localized <edit> operations");
     expect(prompt).toContain("href=\"#\"");
   });
 

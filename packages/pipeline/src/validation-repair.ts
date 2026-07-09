@@ -303,6 +303,26 @@ function splitCommaSeparatedNames(text: string): string[] {
 
 function addPythonImport(content: string, moduleSpecifier: string, names: string[]): string {
   const escapedModuleSpecifier = moduleSpecifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parenthesizedImportPattern = new RegExp(
+    `^from\\s+${escapedModuleSpecifier}\\s+import\\s+\\(\\s*\\n([\\s\\S]*?)^\\s*\\)`,
+    "m"
+  );
+  const parenthesizedImport = content.match(parenthesizedImportPattern);
+  if (parenthesizedImport) {
+    const existingNames = parenthesizedImport[1]
+      .split(",")
+      .map((name) => name.replace(/#.*$/gm, "").trim())
+      .filter(Boolean);
+    const missingNames = names.filter((name) => !existingNames.includes(name));
+    if (missingNames.length === 0) {
+      return content;
+    }
+
+    const body = parenthesizedImport[1].trimEnd();
+    const appended = `${body}\n${missingNames.map((name) => `    ${name},`).join("\n")}\n`;
+    return content.replace(parenthesizedImportPattern, `from ${moduleSpecifier} import (\n${appended})`);
+  }
+
   const importPattern = new RegExp(`^from\\s+${escapedModuleSpecifier}\\s+import\\s+([^\\n]+)$`, "m");
   const existingImport = content.match(importPattern);
 

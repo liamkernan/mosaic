@@ -41,7 +41,8 @@ import { applyValidationFallbacks, applyVerificationFallbacks } from "./validati
 import { runVerificationCommands } from "./verification-runner.js";
 
 const FEEDBACK_QUEUE_NAME = "feedback-intake";
-const VALIDATION_RECOVERY_ATTEMPTS = 3;
+const VALIDATION_RECOVERY_ATTEMPTS = 5;
+const VERIFICATION_RECOVERY_ATTEMPTS = 3;
 const oversizedPatchPattern = /too large|exceeds limit|total new code added/i;
 
 type RepoContext = Awaited<ReturnType<RepoIndexer["getContext"]>>;
@@ -171,8 +172,10 @@ export class FeedbackPipelineWorker {
       apiKey,
       platformApiKey: isOpenAI ? env.AZURE_OPENAI_API_KEY ?? env.OPENAI_API_KEY : env.ANTHROPIC_API_KEY,
       openAIBaseURL: isOpenAI ? resolveOpenAIBaseURL(env.OPENAI_BASE_URL, env.AZURE_OPENAI_ENDPOINT) : undefined,
+      openAIMinOutputTokens: isOpenAI ? env.MOSAIC_OPENAI_MIN_OUTPUT_TOKENS : undefined,
+      openAIMinTimeoutMs: isOpenAI ? env.MOSAIC_OPENAI_MIN_TIMEOUT_MS : undefined,
       model: isOpenAI ? env.MOSAIC_OPENAI_MODEL ?? model : model,
-      reasoningEffort,
+      reasoningEffort: isOpenAI ? env.MOSAIC_OPENAI_REASONING_EFFORT ?? reasoningEffort : reasoningEffort,
       advisorTool: isOpenAI ? undefined : advisorTool
     });
   }
@@ -441,7 +444,8 @@ export class FeedbackPipelineWorker {
     }
 
     let verification = await runVerificationCommands(changes, repoContext, implementationPlan);
-    if (!verification.valid) {
+    for (let attempt = 0; !verification.valid && attempt < VERIFICATION_RECOVERY_ATTEMPTS; attempt += 1) {
+      let madeProgress = false;
       const completedChanges = applyVerificationFallbacks(changes, verification.errors);
       if (completedChanges && completedChanges.length <= repoConfig.security.max_files_changed) {
         const completedValidation = await validateGeneratedChanges(
@@ -461,12 +465,15 @@ export class FeedbackPipelineWorker {
             changes = completedChanges;
             validation = completedValidation;
             verification = completedVerification;
+            madeProgress = true;
           }
         }
       }
-    }
 
-    if (!verification.valid) {
+      if (verification.valid) {
+        break;
+      }
+
       try {
         const repairedChanges = await codeGenerator.repairValidationFailure(
           classifiedFeedback,
@@ -480,7 +487,11 @@ export class FeedbackPipelineWorker {
           }
         );
 
-        const candidateChanges = mergeGeneratedChanges(changes, repairedChanges);
+        const candidateChanges = pruneChangesToPlanScope(
+          mergeGeneratedChanges(changes, repairedChanges),
+          implementationPlan,
+          feedbackText
+        );
         if (repairedChanges.length > 0 && candidateChanges.length <= repoConfig.security.max_files_changed) {
           const completeRepairedValidation = await validateGeneratedChanges(candidateChanges, repoContext, repoConfig, implementationPlan, feedbackText);
 
@@ -494,6 +505,7 @@ export class FeedbackPipelineWorker {
               changes = candidateChanges;
               validation = completeRepairedValidation;
               verification = repairedVerification;
+              madeProgress = true;
             }
           }
         }
@@ -501,6 +513,10 @@ export class FeedbackPipelineWorker {
         if (!(error instanceof LLMError)) {
           throw error;
         }
+      }
+
+      if (!madeProgress) {
+        break;
       }
     }
 

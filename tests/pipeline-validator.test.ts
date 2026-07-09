@@ -946,4 +946,42 @@ describe("validate", () => {
     expect(result.valid).toBe(false);
     expect(result.errors.join("\n")).toContain("calls get_metrics from service.py but does not import or define get_metrics");
   });
+
+  it("recognizes names from multiline parenthesized Python imports", async () => {
+    const result = await validate(
+      [
+        {
+          filePath: "app/service.py",
+          originalContent: "def close_request(conn):\n    return None\n",
+          modifiedContent: "def close_request(conn):\n    return None\n\ndef audit_log(conn):\n    return []\n",
+          explanation: "add audit helper"
+        },
+        {
+          filePath: "tests/generated/test_close.py",
+          originalContent: "",
+          modifiedContent: [
+            "from app.service import (",
+            "    close_request,",
+            "    audit_log,",
+            ")",
+            "",
+            "def test_close():",
+            "    close_request(None)",
+            "    audit_log(None)",
+            ""
+          ].join("\n"),
+          explanation: "test close behavior"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath: process.cwd(),
+        fileTree: [],
+        installationId: 1
+      }
+    );
+
+    expect(result.errors.join("\n")).not.toContain("does not import or define");
+  });
 });
