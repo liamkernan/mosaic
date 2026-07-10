@@ -92,7 +92,7 @@ const envSchema = z.object({
       const trimmed = value.trim();
       return trimmed.length === 0 ? undefined : trimmed;
     },
-    z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).optional()
+    z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max"]).optional()
   ),
   MOSAIC_LLM_PROVIDER: z.enum(["anthropic", "openai"]).default("openai"),
   EMAIL_IMAP_HOST: optionalNonEmptyString(),

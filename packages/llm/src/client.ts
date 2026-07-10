@@ -19,7 +19,7 @@ export const OPENAI_MODEL_IDS = {
   luna: "gpt-5.6-luna"
 } as const;
 
-export type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export const ANTHROPIC_ADVISOR_MODEL_ID = ANTHROPIC_MODEL_IDS.opus;
 export const ANTHROPIC_ADVISOR_TOOL_BETA = "advisor-tool-2026-03-01";
