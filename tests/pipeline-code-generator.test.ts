@@ -2,10 +2,54 @@ import { describe, expect, it, vi } from "vitest";
 
 import { LLMError } from "../packages/core/src/errors.js";
 import { OpenAIOutputLimitError } from "../packages/llm/src/client.js";
-import { CodeGenerator } from "../packages/pipeline/src/code-generator.js";
+import { buildFrontendRepairChecklist, CodeGenerator } from "../packages/pipeline/src/code-generator.js";
 import { buildClassifiedFeedback, createPipelineLlmClient } from "./helpers/pipeline.js";
 
 describe("CodeGenerator", () => {
+  it("formats typed frontend failures as a bounded exact repair checklist", () => {
+    const requirement = (expectation: Record<string, unknown>, selectorAlternatives: string[] = ["#productDetailSpecs"]) =>
+      "Verification failed: Frontend repair requirement: " + JSON.stringify({
+        assertion: "Featured product opens detail view",
+        action: "assert",
+        selectorAlternatives,
+        expectation,
+        actual: { matchCount: 0 }
+      });
+    const checklist = buildFrontendRepairChecklist([
+      requirement({ kind: "exists" }),
+      requirement({ kind: "min_count", value: 1 }, ["#productDetailReviews .pd-review"]),
+      requirement({ kind: "text_includes", value: "Material" }),
+      requirement({ kind: "attribute_equals", attribute: "aria-hidden", value: "false" }),
+      requirement({ kind: "class_any", values: ["is-open", "active"] }),
+      requirement({ kind: "no_runtime_errors" }, []),
+      "Frontend repair requirement: not-json"
+    ]);
+
+    expect(checklist).toContain("EXACT FRONTEND CONTRACT CHECKLIST");
+    expect(checklist).toContain("ensure `#productDetailSpecs` exists");
+    expect(checklist).toContain("`#productDetailReviews .pd-review` matches at least 1 rendered elements");
+    expect(checklist).toContain("runtime-rendered item, not only its container");
+    expect(checklist).toContain("includes the text `Material`");
+    expect(checklist).toContain('`aria-hidden="false"`');
+    expect(checklist).toContain("`is-open` or `active`");
+    expect(checklist).toContain("eliminate the reported frontend runtime error");
+    expect(checklist).not.toContain("not-json");
+  });
+
+  it("limits typed frontend repair checklist size", () => {
+    const errors = Array.from({ length: 12 }, (_, index) =>
+      "Frontend repair requirement: " + JSON.stringify({
+        action: "assert",
+        selectorAlternatives: [`#required-${index}`],
+        expectation: { kind: "exists" }
+      })
+    );
+    const checklist = buildFrontendRepairChecklist(errors);
+
+    expect(checklist).toContain("#required-7");
+    expect(checklist).not.toContain("#required-8");
+  });
+
   it("uses focused complete-layer repair instructions when planned CSS is missing", async () => {
     let capturedUserMessage = "";
     const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {

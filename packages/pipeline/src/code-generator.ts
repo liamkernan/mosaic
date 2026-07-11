@@ -457,6 +457,82 @@ function hasFrontendVerificationFailure(validationErrors: string[]): boolean {
   );
 }
 
+const frontendRepairRequirementPrefix = "Frontend repair requirement: ";
+const maxFrontendRepairRequirements = 8;
+const maxFrontendSelectorAlternatives = 3;
+const maxFrontendRepairValueLength = 160;
+
+function boundedRepairValue(value: unknown): string | null {
+  if (typeof value !== "string" && typeof value !== "number") {
+    return null;
+  }
+  const normalized = String(value).replace(/\s+/g, " ").trim();
+  return normalized.length > 0 ? normalized.slice(0, maxFrontendRepairValueLength) : null;
+}
+
+function selectorContractList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map(boundedRepairValue)
+    .filter((selector): selector is string => selector !== null)
+    .slice(0, maxFrontendSelectorAlternatives);
+}
+
+export function buildFrontendRepairChecklist(validationErrors: string[]): string {
+  const directives: string[] = [];
+  for (const error of validationErrors) {
+    const prefixIndex = error.indexOf(frontendRepairRequirementPrefix);
+    if (prefixIndex < 0 || directives.length >= maxFrontendRepairRequirements) {
+      continue;
+    }
+
+    try {
+      const requirement = JSON.parse(error.slice(prefixIndex + frontendRepairRequirementPrefix.length)) as {
+        action?: unknown;
+        selectorAlternatives?: unknown;
+        expectation?: Record<string, unknown>;
+      };
+      const action = boundedRepairValue(requirement.action) ?? "verification";
+      const selectors = selectorContractList(requirement.selectorAlternatives);
+      const selectorText = selectors.length > 0 ? selectors.map((selector) => `\`${selector}\``).join(" or ") : "the reported runtime";
+      const expectation = requirement.expectation;
+      const kind = boundedRepairValue(expectation?.kind);
+      let directive: string | null = null;
+
+      if (kind === "exists") {
+        directive = `After ${action}, ensure ${selectorText} exists. Rename an equivalent hook and update all HTML, CSS, and JavaScript references if needed.`;
+      } else if (kind === "min_count") {
+        const count = boundedRepairValue(expectation?.value) ?? "the required count";
+        directive = `After ${action}, ensure ${selectorText} matches at least ${count} rendered elements. Put required descendant classes on each runtime-rendered item, not only its container.`;
+      } else if (kind === "text_includes") {
+        const value = boundedRepairValue(expectation?.value);
+        if (value) directive = `After ${action}, ensure ${selectorText} includes the text \`${value}\`.`;
+      } else if (kind === "attribute_equals") {
+        const attribute = boundedRepairValue(expectation?.attribute);
+        const value = boundedRepairValue(expectation?.value);
+        if (attribute && value) directive = `After ${action}, ensure ${selectorText} has \`${attribute}="${value}"\`.`;
+      } else if (kind === "class_any") {
+        const values = selectorContractList(expectation?.values);
+        if (values.length > 0) directive = `After ${action}, ensure ${selectorText} has one required class: ${values.map((value) => `\`${value}\``).join(" or ")}.`;
+      } else if (kind === "no_runtime_errors") {
+        directive = `After ${action}, eliminate the reported frontend runtime error without removing the requested behavior.`;
+      }
+
+      if (directive) {
+        directives.push(directive);
+      }
+    } catch {
+      // Malformed evaluator output is not safe to turn into a repair contract.
+    }
+  }
+
+  return directives.length > 0
+    ? `\n\nEXACT FRONTEND CONTRACT CHECKLIST:\n${directives.map((directive, index) => `${index + 1}. ${directive}`).join("\n")}`
+    : "";
+}
+
 function hasTestVerificationFailure(validationErrors: string[]): boolean {
   return validationErrors.some((error) =>
     /Verification failed:/i.test(error) &&
@@ -809,7 +885,8 @@ export class CodeGenerator {
     });
     const repairRoute = VALIDATION_REPAIR_ROUTES.find((route) => route.match(validationErrors));
     const maxTokens = repairRoute?.maxTokens(promptFiles) ?? estimateGenerationMaxTokens(promptFiles, options);
-    const userMessage = repairRoute?.instruction ?? "Return only the repaired <changes> payload with complete file contents in CDATA blocks.";
+    const baseUserMessage = repairRoute?.instruction ?? "Return only the repaired <changes> payload with complete file contents in CDATA blocks.";
+    const userMessage = `${baseUserMessage}${buildFrontendRepairChecklist(validationErrors)}`;
     const response = await this.llmClient.complete(
       buildValidationRepairPrompt(feedback.summary, promptFiles, currentChanges, validationErrors, fileTree, implementationPlan),
       userMessage,
