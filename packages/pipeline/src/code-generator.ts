@@ -896,7 +896,23 @@ export class CodeGenerator {
         timeoutMs: repairRoute?.timeoutMs ?? GENERATION_TIMEOUT_MS
       }
     );
+    const currentChangesByPath = new Map(currentChanges.map((change) => [change.filePath, change]));
+    const repairFilesByPath = new Map(relevantFiles.map((file) => [file.path, file]));
+    for (const change of currentChanges) {
+      const relevantFile = repairFilesByPath.get(change.filePath);
+      repairFilesByPath.set(change.filePath, {
+        path: change.filePath,
+        content: change.modifiedContent,
+        reason: relevantFile?.reason ?? "current generated change"
+      });
+    }
 
-    return this.toGeneratedChanges(parseGeneratedChanges(response), relevantFiles, fileTree);
+    return this.toGeneratedChanges(parseGeneratedChanges(response), [...repairFilesByPath.values()], fileTree)
+      .map((change) => {
+        const currentChange = currentChangesByPath.get(change.filePath);
+        return currentChange
+          ? { ...change, originalContent: currentChange.originalContent }
+          : change;
+      });
   }
 }

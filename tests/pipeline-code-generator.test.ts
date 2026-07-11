@@ -810,14 +810,14 @@ def queue():
   <edit>
     <filePath>mosaic_demo/service.py</filePath>
     <search><![CDATA[
-def close_request():
-    return 2
+def create_request():
+    return 99
 ]]></search>
     <replace><![CDATA[
-def close_request():
-    return 3
+def create_request():
+    return 1
 ]]></replace>
-    <explanation>Keep the fix localized to close_request.</explanation>
+    <explanation>Restore the unrelated protected function.</explanation>
   </edit>
 </changes>`;
     });
@@ -974,7 +974,7 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
   <edit>
     <filePath>index.html</filePath>
     <search><![CDATA[
-<main></main>
+<main><div id="colModalOverlay"></div></main>
 ]]></search>
     <replace><![CDATA[
 <main><div id="collectionModalOverlay" aria-hidden="false"><h2 id="modalTitle">Kitchen</h2></div></main>
@@ -984,7 +984,7 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
 </changes>`;
     });
 
-    await new CodeGenerator(fakeClient).repairValidationFailure(
+    const repaired = await new CodeGenerator(fakeClient).repairValidationFailure(
       buildClassifiedFeedback({
         rawContent: "Add collection popups",
         category: "feature_request",
@@ -1034,6 +1034,81 @@ document.querySelectorAll('[data-collection]').forEach((button) => {
     expect(capturedSystemPrompt).toContain('id="colModalOverlay"');
     expect(capturedSystemPrompt).toContain('"selectorAlternatives":["#collectionModalOverlay","#modal-kitchen"]');
     expect(capturedTimeoutMs).toBe(180_000);
+    expect(repaired).toEqual([expect.objectContaining({
+      filePath: "index.html",
+      originalContent: "<main></main>",
+      modifiedContent: '<main><div id="collectionModalOverlay" aria-hidden="false"><h2 id="modalTitle">Kitchen</h2></div></main>'
+    })]);
+  });
+
+  it("applies localized selector-contract repairs to current generated files", async () => {
+    const originalHtml = "<main></main>";
+    const currentHtml = '<main><section id="productDetailSpecifications"></section><div id="productDetailReviewList"></div></main>';
+    const originalScript = "console.log('ready');";
+    const currentScript = [
+      'document.getElementById("productDetailSpecifications").textContent = product.specs;',
+      'document.getElementById("productDetailReviewList").innerHTML = \'<div class="modal-review-item">Review</div>\';'
+    ].join("\n");
+    const fakeClient = createPipelineLlmClient(async () => `<changes>
+  <edit>
+    <filePath>index.html</filePath>
+    <search><![CDATA[${currentHtml}]]></search>
+    <replace><![CDATA[<main><section id="productDetailSpecs"></section><div id="productDetailReviews"></div></main>]]></replace>
+    <explanation>Use the exact required detail hooks.</explanation>
+  </edit>
+  <edit>
+    <filePath>script.js</filePath>
+    <search><![CDATA[${currentScript}]]></search>
+    <replace><![CDATA[document.getElementById("productDetailSpecs").textContent = product.specs;
+document.getElementById("productDetailReviews").innerHTML = '<div class="modal-review-item pd-review">Review</div>';]]></replace>
+    <explanation>Update runtime references and repeated review hooks.</explanation>
+  </edit>
+</changes>`);
+
+    const repaired = await new CodeGenerator(fakeClient).repairValidationFailure(
+      buildClassifiedFeedback({
+        rawContent: "Add product detail views",
+        category: "feature_request",
+        complexity: "complex",
+        summary: "Add product detail views",
+        relevantFiles: ["index.html", "script.js"],
+        confidence: 0.8
+      }),
+      [
+        { path: "index.html", content: originalHtml, reason: "markup" },
+        { path: "script.js", content: originalScript, reason: "behavior" }
+      ],
+      ["index.html", "script.js"],
+      [
+        { filePath: "index.html", originalContent: originalHtml, modifiedContent: currentHtml, explanation: "add detail markup" },
+        { filePath: "script.js", originalContent: originalScript, modifiedContent: currentScript, explanation: "render details" }
+      ],
+      [
+        "Frontend repair requirement: " + JSON.stringify({
+          action: "assert",
+          selectorAlternatives: ["#productDetailSpecs"],
+          expectation: { kind: "exists" }
+        }),
+        "Frontend repair requirement: " + JSON.stringify({
+          action: "assert",
+          selectorAlternatives: ["#productDetailReviews .pd-review"],
+          expectation: { kind: "min_count", value: 1 }
+        })
+      ]
+    );
+
+    expect(repaired).toEqual([
+      expect.objectContaining({
+        filePath: "index.html",
+        originalContent: originalHtml,
+        modifiedContent: expect.stringContaining('id="productDetailSpecs"')
+      }),
+      expect.objectContaining({
+        filePath: "script.js",
+        originalContent: originalScript,
+        modifiedContent: expect.stringContaining('class="modal-review-item pd-review"')
+      })
+    ]);
   });
 
   it("uses focused test verification repair instructions without dropping coverage", async () => {
@@ -1153,10 +1228,10 @@ cursor = conn.execute("INSERT INTO service_requests")
   <edit>
     <filePath>mosaic_demo/web.py</filePath>
     <search><![CDATA[
-from .service import close_request, create_request, get_request, list_requests
+from .service import list_requests
 ]]></search>
     <replace><![CDATA[
-from .service import close_request, create_request, get_metrics, get_request, list_requests
+from .service import get_metrics, list_requests
 ]]></replace>
     <explanation>Import the metrics helper used by the route.</explanation>
   </edit>
