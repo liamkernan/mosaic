@@ -1041,7 +1041,7 @@ export async function validate(
   }
 
   const maxLinesAdded = limits.maxLinesAdded ?? defaultSecurityConfig.max_lines_added;
-  if (totalLinesAdded >= maxLinesAdded) {
+  if (totalLinesAdded > maxLinesAdded) {
     errors.push(`Total new code added exceeds limit: ${totalLinesAdded} lines`);
   }
 

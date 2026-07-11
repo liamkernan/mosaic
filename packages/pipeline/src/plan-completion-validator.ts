@@ -11,6 +11,7 @@ const companionConfigPathPattern = /(?:^|\/)(?:package\.json|pnpm-workspace\.ya?
 const orderedClausePattern = /`([^`]*(?:ASC|DESC|ORDER BY)[^`]*)`/gi;
 const backtickedClausePattern = /`([^`]+)`/g;
 const idempotencyPlanPattern = /\b(?:dedupe|duplicate|idempotent|idempotency|retry|same source|external[_\s-]?ref(?:erence)?)\b/i;
+const idempotencyIdentityPattern = /\b(?:idempotency\s+key|external[_\s-]?ref(?:erence)?|same\s+source|source\s+(?:and|\+)\s+[^.\n]{0,40}(?:ref(?:erence)?|key))\b/i;
 const endpointPathPattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+(`?)(\/[a-zA-Z0-9_./:-]+)\1/g;
 const quotedEndpointPathPattern = /["'`](\/[a-zA-Z0-9_./:-]+)["'`]/g;
 
@@ -472,17 +473,34 @@ function missingRequiredFrontendLayerErrors(
     );
   }
 
-  if ([...plannedPathsByLayer.values()].some((paths) => paths.length === 0)) {
+  const planBehaviorText = [
+    ...plan.requiredFiles.map((file) => file.reason),
+    ...plan.acceptanceCriteria,
+    ...plan.implementationChecklist
+  ].join("\n");
+  const requiresInferredJavaScript = /\b(?:javascript|dom api|read (?:the )?.{0,30}(?:url|query|slug)|render (?:the )?.{0,30}(?:record|data|matching)|event listener|keyboard behavior)\b/i.test(planBehaviorText);
+  const requiredLayers = new Set<FrontendLayer>();
+  for (const [layer, paths] of plannedPathsByLayer) {
+    if (paths.length > 0) {
+      requiredLayers.add(layer);
+    }
+  }
+  if (requiresInferredJavaScript) {
+    requiredLayers.add("javascript");
+  }
+
+  if (requiredLayers.size < 2) {
     return [];
   }
 
   const changedPaths = changes.map((change) => normalizeRepoPath(change.filePath));
   const errors: string[] = [];
   for (const [layer, pattern] of Object.entries(frontendLayerPatterns) as Array<[FrontendLayer, RegExp]>) {
-    if (!changedPaths.some((path) => pattern.test(path))) {
+    if (requiredLayers.has(layer) && !changedPaths.some((path) => pattern.test(path))) {
       const label = frontendLayerLabels[layer];
+      const plannedPaths = plannedPathsByLayer.get(layer) ?? [];
       errors.push(
-        `[missing-frontend-layer:${layer}] Implementation plan requires complete HTML, JavaScript, and CSS layers, but generated changes omit the ${label} layer. Planned ${label} files: ${plannedPathsByLayer.get(layer)?.join(", ")}`
+        `[missing-frontend-layer:${layer}] Implementation plan requires a ${label} layer, but generated changes omit it. ${plannedPaths.length > 0 ? `Planned ${label} files: ${plannedPaths.join(", ")}` : `The ${label} requirement is explicit in the implementation checklist.`}`
       );
     }
   }
@@ -604,6 +622,7 @@ function collectQuotedEndpointPaths(changes: GeneratedChange[]): Set<string> {
 
 function planRequiresIdempotencyUpdate(text: string): boolean {
   return idempotencyPlanPattern.test(text) &&
+    idempotencyIdentityPattern.test(text) &&
     /\b(?:update|existing|same|duplicate|retry|idempotent|dedupe)\b/i.test(text);
 }
 

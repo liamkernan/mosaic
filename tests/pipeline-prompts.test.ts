@@ -280,6 +280,8 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("OVERSIZED PATCH REPAIR MODE");
     expect(prompt).toContain("one shared overlay/dialog");
     expect(prompt).toContain("aggressively remove duplicated markup");
+    expect(prompt).toContain("within the implementation plan's required files");
+    expect(prompt).toContain("newly named supplemental files");
     expect(prompt).toContain("modal/dialog/overlay behavior is missing");
     expect(prompt).toContain("Do not return HTML/CSS-only repairs");
     expect(prompt).toContain("new static asset is not linked");

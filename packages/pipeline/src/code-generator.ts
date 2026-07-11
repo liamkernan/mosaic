@@ -518,7 +518,7 @@ const VALIDATION_REPAIR_ROUTES: ValidationRepairRoute[] = [
   },
   {
     match: hasOversizedPatchValidationError,
-    instruction: "Return only a compact repaired <changes> payload. The previous patch exceeded validation limits, so remove repeated markup/data and use one reusable data-driven implementation with matching JS/CSS.",
+    instruction: "Return only a compact repaired <changes> payload. The previous patch exceeded validation limits, so remove repeated markup/data and use one reusable data-driven implementation with matching JS/CSS. Keep every changed path within the implementation plan's required files; do not replace planned files with newly named supplemental files.",
     maxTokens: focusedValidationRepairMaxTokens,
     timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
   },

@@ -125,6 +125,30 @@ describe("validate", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("allows exactly the configured maximum number of added lines", async () => {
+    const tempDir = await tempDirs.create("mosaic-validator-");
+    const modifiedContent = ["one", "two", "three"].join("\n");
+
+    const result = await validate(
+      [{
+        filePath: "src/new.ts",
+        originalContent: "",
+        modifiedContent,
+        explanation: "add a file at the configured limit"
+      }],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath: tempDir,
+        fileTree: [],
+        installationId: 1
+      },
+      { maxLinesAdded: 3 }
+    );
+
+    expect(result.errors).not.toContain("Total new code added exceeds limit: 3 lines");
+  });
+
   it("rejects generated change paths outside the repository", async () => {
     const result = await validate(
       [

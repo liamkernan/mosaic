@@ -556,17 +556,7 @@ async function evaluateChecks(
   }
 
   if (generated) {
-    for (const change of changes) {
-      const unchangedSymbols = [
-        ...(evalCase.unchangedPythonSymbols?.[change.filePath] ?? []),
-        ...(evalCase.unchangedSymbols?.[change.filePath] ?? [])
-      ];
-      errors.push(...validateUnchangedSymbols(change, unchangedSymbols));
-      errors.push(...validateUnchangedSymbolsWithAllowedLines(
-        change,
-        evalCase.allowedSymbolAdditions?.[change.filePath] ?? {}
-      ));
-    }
+    errors.push(...evaluateContainmentChecks(evalCase, changes));
 
     for (const pattern of evalCase.requiredChangedFilePatterns ?? []) {
       const patterns = Array.isArray(pattern) ? pattern : [pattern];
@@ -598,6 +588,22 @@ async function evaluateChecks(
     }
   }
 
+  return errors;
+}
+
+function evaluateContainmentChecks(evalCase: EvalCase, changes: GeneratedChange[]): string[] {
+  const errors: string[] = [];
+  for (const change of changes) {
+    const unchangedSymbols = [
+      ...(evalCase.unchangedPythonSymbols?.[change.filePath] ?? []),
+      ...(evalCase.unchangedSymbols?.[change.filePath] ?? [])
+    ];
+    errors.push(...validateUnchangedSymbols(change, unchangedSymbols));
+    errors.push(...validateUnchangedSymbolsWithAllowedLines(
+      change,
+      evalCase.allowedSymbolAdditions?.[change.filePath] ?? {}
+    ));
+  }
   return errors;
 }
 
@@ -968,7 +974,8 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
           if (selected) {
             changes = candidateChanges;
           }
-        }
+        },
+        (candidateChanges) => evaluateContainmentChecks(evalCase, candidateChanges)
       );
     } catch (error) {
       await persistArtifacts();
@@ -1274,7 +1281,8 @@ async function generateValidatedChanges(
     errors: string[],
     candidateChanges: GeneratedChange[],
     selected: boolean
-  ) => void = () => {}
+  ) => void = () => {},
+  additionalValidationErrors: (changes: GeneratedChange[]) => string[] = () => []
 ): Promise<GeneratedChange[]> {
   let changes = await generator.generate(feedback, relevantFiles, fileTree, implementationPlan, {
     completeSolution: true
@@ -1282,10 +1290,11 @@ async function generateValidatedChanges(
   const feedbackText = `${feedback.summary}\n${feedback.rawContent}`;
   let validation = await validate(changes, repoContext);
   const planErrors = validatePlanCompletion(changes, implementationPlan, feedbackText);
-  if (planErrors.length > 0) {
+  const containmentErrors = additionalValidationErrors(changes);
+  if (planErrors.length > 0 || containmentErrors.length > 0) {
     validation = {
       valid: false,
-      errors: [...validation.errors, ...planErrors]
+      errors: [...validation.errors, ...planErrors, ...containmentErrors]
     };
   }
   recordValidation("initial", validation.errors, changes, true);
@@ -1297,10 +1306,11 @@ async function generateValidatedChanges(
         changes = scopedChanges;
         validation = await validate(changes, repoContext);
         const scopedPlanErrors = validatePlanCompletion(changes, implementationPlan, feedbackText);
-        if (scopedPlanErrors.length > 0) {
+        const scopedContainmentErrors = additionalValidationErrors(changes);
+        if (scopedPlanErrors.length > 0 || scopedContainmentErrors.length > 0) {
           validation = {
             valid: false,
-            errors: [...validation.errors, ...scopedPlanErrors]
+            errors: [...validation.errors, ...scopedPlanErrors, ...scopedContainmentErrors]
           };
         }
         recordValidation(`scope-prune-${attempt + 1}`, validation.errors, changes, true);
@@ -1330,10 +1340,11 @@ async function generateValidatedChanges(
           : mergeGeneratedChanges(changes, repairedChanges);
         let candidateValidation = await validate(candidateChanges, repoContext);
         const repairedPlanErrors = validatePlanCompletion(candidateChanges, implementationPlan, feedbackText);
-        if (repairedPlanErrors.length > 0) {
+        const repairedContainmentErrors = additionalValidationErrors(candidateChanges);
+        if (repairedPlanErrors.length > 0 || repairedContainmentErrors.length > 0) {
           candidateValidation = {
             valid: false,
-            errors: [...candidateValidation.errors, ...repairedPlanErrors]
+            errors: [...candidateValidation.errors, ...repairedPlanErrors, ...repairedContainmentErrors]
           };
         }
         const progress = assessRepairProgress(changes, candidateChanges, validation.errors, candidateValidation.errors, {
@@ -1362,10 +1373,11 @@ async function generateValidatedChanges(
       if (completedChanges !== changes) {
         let completedValidation = await validate(completedChanges, repoContext);
         const completedPlanErrors = validatePlanCompletion(completedChanges, implementationPlan, feedbackText);
-        if (completedPlanErrors.length > 0) {
+        const completedContainmentErrors = additionalValidationErrors(completedChanges);
+        if (completedPlanErrors.length > 0 || completedContainmentErrors.length > 0) {
           completedValidation = {
             valid: false,
-            errors: [...completedValidation.errors, ...completedPlanErrors]
+            errors: [...completedValidation.errors, ...completedPlanErrors, ...completedContainmentErrors]
           };
         }
         const progress = assessRepairProgress(changes, completedChanges, validation.errors, completedValidation.errors, {

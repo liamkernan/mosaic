@@ -33,7 +33,7 @@ describe("validatePlanCompletion", () => {
     );
 
     expect(errors).toContain(
-      "[missing-frontend-layer:css] Implementation plan requires complete HTML, JavaScript, and CSS layers, but generated changes omit the CSS layer. Planned CSS files: styles.css"
+      "[missing-frontend-layer:css] Implementation plan requires a CSS layer, but generated changes omit it. Planned CSS files: styles.css"
     );
   });
 
@@ -363,6 +363,59 @@ describe("validatePlanCompletion", () => {
     );
 
     expect(errors.join("\n")).toContain("idempotent duplicate/retry update path");
+  });
+
+  it("does not mistake an idempotent close operation for keyed intake deduplication", () => {
+    const errors = validatePlanCompletion(
+      [{
+        filePath: "mosaic_demo/service.py",
+        originalContent: "event_type = 'updated'\n",
+        modifiedContent: "event_type = 'closed'\n",
+        explanation: "correct the close audit label"
+      }],
+      {
+        ...basePlan,
+        requiredFiles: [{ path: "mosaic_demo/service.py", reason: "update close_request audit behavior" }],
+        acceptanceCriteria: ["The close-request behavior remains idempotent for requests already marked closed."],
+        verificationChecklist: ["Verify a repeated close leaves the audit-event count unchanged."]
+      }
+    );
+
+    expect(errors).not.toContain(
+      "Acceptance criteria require an idempotent duplicate/retry update path, but no implementation change appears to look up and update an existing record by the idempotency key"
+    );
+  });
+
+  it("requires JavaScript when a static frontend checklist explicitly calls for DOM rendering", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>\n",
+          modifiedContent: "<main><a href='product.html?slug=vase'>Vase</a></main>\n",
+          explanation: "link product details"
+        },
+        {
+          filePath: "styles.css",
+          originalContent: "",
+          modifiedContent: ".product { display: grid; }\n",
+          explanation: "style product details"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "index.html", reason: "link product detail URLs" },
+          { path: "styles.css", reason: "style the product detail layout" }
+        ],
+        implementationChecklist: [
+          "Read the product slug from the URL and render the matching record using safe DOM APIs."
+        ]
+      }
+    );
+
+    expect(errors.join("\n")).toContain("[missing-frontend-layer:javascript]");
+    expect(errors.join("\n")).toContain("explicit in the implementation checklist");
   });
 
   it("uses original feedback text to validate idempotency when the plan is underspecified", () => {

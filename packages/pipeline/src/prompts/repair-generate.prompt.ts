@@ -138,6 +138,7 @@ INSTRUCTIONS:
 - If validation says a new static asset is not linked, update the HTML to load that exact JS or CSS file; do not leave supplemental behavior/style files orphaned.
 - If validation says a script queries missing HTML ids/selectors, either add those exact hooks to the HTML or update the script to target hooks that actually exist. Do not keep JavaScript selectors that match nothing.
 - If validation says total new code is too large, reduce repeated markup/data first: use one reusable modal/dialog/overlay, compact JavaScript data, and shared selectors instead of duplicating UI blocks.
+- When reducing an oversized patch, keep the repaired change set within the implementation plan's required files. Do not evade the size limit by replacing planned files with newly named supplemental files.
 - If validation says modal/dialog/overlay behavior is missing, return script changes that wire every new trigger to the exact new modal/dialog/overlay ids/classes/data attributes. Do not return HTML/CSS-only repairs for interactive UI.
 - Modal/dialog/overlay behavior must at minimum open on click, support keyboard activation for non-native triggers, close by close button/backdrop/Escape where applicable, and update aria-hidden or native dialog state consistently.
 - Replace click-only div/article/section/card containers with native buttons or links where possible; otherwise add role, tabindex, and keyboard handling.

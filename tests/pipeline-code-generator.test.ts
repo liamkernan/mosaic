@@ -648,6 +648,8 @@ const retrySucceeded = true;
     );
 
     expect(capturedUserMessage).toContain("previous patch exceeded validation limits");
+    expect(capturedUserMessage).toContain("within the implementation plan's required files");
+    expect(capturedUserMessage).toContain("newly named supplemental files");
     expect(capturedUserMessage).toContain("one reusable data-driven implementation");
     expect(capturedMaxTokens).toBeLessThanOrEqual(16_384);
     expect(capturedTimeoutMs).toBe(180_000);
