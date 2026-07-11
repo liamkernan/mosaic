@@ -246,6 +246,8 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("one reusable modal/dialog/overlay");
     expect(prompt).toContain("data-driven behavior");
     expect(prompt).toContain("interactive UI as atomic");
+    expect(prompt).toContain("connects a UI action to server, API, persistence, or database behavior");
+    expect(prompt).toContain("planned backing handler/service/data change");
     expect(prompt).toContain("<edit>");
     expect(prompt).toContain("applied atomically in response order");
     expect(prompt).toContain("current in-memory version of that file exactly once");

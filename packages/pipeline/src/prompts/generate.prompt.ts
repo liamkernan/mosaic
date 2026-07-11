@@ -67,6 +67,7 @@ INSTRUCTIONS:
 - For repeated cards/items/popups, implement one reusable modal/dialog/overlay and populate it from compact data in JavaScript or existing data attributes. Do not duplicate full modal markup for every item.
 - Keep static frontend changes compact enough to pass validation limits; prefer data-driven behavior and scoped selectors over hundreds of lines of repeated HTML.
 - Treat interactive UI as atomic: if you add modal/dialog/overlay markup or clickable triggers, the same response must include the JavaScript that opens, populates, closes, and keyboard-wires that UI using the exact ids/classes/data attributes from the markup.
+- If the request or implementation plan explicitly connects a UI action to server, API, persistence, or database behavior, implement both the frontend action and the planned backing handler/service/data change. Do not add a fake button, client-only placeholder, or empty handler.
 - For clickable UI, use native <button> or <a> elements whenever possible. Do not attach click-only behavior to plain div/article/section/card containers unless you also make them accessible with role, tabindex, and keyboard handling.
 - For clickable product/card detail triggers, put the required clickable class and data attributes on the native <button type="button"> or <a> target itself whenever possible; style that control as the card instead of adding a clickable class to a surrounding article/div.
 - For product detail triggers, use the stable compound hook .product-card-clickable[data-product-key] on the same interactive element.

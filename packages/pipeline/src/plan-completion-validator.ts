@@ -14,6 +14,19 @@ const idempotencyPlanPattern = /\b(?:dedupe|duplicate|idempotent|idempotency|ret
 const idempotencyIdentityPattern = /\b(?:idempotency\s+key|external[_\s-]?ref(?:erence)?|same\s+source|source\s+(?:and|\+)\s+[^.\n]{0,40}(?:ref(?:erence)?|key))\b/i;
 const endpointPathPattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+(`?)(\/[a-zA-Z0-9_./:-]+)\1/g;
 const quotedEndpointPathPattern = /["'`](\/[a-zA-Z0-9_./:-]+)["'`]/g;
+const interactiveUiPattern = /\b(?:form|button|page|screen|modal|dialog|front-?end|client|browser|ui|view|component|submit|click)\b/i;
+const backingBehaviorPattern = /\b(?:back-?end|server(?:-side)?|api|endpoint|route|handler|database|persist(?:ed|ence|ing)?|service\s+layer|repository)\b/i;
+const fullStackActionPattern = /\b(?:calls?|submits?|sends?|loads?|fetches?|saves?|persists?|persisted|persisting|updates?|creates?|deletes?|reads?|writes?|displays?|renders?|requests?|receives?|posts?|queries|triggers?)\b/i;
+const frontendPlanFilePattern = /\.(?:html?|css|scss|jsx|tsx|vue|svelte)$/i;
+const frontendPlanReasonPattern = /\b(?:front-?end|client|browser|ui|view|component|page|form|button)\b/i;
+const backendPlanFilePattern = /(?:^|\/)(?:api|server|routes?|handlers?|services?|controllers?|repositories?|models?|db|database)(?:\/|\.|$)/i;
+const backendPlanReasonPattern = /\b(?:back-?end|server|api|route|handler|service|controller|repository|database|persistence|model)\b/i;
+
+function requiresFullStackContract(text: string): boolean {
+  return text.split(/\n+/).some((line) =>
+    interactiveUiPattern.test(line) && backingBehaviorPattern.test(line) && fullStackActionPattern.test(line)
+  );
+}
 
 const frontendLayerPatterns = {
   html: /\.html?$/i,
@@ -458,6 +471,42 @@ function plannedRuntimePaths(plan: ImplementationPlan): Set<string> {
     .filter((path) => !testPathPattern.test(path) && !documentationPathPattern.test(path)));
 }
 
+function fullStackSurfaceErrors(
+  changes: GeneratedChange[],
+  plan: ImplementationPlan,
+  text: string
+): string[] {
+  if (!requiresFullStackContract(text)) {
+    return [];
+  }
+
+  const runtimeFiles = plan.requiredFiles.filter((file) =>
+    !testPathPattern.test(file.path) && !documentationPathPattern.test(file.path)
+  );
+  const frontendPaths = runtimeFiles
+    .filter((file) => frontendPlanFilePattern.test(file.path) || frontendPlanReasonPattern.test(file.reason))
+    .map((file) => normalizeRepoPath(file.path));
+  const backendPaths = runtimeFiles
+    .filter((file) => backendPlanFilePattern.test(file.path) || backendPlanReasonPattern.test(file.reason))
+    .map((file) => normalizeRepoPath(file.path));
+  const changedPaths = new Set(changes.map((change) => normalizeRepoPath(change.filePath)));
+  const errors: string[] = [];
+
+  if (frontendPaths.length === 0) {
+    errors.push("Implementation plan requires runtime/source changes for a full-stack UI request, but it names no frontend view/interaction file");
+  } else if (!frontendPaths.some((path) => changedPaths.has(path))) {
+    errors.push(`Implementation plan requires runtime/source changes for the frontend view/interaction surface of this full-stack UI request: ${frontendPaths.join(", ")}`);
+  }
+
+  if (backendPaths.length === 0) {
+    errors.push("Implementation plan requires runtime/source changes for backing server behavior, but it names no handler/service/data file");
+  } else if (!backendPaths.some((path) => changedPaths.has(path))) {
+    errors.push(`Implementation plan requires runtime/source changes for the backing server/handler/service surface of this full-stack UI request: ${backendPaths.join(", ")}`);
+  }
+
+  return errors;
+}
+
 function missingRequiredFrontendLayerErrors(
   changes: GeneratedChange[],
   plan: ImplementationPlan
@@ -649,6 +698,7 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
   errors.push(...generatedTestListFieldErrors(changes));
   errors.push(...validatePlannedChangeScope(changes, plan, sourceText));
   errors.push(...missingRequiredFrontendLayerErrors(changes, plan));
+  errors.push(...fullStackSurfaceErrors(changes, plan, text));
 
   const { testChanges, runtimeChanges, runtimeChangeFacts } = collectCompletionChangeGroups(changes);
   const requiredRuntimePaths = plannedRuntimePaths(plan);

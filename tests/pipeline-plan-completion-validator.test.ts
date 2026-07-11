@@ -418,6 +418,120 @@ describe("validatePlanCompletion", () => {
     expect(errors.join("\n")).toContain("explicit in the implementation checklist");
   });
 
+  it("rejects a UI-only patch when the request explicitly requires backing server behavior", () => {
+    const plan = {
+      ...basePlan,
+      requiredFiles: [
+        { path: "src/settings-form.tsx", reason: "add the settings form UI and submit action" },
+        { path: "src/settings-service.ts", reason: "persist settings in the backing server service" }
+      ],
+      acceptanceCriteria: ["The settings form persists preferences through the server-side service."]
+    };
+    const frontendChange = {
+      filePath: "src/settings-form.tsx",
+      originalContent: "export function SettingsForm() { return null; }\n",
+      modifiedContent: "export function SettingsForm() { return <button>Save</button>; }\n",
+      explanation: "add the save interaction"
+    };
+
+    const errors = validatePlanCompletion(
+      [frontendChange],
+      plan,
+      "Add a settings form that persists preferences through the server-side service."
+    );
+
+    expect(errors).toContain(
+      "Implementation plan requires runtime/source changes for the backing server/handler/service surface of this full-stack UI request: src/settings-service.ts"
+    );
+  });
+
+  it("accepts both planned surfaces for an explicit full-stack UI request", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "src/settings-form.tsx",
+          originalContent: "export function SettingsForm() { return null; }\n",
+          modifiedContent: "export function SettingsForm() { return <button>Save</button>; }\n",
+          explanation: "add the save interaction"
+        },
+        {
+          filePath: "src/settings-service.ts",
+          originalContent: "export function saveSettings() {}\n",
+          modifiedContent: "export function saveSettings(value: string) { return repository.save(value); }\n",
+          explanation: "persist the submitted settings"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "src/settings-form.tsx", reason: "add the settings form UI and submit action" },
+          { path: "src/settings-service.ts", reason: "persist settings in the backing server service" }
+        ],
+        acceptanceCriteria: ["The settings form persists preferences through the server-side service."]
+      },
+      "Add a settings form that persists preferences through the server-side service."
+    );
+
+    expect(errors.filter((error) => error.includes("full-stack UI request"))).toEqual([]);
+  });
+
+  it("does not invent a backend requirement for a client-only interaction", () => {
+    const errors = validatePlanCompletion(
+      [{
+        filePath: "src/theme-toggle.tsx",
+        originalContent: "export function ThemeToggle() { return null; }\n",
+        modifiedContent: "export function ThemeToggle() { return <button>Theme</button>; }\n",
+        explanation: "add a local theme toggle"
+      }],
+      {
+        ...basePlan,
+        requiredFiles: [{ path: "src/theme-toggle.tsx", reason: "add the client-only theme button" }],
+        acceptanceCriteria: ["Clicking the button toggles the local theme state."]
+      },
+      "Add a client-only theme toggle button."
+    );
+
+    expect(errors.some((error) => /backing server|full-stack UI/.test(error))).toBe(false);
+  });
+
+  it("does not combine unrelated UI and API requirements into a full-stack contract", () => {
+    const errors = validatePlanCompletion(
+      [{
+        filePath: "src/settings-page.tsx",
+        originalContent: "export function SettingsPage() { return null; }\n",
+        modifiedContent: "export function SettingsPage() { return <p>Settings</p>; }\n",
+        explanation: "add the settings page copy"
+      }],
+      {
+        ...basePlan,
+        requiredFiles: [{ path: "src/settings-page.tsx", reason: "add the client settings page" }],
+        acceptanceCriteria: ["The settings page shows the account label."]
+      },
+      "Add the client settings page.\nDocument the existing API separately."
+    );
+
+    expect(errors.some((error) => /backing server|full-stack UI/.test(error))).toBe(false);
+  });
+
+  it("does not treat a link to API documentation as backing application behavior", () => {
+    const errors = validatePlanCompletion(
+      [{
+        filePath: "src/help-page.tsx",
+        originalContent: "export function HelpPage() { return null; }\n",
+        modifiedContent: "export function HelpPage() { return <a href='/docs'>API docs</a>; }\n",
+        explanation: "link the API documentation"
+      }],
+      {
+        ...basePlan,
+        requiredFiles: [{ path: "src/help-page.tsx", reason: "add a button linking to API documentation" }],
+        acceptanceCriteria: ["The help page includes a button that opens the API documentation."]
+      },
+      "Add a help-page button that opens the existing API documentation."
+    );
+
+    expect(errors.some((error) => /backing server|full-stack UI/.test(error))).toBe(false);
+  });
+
   it("uses original feedback text to validate idempotency when the plan is underspecified", () => {
     const errors = validatePlanCompletion(
       [

@@ -44,6 +44,27 @@ function normalizePath(path: string): string {
 
 const testPathPattern = /(?:^|\/)(?:test|tests|spec|specs|__tests__)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/i;
 const endpointPattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+`?(\/[a-zA-Z0-9_./:-]+)/i;
+const interactiveUiPattern = /\b(?:form|button|page|screen|modal|dialog|front-?end|client|browser|ui|view|component|submit|click)\b/i;
+const backingBehaviorPattern = /\b(?:back-?end|server(?:-side)?|api|endpoint|route|handler|database|persist(?:ed|ence|ing)?|service\s+layer|repository)\b/i;
+const fullStackActionPattern = /\b(?:calls?|submits?|sends?|loads?|fetches?|saves?|persists?|persisted|persisting|updates?|creates?|deletes?|reads?|writes?|displays?|renders?|requests?|receives?|posts?|queries|triggers?)\b/i;
+const frontendPlanFilePattern = /\.(?:html?|css|scss|jsx|tsx|vue|svelte)$/i;
+const frontendPlanReasonPattern = /\b(?:front-?end|client|browser|ui|view|component|page|form|button)\b/i;
+const backendPlanFilePattern = /(?:^|\/)(?:api|server|routes?|handlers?|services?|controllers?|repositories?|models?|db|database)(?:\/|\.|$)/i;
+const backendPlanReasonPattern = /\b(?:back-?end|server|api|route|handler|service|controller|repository|database|persistence|model)\b/i;
+
+function requiresFullStackContract(text: string): boolean {
+  return text.split(/\n+/).some((line) =>
+    interactiveUiPattern.test(line) && backingBehaviorPattern.test(line) && fullStackActionPattern.test(line)
+  );
+}
+
+function isFrontendPlanFile(file: ImplementationPlan["requiredFiles"][number]): boolean {
+  return frontendPlanFilePattern.test(file.path) || frontendPlanReasonPattern.test(file.reason);
+}
+
+function isBackendPlanFile(file: ImplementationPlan["requiredFiles"][number]): boolean {
+  return backendPlanFilePattern.test(file.path) || backendPlanReasonPattern.test(file.reason);
+}
 
 function normalizePlan(
   response: string,
@@ -74,10 +95,20 @@ export function validateImplementationPlan(
   plan: ImplementationPlan,
   feedback: ClassifiedFeedback
 ): string[] {
-  const endpoint = `${feedback.summary}\n${feedback.rawContent}`.match(endpointPattern)?.[1];
+  const feedbackText = `${feedback.summary}\n${feedback.rawContent}`;
+  const endpoint = feedbackText.match(endpointPattern)?.[1];
   const errors: string[] = [];
   if (plan.requiredFiles.length === 0) {
     errors.push("Implementation plan must identify at least one required file");
+  }
+  if (requiresFullStackContract(feedbackText)) {
+    const runtimeFiles = plan.requiredFiles.filter((file) => !testPathPattern.test(file.path));
+    if (!runtimeFiles.some(isFrontendPlanFile)) {
+      errors.push("Full-stack UI plan must include the frontend view/interaction surface");
+    }
+    if (!runtimeFiles.some(isBackendPlanFile)) {
+      errors.push("Full-stack UI plan must include the backing server/handler/service surface");
+    }
   }
   if (!endpoint) {
     return errors;

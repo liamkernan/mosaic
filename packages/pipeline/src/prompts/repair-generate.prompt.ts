@@ -146,6 +146,7 @@ INSTRUCTIONS:
 - Remove or wire any visible href="#" or javascript:void(0) links so every visible control performs the requested workflow.
 - If copied static-page navigation caused inert-link errors, remove that unrelated navigation or give each retained link a real local destination. Do not copy the same invalid header/footer into more pages.
 - If validation reports an unrelated protected symbol change, restore that symbol exactly from the original relevant file and keep only localized edits to the requested function.
+- If validation reports a missing backing server/service change for a full-stack UI request, preserve the useful UI work and add only the planned handler/service/data implementation plus focused coverage. Do not invent new endpoints or unrelated architecture.
 - If HTML adds modal/dialog/overlay classes or hooks, include matching CSS selectors in the stylesheet in the same response.
 - If JavaScript is needed for new interactive UI, include the matching script changes in the same response.
 - Return ONLY the response format below. No markdown fences. No prose before or after.

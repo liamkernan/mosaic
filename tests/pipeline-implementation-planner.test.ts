@@ -114,6 +114,49 @@ describe("ImplementationPlanner", () => {
     });
   });
 
+  it("repairs a full-stack UI plan that omits its backing server surface", async () => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({
+        requiredFiles: [
+          { path: "src/settings-form.tsx", reason: "add the settings form UI" }
+        ],
+        acceptanceCriteria: ["Submitting the form persists settings through the server-side service."],
+        implementationChecklist: ["wire the form submit action"],
+        verificationChecklist: ["verify the saved value is shown"],
+        verificationCommands: []
+      }))
+      .mockResolvedValueOnce(JSON.stringify({
+        requiredFiles: [
+          { path: "src/settings-form.tsx", reason: "add the settings form UI and submit action" },
+          { path: "src/settings-service.ts", reason: "persist settings in the backing server service" }
+        ],
+        acceptanceCriteria: ["Submitting the form persists settings through the server-side service."],
+        implementationChecklist: ["wire the form submit action", "save settings in the server service"],
+        verificationChecklist: ["verify the form calls the service and the saved value is returned"],
+        verificationCommands: []
+      }));
+
+    const plan = await new ImplementationPlanner(createPipelineLlmClient(complete)).plan(
+      buildClassifiedFeedback({
+        rawContent: "Add a settings form that persists preferences through the server-side service.",
+        category: "feature_request",
+        complexity: "moderate",
+        summary: "Add persistent account settings UI",
+        relevantFiles: ["src/settings-form.tsx", "src/settings-service.ts"],
+        confidence: 0.9
+      }),
+      [],
+      ["src/settings-form.tsx", "src/settings-service.ts"]
+    );
+
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1]?.[0]).toContain("Full-stack UI plan must include the backing server/handler/service surface");
+    expect(plan.requiredFiles.map((file) => file.path)).toEqual([
+      "src/settings-form.tsx",
+      "src/settings-service.ts"
+    ]);
+  });
+
   it("accepts public-path HTTP assertions as handler verification", async () => {
     const complete = vi.fn().mockResolvedValue(JSON.stringify({
       requiredFiles: [

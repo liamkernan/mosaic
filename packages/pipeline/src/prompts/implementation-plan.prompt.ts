@@ -47,6 +47,7 @@ Rules:
 - Tests must not introduce literal URLs, loopback IP addresses, wildcard hosts, or external network calls. Prefer repository-native in-process handler/request helpers.
 - Extract exact safe test commands from issue files, README/docs, or package scripts when available. Use only test commands such as python unittest, pytest, npm test, pnpm test, or vitest; omit setup, server, curl, database mutation, deploy, or destructive commands.
 - For clickable UI, modals, drawers, accordions, tabs, forms, filters, navigation, or routes, include both the UI surface and the behavior/state surface.
+- When the request explicitly connects a UI interaction to server, API, persistence, or database behavior, include both the frontend view/client-action files and the backing handler/service/data files. Do not invent a backend for static content, styling, or client-only interactions.
 - For new content experiences, include the content/data source and the rendering behavior.
 - Do not include unrelated files.
 - Prefer existing app patterns and filenames from the repository tree.
