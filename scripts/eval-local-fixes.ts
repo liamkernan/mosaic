@@ -1158,33 +1158,9 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     }
   }
 
-  if (options.generate && checkErrors.length > 0) {
+  if (options.generate && implementationPlan && checkErrors.length > 0) {
     const preRepairChanges = changes;
     const fileTree = visibleFileTreePaths(repoIndexer, repoContext, evalCase);
-    const planner = new ImplementationPlanner(createEvalLlmClient(
-      options.provider,
-      routes.planning,
-      telemetry,
-      "check-repair-planning"
-    ));
-    const repairedImplementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
-    implementationPlan = sanitizePlanForImmutablePaths(repairedImplementationPlan, {
-      oraclePaths: evalCase.oracleTestPaths ?? [],
-      oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
-      generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
-    });
-    const loadedPaths = new Set(relevantFiles.map((file) => file.path));
-    const plannedFiles = await repoIndexer.readFiles(
-      repoContext,
-      implementationPlan.requiredFiles.filter((file) => !loadedPaths.has(file.path))
-    );
-    relevantFiles = mergeFiles(relevantFiles, plannedFiles);
-    relevantFiles = partitionVisibleContext(
-      relevantFiles,
-      evalCase.oracleTestPaths ?? [],
-      evalCase.oracleTestPathPrefixes ?? []
-    ).visible;
-    await persistArtifacts();
     const generator = new CodeGenerator(createEvalLlmClient(
       options.provider,
       routes.generation,
@@ -1246,6 +1222,12 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
         await writeGeneratedChanges(repoPath, preRepairChanges);
         repoContext.fileTree = await buildFileTree(repoPath);
       }
+    } else {
+      verificationHistory.push({
+        stage: "check-repair-no-candidate",
+        errors: checkErrors
+      });
+      await persistArtifacts();
     }
   }
 

@@ -41,18 +41,18 @@ describe("local fix evaluation harness", () => {
     expect(source).toContain("routes.generation");
   });
 
-  it("hydrates and re-partitions context selected by check-repair planning", async () => {
+  it("reuses the accepted plan for focused check repair without replanning", async () => {
     const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
-    const checkRepairStart = source.indexOf("const repairedImplementationPlan");
-    const checkRepairEnd = source.indexOf("const generator = new CodeGenerator", checkRepairStart);
-    const checkRepairPlanning = source.slice(checkRepairStart, checkRepairEnd);
+    const checkRepairStart = source.indexOf("if (options.generate && implementationPlan && checkErrors.length > 0)");
+    const checkRepairEnd = source.indexOf("errors.push(...checkErrors)", checkRepairStart);
+    const checkRepair = source.slice(checkRepairStart, checkRepairEnd);
 
-    expect(checkRepairPlanning).toContain("const loadedPaths = new Set(relevantFiles.map((file) => file.path))");
-    expect(checkRepairPlanning).toContain("repoIndexer.readFiles(");
-    expect(checkRepairPlanning).toContain("implementationPlan.requiredFiles.filter((file) => !loadedPaths.has(file.path))");
-    expect(checkRepairPlanning).toContain("relevantFiles = mergeFiles(relevantFiles, plannedFiles)");
-    expect(checkRepairPlanning).toContain("relevantFiles = partitionVisibleContext(");
-    expect(checkRepairPlanning).toContain("evalCase.oracleTestPathPrefixes ?? []");
+    expect(checkRepair).toContain('"check-repair"');
+    expect(checkRepair).toContain("implementationPlan,");
+    expect(checkRepair).toContain("repoContext,\n      changes,\n      checkErrors");
+    expect(checkRepair).not.toContain("new ImplementationPlanner");
+    expect(checkRepair).not.toContain("check-repair-planning");
+    expect(checkRepair).toContain('stage: "check-repair-no-candidate"');
   });
 
   it("uses the source-of-truth seven-minute case timeout", () => {
