@@ -45,6 +45,8 @@ import {
   estimateMaximumAdvisorCallCostUsd,
   estimateMaximumCallCostUsd,
   formatFrontendRepairRequirement,
+  frontendElementHasDialogSemantics,
+  frontendElementIsOpen,
   partitionVisibleContext,
   relocateGeneratedTestsFromImmutablePaths,
   runEvalCaseBatch,
@@ -124,6 +126,8 @@ interface FrontendAssertion {
     | { selector: string | string[]; attribute: string; equals: string }
     | { selector: string | string[]; hasClass: string | string[] }
     | { selector: string | string[]; minCount: number }
+    | { selector: string | string[]; open: boolean }
+    | { selector: string | string[]; dialog: true }
   >;
 }
 
@@ -652,6 +656,14 @@ function isCountExpectation(expectation: FrontendAssertion["expect"][number]): e
   return "minCount" in expectation;
 }
 
+function isOpenExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string | string[]; open: boolean } {
+  return "open" in expectation;
+}
+
+function isDialogExpectation(expectation: FrontendAssertion["expect"][number]): expectation is { selector: string | string[]; dialog: true } {
+  return "dialog" in expectation;
+}
+
 function selectorLabel(selector: string | string[]): string {
   return Array.isArray(selector) ? selector.join(" OR ") : selector;
 }
@@ -737,6 +749,19 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
     ...dom.window.console,
     error: (...args: unknown[]) => recordRuntimeError(args.map(String).join(" "))
   };
+
+  const dialogPrototype = dom.window.HTMLDialogElement?.prototype;
+  if (dialogPrototype && typeof dialogPrototype.showModal !== "function") {
+    dialogPrototype.showModal = function showModal(): void {
+      this.setAttribute("open", "");
+    };
+  }
+  if (dialogPrototype && typeof dialogPrototype.close !== "function") {
+    dialogPrototype.close = function close(): void {
+      this.removeAttribute("open");
+      this.dispatchEvent(new dom.window.Event("close"));
+    };
+  }
 
   const scriptPaths = [...dom.window.document.querySelectorAll("script[src]")]
     .map((scriptElement) => scriptElement.getAttribute("src") ?? "")
@@ -833,6 +858,32 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
             values: selectorAlternatives(expectation.hasClass)
           },
           actual: { matchCount: elements.length, classes: [...element.classList] }
+        });
+      } else if (isOpenExpectation(expectation) && frontendElementIsOpen(element) !== expectation.open) {
+        addRequirement({
+          assertion: assertion.name,
+          action,
+          selectorAlternatives: selectors,
+          expectation: { kind: "open_state", value: expectation.open ? "open" : "closed" },
+          actual: {
+            matchCount: elements.length,
+            tagName: element.tagName.toLowerCase(),
+            openAttribute: element.hasAttribute("open"),
+            ariaHidden: element.getAttribute("aria-hidden"),
+            classes: [...element.classList]
+          }
+        });
+      } else if (isDialogExpectation(expectation) && !frontendElementHasDialogSemantics(element)) {
+        addRequirement({
+          assertion: assertion.name,
+          action,
+          selectorAlternatives: selectors,
+          expectation: { kind: "dialog_semantics" },
+          actual: {
+            matchCount: elements.length,
+            tagName: element.tagName.toLowerCase(),
+            role: element.getAttribute("role")
+          }
         });
       }
     }

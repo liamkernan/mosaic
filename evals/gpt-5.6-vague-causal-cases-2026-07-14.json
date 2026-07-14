@@ -144,9 +144,8 @@
         "name": "The selected product opens its own accessible quick view",
         "click": ".quick-view[data-product-key=\"linen-throw\"]",
         "expect": [
-          { "selector": "#quickViewPanel", "hasClass": ["is-open", "is-visible", "active"] },
-          { "selector": "#quickViewPanel", "attribute": "aria-hidden", "equals": "false" },
-          { "selector": "#quickViewPanel", "attribute": "role", "equals": "dialog" },
+          { "selector": "#quickViewPanel", "open": true },
+          { "selector": "#quickViewPanel", "dialog": true },
           { "selector": "#quickViewTitle", "textIncludes": "Linen Throw" },
           { "selector": "#quickViewDetails", "textIncludes": "Woven linen" }
         ]
@@ -155,7 +154,7 @@
         "name": "The real close control closes quick view",
         "click": "#quickViewClose",
         "expect": [
-          { "selector": "#quickViewPanel", "attribute": "aria-hidden", "equals": "true" }
+          { "selector": "#quickViewPanel", "open": false }
         ]
       }
     ]

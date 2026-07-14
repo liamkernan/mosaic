@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { JSDOM } from "jsdom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -14,6 +15,8 @@ import {
   createEvalTrialRuns,
   estimateMaximumAdvisorCallCostUsd,
   formatFrontendRepairRequirement,
+  frontendElementHasDialogSemantics,
+  frontendElementIsOpen,
   partitionVisibleContext,
   relocateGeneratedTestsFromImmutablePaths,
   sanitizePlanForImmutablePaths,
@@ -603,5 +606,24 @@ describe("local fix evaluation harness", () => {
         }
       })
     );
+  });
+
+  it("recognizes native and ARIA dialog open state semantically", () => {
+    const dom = new JSDOM(
+      '<dialog id="native" open></dialog><div id="aria" role="dialog" aria-hidden="false"></div>'
+    );
+    const nativeDialog = dom.window.document.querySelector("#native") as Element;
+    const ariaDialog = dom.window.document.querySelector("#aria") as Element;
+
+    expect(frontendElementHasDialogSemantics(nativeDialog)).toBe(true);
+    expect(frontendElementIsOpen(nativeDialog)).toBe(true);
+    expect(frontendElementHasDialogSemantics(ariaDialog)).toBe(true);
+    expect(frontendElementIsOpen(ariaDialog)).toBe(true);
+
+    nativeDialog.removeAttribute("open");
+    ariaDialog.setAttribute("aria-hidden", "true");
+    expect(frontendElementIsOpen(nativeDialog)).toBe(false);
+    expect(frontendElementIsOpen(ariaDialog)).toBe(false);
+    dom.window.close();
   });
 });

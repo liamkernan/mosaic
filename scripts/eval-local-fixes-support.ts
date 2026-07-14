@@ -236,7 +236,7 @@ export interface FrontendRepairRequirement {
   action: "click" | "keyboard_activate" | "assert" | "runtime";
   selectorAlternatives: string[];
   expectation: {
-    kind: "exists" | "text_includes" | "attribute_equals" | "class_any" | "min_count" | "no_runtime_errors";
+    kind: "exists" | "text_includes" | "attribute_equals" | "class_any" | "min_count" | "open_state" | "dialog_semantics" | "no_runtime_errors";
     value?: string | number;
     attribute?: string;
     values?: string[];
@@ -246,6 +246,26 @@ export interface FrontendRepairRequirement {
 
 export function formatFrontendRepairRequirement(requirement: FrontendRepairRequirement): string {
   return `Frontend repair requirement: ${JSON.stringify(requirement)}`;
+}
+
+export function frontendElementIsOpen(element: Element): boolean {
+  if (element.tagName.toLowerCase() === "dialog") {
+    return element.hasAttribute("open");
+  }
+
+  const ariaHidden = element.getAttribute("aria-hidden");
+  if (ariaHidden !== null) {
+    return ariaHidden === "false";
+  }
+  if (element.hasAttribute("hidden")) {
+    return false;
+  }
+  return ["is-open", "is-visible", "active", "modal-overlay--open"]
+    .some((className) => element.classList.contains(className));
+}
+
+export function frontendElementHasDialogSemantics(element: Element): boolean {
+  return element.tagName.toLowerCase() === "dialog" || element.getAttribute("role")?.toLowerCase() === "dialog";
 }
 
 function pathMatches(path: string, exactPaths: Set<string>, prefixes: string[]): boolean {
