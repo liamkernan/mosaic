@@ -72,6 +72,63 @@ describe("validatePlanCompletion", () => {
     expect(errors).toEqual([]);
   });
 
+  it("does not require JavaScript edits when a planned script is verification-only", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "index.html",
+          originalContent: '<button id="cartButton">Bag</button>\n',
+          modifiedContent: '<button id="cartButton" aria-label="Open cart">Bag</button>\n',
+          explanation: "name the existing cart control"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "index.html", reason: "Add an explicit accessible name to the cart button." },
+          {
+            path: "script.js",
+            reason: "Verify the existing cart-button click handling and drawer state behavior remain unchanged after the markup accessibility update."
+          }
+        ],
+        acceptanceCriteria: ["The cart button has a clear accessible name."],
+        implementationChecklist: [
+          "Give #cartButton an explicit accessible name.",
+          "Do not alter the existing cart drawer toggle behavior."
+        ]
+      }
+    );
+
+    expect(errors).toEqual([]);
+  });
+
+  it("does not require behavior-layer edits for a copy-only verification file", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "index.html",
+          originalContent: '<h2>Your bag is empty</h2>\n',
+          modifiedContent: '<h2>Your cart is ready for something special</h2>\n',
+          explanation: "update the requested empty-cart copy"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "index.html", reason: "Contains the empty-cart headline shown to shoppers." },
+          {
+            path: "script.js",
+            reason: "Owns cart state and must be checked to ensure the copy-only change does not alter cart behavior."
+          }
+        ],
+        acceptanceCriteria: ["The empty-cart headline uses the requested copy."],
+        implementationChecklist: ["Replace only the empty-cart text content."]
+      }
+    );
+
+    expect(errors).toEqual([]);
+  });
+
   it("rejects substituted ordered tie-breakers from acceptance criteria", () => {
     const errors = validatePlanCompletion(
       [

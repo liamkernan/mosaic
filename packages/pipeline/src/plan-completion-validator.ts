@@ -21,6 +21,8 @@ const frontendPlanFilePattern = /\.(?:html?|css|scss|jsx|tsx|vue|svelte)$/i;
 const frontendPlanReasonPattern = /\b(?:front-?end|client|browser|ui|view|component|page|form|button)\b/i;
 const backendPlanFilePattern = /(?:^|\/)(?:api|server|routes?|handlers?|services?|controllers?|repositories?|models?|db|database)(?:\/|\.|$)/i;
 const backendPlanReasonPattern = /\b(?:back-?end|server|api|route|handler|service|controller|repository|database|persistence|model)\b/i;
+const verificationIntentPattern = /\b(?:verify|check(?:ed)?|inspect|review|confirm|ensure)\b/i;
+const unchangedIntentPattern = /\b(?:remain(?:s|ing)? unchanged|without (?:changing|modifying)|do not (?:change|modify)|does not (?:change|alter|modify)|copy-only|verification-only)\b/i;
 
 function requiresFullStackContract(text: string): boolean {
   return text.split(/\n+/).some((line) =>
@@ -73,6 +75,12 @@ interface CompletionChangeGroups {
   testChanges: GeneratedChange[];
   runtimeChanges: GeneratedChange[];
   runtimeChangeFacts: RuntimeChangeFacts[];
+}
+
+function implementationRequiredFiles(plan: ImplementationPlan): ImplementationPlan["requiredFiles"] {
+  return plan.requiredFiles.filter((file) =>
+    !verificationIntentPattern.test(file.reason) || !unchangedIntentPattern.test(file.reason)
+  );
 }
 
 function planText(plan: ImplementationPlan, sourceText = ""): string {
@@ -261,7 +269,7 @@ function isAllowedPlannedCompanionChange(change: GeneratedChange, changedPath: P
 function createPlannedScope(plan: ImplementationPlan, sourceText: string): PlannedScope | null {
   const requiredPathList: string[] = [];
   const requiredPathSet = new Set<string>();
-  for (const file of plan.requiredFiles) {
+  for (const file of implementationRequiredFiles(plan)) {
     const normalizedPath = normalizeRepoPath(file.path);
     if (normalizedPath.length > 0 && !requiredPathSet.has(normalizedPath)) {
       requiredPathSet.add(normalizedPath);
@@ -466,7 +474,7 @@ function planRequiresBehavioralTests(plan: ImplementationPlan, text: string): bo
 }
 
 function plannedRuntimePaths(plan: ImplementationPlan): Set<string> {
-  return new Set(plan.requiredFiles
+  return new Set(implementationRequiredFiles(plan)
     .map((file) => normalizeRepoPath(file.path))
     .filter((path) => !testPathPattern.test(path) && !documentationPathPattern.test(path)));
 }
@@ -480,7 +488,7 @@ function fullStackSurfaceErrors(
     return [];
   }
 
-  const runtimeFiles = plan.requiredFiles.filter((file) =>
+  const runtimeFiles = implementationRequiredFiles(plan).filter((file) =>
     !testPathPattern.test(file.path) && !documentationPathPattern.test(file.path)
   );
   const frontendPaths = runtimeFiles
@@ -516,14 +524,14 @@ function missingRequiredFrontendLayerErrors(
     const pattern = frontendLayerPatterns[layer];
     plannedPathsByLayer.set(
       layer,
-      plan.requiredFiles
+      implementationRequiredFiles(plan)
         .map((file) => normalizeRepoPath(file.path))
         .filter((path) => pattern.test(path))
     );
   }
 
   const planBehaviorText = [
-    ...plan.requiredFiles.map((file) => file.reason),
+    ...implementationRequiredFiles(plan).map((file) => file.reason),
     ...plan.acceptanceCriteria,
     ...plan.implementationChecklist
   ].join("\n");
