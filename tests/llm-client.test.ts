@@ -58,7 +58,8 @@ import {
   ANTHROPIC_ADVISOR_TOOL_BETA,
   ANTHROPIC_MODEL_IDS,
   OPENAI_MODEL_IDS,
-  LLMClient
+  LLMClient,
+  resolveOpenAIRequestTimeoutMs
 } from "../packages/llm/src/client.js";
 import { resolveOpenAIBaseURL } from "../packages/llm/src/openai.js";
 
@@ -462,7 +463,7 @@ describe("LLMClient", () => {
       reasoning: { effort: "high" },
       text: { verbosity: "low" },
       store: false
-    }, { timeout: 1234 });
+    }, { timeout: 300_000 });
     expect(authorizeRequest).toHaveBeenCalledWith(expect.objectContaining({
       model: "gpt-5.6-sol",
       maxOutputTokens: 900
@@ -550,6 +551,56 @@ describe("LLMClient", () => {
       model: "gpt-5-mini",
       maxOutputTokens: 16_384
     }));
+  });
+
+  it.each([
+    ["high", 45_000, undefined, 300_000],
+    ["xhigh", 180_000, undefined, 480_000],
+    ["xhigh", 600_000, undefined, 600_000],
+    ["xhigh", 180_000, 540_000, 540_000]
+  ] as const)(
+    "applies the automatic Sol/%s timeout floor without lowering explicit limits",
+    (reasoningEffort, requestTimeoutMs, configuredMinTimeoutMs, expectedTimeoutMs) => {
+      expect(resolveOpenAIRequestTimeoutMs(
+        OPENAI_MODEL_IDS.sol,
+        reasoningEffort,
+        requestTimeoutMs,
+        configuredMinTimeoutMs
+      )).toBe(expectedTimeoutMs);
+    }
+  );
+
+  it("leaves non-Sol OpenAI routes on their requested timeout", () => {
+    expect(resolveOpenAIRequestTimeoutMs(
+      OPENAI_MODEL_IDS.terra,
+      "xhigh",
+      45_000,
+      undefined
+    )).toBe(45_000);
+    expect(resolveOpenAIRequestTimeoutMs(
+      OPENAI_MODEL_IDS.luna,
+      "high",
+      undefined,
+      undefined
+    )).toBeUndefined();
+  });
+
+  it("does not apply OpenAI timeout configuration to Anthropic requests", async () => {
+    const client = new LLMClient({
+      provider: "anthropic",
+      mode: "platform",
+      platformApiKey: "anthropic-test-key",
+      model: ANTHROPIC_MODEL_IDS.sonnet,
+      reasoningEffort: "xhigh",
+      openAIMinTimeoutMs: 480_000
+    });
+
+    await client.complete("system", "user", { timeoutMs: 1_234 });
+
+    expect(streamMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model: ANTHROPIC_MODEL_IDS.sonnet }),
+      { timeout: 1_234 }
+    );
   });
 
   it("normalizes unsupported none reasoning to minimal for Azure GPT-5 mini deployments", async () => {

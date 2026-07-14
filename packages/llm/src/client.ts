@@ -19,6 +19,9 @@ export const OPENAI_MODEL_IDS = {
   luna: "gpt-5.6-luna"
 } as const;
 
+const OPENAI_SOL_HIGH_TIMEOUT_FLOOR_MS = 300_000;
+const OPENAI_SOL_XHIGH_TIMEOUT_FLOOR_MS = 480_000;
+
 export type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export const ANTHROPIC_ADVISOR_MODEL_ID = ANTHROPIC_MODEL_IDS.opus;
@@ -295,6 +298,25 @@ function normalizeOpenAIReasoningEffort(model: string, reasoningEffort?: OpenAIR
   return reasoningEffort;
 }
 
+export function resolveOpenAIRequestTimeoutMs(
+  model: string,
+  reasoningEffort: OpenAIReasoningEffort | undefined,
+  requestTimeoutMs: number | undefined,
+  configuredMinTimeoutMs: number | undefined
+): number | undefined {
+  const routeFloorMs = model === OPENAI_MODEL_IDS.sol
+    ? reasoningEffort === "xhigh"
+      ? OPENAI_SOL_XHIGH_TIMEOUT_FLOOR_MS
+      : reasoningEffort === "high"
+        ? OPENAI_SOL_HIGH_TIMEOUT_FLOOR_MS
+        : undefined
+    : undefined;
+  const candidates = [requestTimeoutMs, configuredMinTimeoutMs, routeFloorMs]
+    .filter((value): value is number => value !== undefined);
+
+  return candidates.length === 0 ? undefined : Math.max(...candidates);
+}
+
 export class LLMClient {
   private readonly provider: LLMProvider;
   private readonly anthropicClient?: Anthropic;
@@ -366,9 +388,12 @@ export class LLMClient {
     const model = this.defaultModel;
     const reasoningEffort = normalizeOpenAIReasoningEffort(model, this.reasoningEffort);
     const maxOutputTokens = Math.max(options.maxTokens ?? 4096, this.openAIMinOutputTokens ?? 0);
-    const timeoutMs = this.openAIMinTimeoutMs === undefined
-      ? options.timeoutMs
-      : Math.max(options.timeoutMs ?? 0, this.openAIMinTimeoutMs);
+    const timeoutMs = resolveOpenAIRequestTimeoutMs(
+      model,
+      reasoningEffort,
+      options.timeoutMs,
+      this.openAIMinTimeoutMs
+    );
     const startedAt = Date.now();
 
     while (attempt < maxRetries) {

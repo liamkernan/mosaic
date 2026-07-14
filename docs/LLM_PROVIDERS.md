@@ -103,9 +103,11 @@ When `MOSAIC_OPENAI_MIN_OUTPUT_TOKENS` is set, OpenAI requests use at least that
 `max_output_tokens` value while preserving higher per-route caps. This is mainly
 for high-reasoning eval runs where reasoning tokens can otherwise exhaust small
 generation caps before a patch is returned.
-When `MOSAIC_OPENAI_MIN_TIMEOUT_MS` is set, OpenAI requests use at least that
-timeout while preserving higher per-call timeouts. This is useful when large
-high-reasoning responses need more time than the normal frontend repair timeout.
+Sol/high and Sol/xhigh requests automatically use minimum timeouts of 300 and
+480 seconds, respectively, while Luna and Terra keep their existing per-call
+timeouts. When `MOSAIC_OPENAI_MIN_TIMEOUT_MS` is set, every OpenAI request uses
+at least that configured timeout; higher automatic or per-call limits are still
+preserved.
 
 OpenAI does not expose an Anthropic-style advisor tool. Mosaic therefore makes
 no synthetic advisor call: GPT-5.6 Sol itself handles review-heavy quality work, and
