@@ -28,6 +28,7 @@ const preservationLeadPattern = /^\s*(?:preserve|keep)\b/i;
 const explicitNoEditPattern = /\b(?:do not|don't|must not)\s+(?:change|alter|modify|edit)\b/i;
 const preservationChecklistLeadPattern = /^\s*(?:preserve|keep|leave)\b/i;
 const implementationMutationPattern = /\b(?:add|create|fix|implement|modify|remove|replace|style|update|wire)(?:s|d|ing)?\b/i;
+const optionalCompanionPattern = /\b(?:if (?:it|the file)\b|when applicable\b)/i;
 
 function requiresFullStackContract(text: string): boolean {
   return text.split(/\n+/).some((line) =>
@@ -94,7 +95,8 @@ function implementationRequiredFiles(plan: ImplementationPlan): ImplementationPl
     });
     const isVerificationOnly = unchangedRelativeClausePattern.test(reason) ||
       (verificationIntentPattern.test(reason) && unchangedIntentPattern.test(reason)) ||
-      (preservationLeadPattern.test(reason) && checklistExplicitlyForbidsEditing);
+      (preservationLeadPattern.test(reason) && checklistExplicitlyForbidsEditing) ||
+      (verificationIntentPattern.test(reason) && optionalCompanionPattern.test(reason));
     return !isVerificationOnly;
   });
 }
@@ -102,6 +104,9 @@ function implementationRequiredFiles(plan: ImplementationPlan): ImplementationPl
 function implementationActionChecklist(plan: ImplementationPlan): string[] {
   return plan.implementationChecklist.filter((item) => {
     if (explicitNoEditPattern.test(item)) {
+      return false;
+    }
+    if (optionalCompanionPattern.test(item)) {
       return false;
     }
     return !preservationChecklistLeadPattern.test(item) || implementationMutationPattern.test(item);

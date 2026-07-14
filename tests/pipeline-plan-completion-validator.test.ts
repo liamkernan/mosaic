@@ -560,6 +560,34 @@ describe("validatePlanCompletion", () => {
     expect(errors.join("\n")).toContain("explicit in the implementation checklist");
   });
 
+  it("does not require a companion JavaScript edit when the plan makes it conditional on inspection", () => {
+    const errors = validatePlanCompletion(
+      [{
+        filePath: "index.html",
+        originalContent: "<h2>Your bag is empty</h2>\n",
+        modifiedContent: "<h2>Your cart is ready for something special</h2>\n",
+        explanation: "update empty-cart copy"
+      }],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "index.html", reason: "Contains the empty-cart copy." },
+          {
+            path: "script.js",
+            reason: "Must be checked and, if it renders or restores empty-cart text, updated so the new copy persists."
+          }
+        ],
+        implementationChecklist: [
+          "Replace only the empty-cart heading copy.",
+          "Ensure any JavaScript empty-cart rendering uses the same new text when applicable."
+        ]
+      }
+    );
+
+    expect(errors.join("\n")).not.toContain("[missing-frontend-layer:javascript]");
+    expect(errors.join("\n")).not.toContain("script.js");
+  });
+
   it("rejects a UI-only patch when the request explicitly requires backing server behavior", () => {
     const plan = {
       ...basePlan,
