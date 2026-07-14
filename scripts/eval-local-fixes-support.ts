@@ -3,6 +3,13 @@ import { basename, dirname } from "node:path";
 
 export type EvalOutcome = "completed" | "error" | "timeout";
 
+export class EvalCaseExecutionError extends Error {
+  constructor(message: string, readonly resultDetails: Record<string, unknown> = {}) {
+    super(message);
+    this.name = "EvalCaseExecutionError";
+  }
+}
+
 export const DEFAULT_EVAL_CASE_TIMEOUT_MS = 420_000;
 
 export interface EvalBatchResult {
@@ -129,7 +136,9 @@ export async function runEvalCaseBatch<T>(
         errors: result.errors ?? []
       });
     } catch (error) {
+      const resultDetails = error instanceof EvalCaseExecutionError ? error.resultDetails : {};
       results.push({
+        ...resultDetails,
         id,
         passed: false,
         outcome: timedOut || abortController.signal.aborted ? "timeout" : "error",

@@ -35,6 +35,7 @@ import {
 } from "./eval-llm-routing.js";
 import {
   EvalBudget,
+  EvalCaseExecutionError,
   DEFAULT_EVAL_CASE_TIMEOUT_MS,
   assertGeneratedPathsAllowed,
   buildChangedPythonTestCommand,
@@ -924,6 +925,8 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   const repoPath = evalCase.fixturePath
     ? await copyFixtureSource(sourceRepo)
     : await copyRepoAtRef(sourceRepo, evalCase.baseRef ?? "");
+  await mkdir(artifactPath, { recursive: true });
+  await writeFile(join(artifactPath, "temp-path.txt"), `${repoPath}\n`, "utf8");
   const telemetry = await createEvalTelemetry(options, artifactPath);
   const repoIndexer = new RepoIndexer();
   const repoContext: RepoContext = {
@@ -1612,13 +1615,38 @@ async function runCaseInChild(
       }
       signal.removeEventListener("abort", abort);
       if (signal.aborted) {
-        const usage = await readFile(join(options.outputDir, trialRun.runId, "usage.json"), "utf8")
+        const artifactPath = join(options.outputDir, trialRun.runId);
+        const usage = await readFile(join(artifactPath, "usage.json"), "utf8")
           .then((content) => JSON.parse(content) as EvalUsageSummary)
           .catch(() => undefined);
         if (usage) {
           recordInterruptedUsage(usage);
         }
-        rejectResult(signal.reason ?? new Error(`Eval case aborted: ${evalCase.id}`));
+        const validationStages = await readFile(join(artifactPath, "validation-history.json"), "utf8")
+          .then((content) => (JSON.parse(content) as Array<{ stage: string }>).map(({ stage }) => stage))
+          .catch(() => [] as string[]);
+        const verificationStages = await readFile(join(artifactPath, "verification-history.json"), "utf8")
+          .then((content) => (JSON.parse(content) as Array<{ stage: string }>).map(({ stage }) => stage))
+          .catch(() => [] as string[]);
+        const tempPath = await readFile(join(artifactPath, "temp-path.txt"), "utf8")
+          .then((content) => content.trim())
+          .catch(() => "");
+        const message = signal.reason instanceof Error
+          ? signal.reason.message
+          : `Eval case aborted: ${evalCase.id}`;
+        rejectResult(new EvalCaseExecutionError(message, {
+          caseId: evalCase.id,
+          trial: trialRun.trial,
+          tempPath,
+          generated: options.generate,
+          references: [],
+          loadedFiles: [],
+          changedFiles: [],
+          artifactPath,
+          usage,
+          scopeViolations: [],
+          repairAttempts: summarizeRepairAttempts(usage?.calls ?? [], validationStages, verificationStages)
+        }));
         return;
       }
       try {

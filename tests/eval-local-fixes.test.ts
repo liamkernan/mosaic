@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   EvalBudget,
+  EvalCaseExecutionError,
   DEFAULT_EVAL_CASE_TIMEOUT_MS,
   assertGeneratedPathsAllowed,
   buildChangedPythonTestCommand,
@@ -107,6 +108,29 @@ describe("local fix evaluation harness", () => {
       id: "case-2",
       passed: true,
       outcome: "completed"
+    }));
+  });
+
+  it("preserves recorded case details when an isolated run fails", async () => {
+    const results = await runEvalCaseBatch(["case-1"], {
+      timeoutMs: 100,
+      runCase: async () => {
+        throw new EvalCaseExecutionError("candidate stopped", {
+          artifactPath: "evals/runs/case-1",
+          usage: { totalCostUsd: 0.25 },
+          repairAttempts: { modelAttempts: 1, deterministicAttempts: 0, totalAttempts: 1, stages: [] }
+        });
+      }
+    });
+
+    expect(results[0]).toEqual(expect.objectContaining({
+      id: "case-1",
+      passed: false,
+      outcome: "error",
+      errors: ["candidate stopped"],
+      artifactPath: "evals/runs/case-1",
+      usage: { totalCostUsd: 0.25 },
+      repairAttempts: { modelAttempts: 1, deterministicAttempts: 0, totalAttempts: 1, stages: [] }
     }));
   });
 
