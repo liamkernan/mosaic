@@ -23,6 +23,7 @@ const backendPlanFilePattern = /(?:^|\/)(?:api|server|routes?|handlers?|services
 const backendPlanReasonPattern = /\b(?:back-?end|server|api|route|handler|service|controller|repository|database|persistence|model)\b/i;
 const verificationIntentPattern = /\b(?:verify|check(?:ed)?|inspect|review|confirm|ensure)\b/i;
 const unchangedIntentPattern = /\b(?:remain(?:s|ing)? unchanged|without (?:changing|modifying)|do not (?:change|modify)|does not (?:change|alter|modify)|copy-only|verification-only)\b/i;
+const unchangedRelativeClausePattern = /\bwhich (?:must|should) remain unchanged\b/i;
 
 function requiresFullStackContract(text: string): boolean {
   return text.split(/\n+/).some((line) =>
@@ -78,9 +79,12 @@ interface CompletionChangeGroups {
 }
 
 function implementationRequiredFiles(plan: ImplementationPlan): ImplementationPlan["requiredFiles"] {
-  return plan.requiredFiles.filter((file) =>
-    !verificationIntentPattern.test(file.reason) || !unchangedIntentPattern.test(file.reason)
-  );
+  return plan.requiredFiles.filter((file) => {
+    const reason = file.reason;
+    const isVerificationOnly = unchangedRelativeClausePattern.test(reason) ||
+      (verificationIntentPattern.test(reason) && unchangedIntentPattern.test(reason));
+    return !isVerificationOnly;
+  });
 }
 
 function planText(plan: ImplementationPlan, sourceText = ""): string {

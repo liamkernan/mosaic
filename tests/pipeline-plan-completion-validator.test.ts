@@ -129,6 +129,36 @@ describe("validatePlanCompletion", () => {
     expect(errors).toEqual([]);
   });
 
+  it("recognizes a related behavior file that must remain unchanged as verification-only", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "index.html",
+          originalContent: '<button id="cartButton">Bag</button>\n',
+          modifiedContent: '<button id="cartButton" aria-label="Open cart">Bag</button>\n',
+          explanation: "name the existing cart control"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "index.html", reason: "Defines the cart button markup and its accessible name." },
+          {
+            path: "script.js",
+            reason: "Contains the cart control's interaction/state behavior, which must remain unchanged when the accessible name is added."
+          }
+        ],
+        acceptanceCriteria: ["The cart control has a meaningful accessible name."],
+        implementationChecklist: [
+          "Add an accessible name to #cartButton.",
+          "Do not alter the existing cart drawer toggle logic in script.js."
+        ]
+      }
+    );
+
+    expect(errors).toEqual([]);
+  });
+
   it("rejects substituted ordered tie-breakers from acceptance criteria", () => {
     const errors = validatePlanCompletion(
       [
