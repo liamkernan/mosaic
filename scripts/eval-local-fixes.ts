@@ -8,6 +8,10 @@ import { JSDOM, VirtualConsole } from "jsdom";
 import { CodeGenerator, scopeValidationPattern } from "../packages/pipeline/src/code-generator.js";
 import { mergeGeneratedChanges } from "../packages/pipeline/src/change-set.js";
 import { FeedbackClassifier } from "../packages/pipeline/src/classifier.js";
+import {
+  classifyFeedbackWithOpenAIRouting,
+  type OpenAIClassificationPass
+} from "../packages/pipeline/src/classification-routing.js";
 import { ImplementationPlanner, type ImplementationPlan } from "../packages/pipeline/src/implementation-planner.js";
 import { pruneChangesToPlanScope, validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
 import { assessRepairProgress, findUnplannedAddedFiles } from "../packages/pipeline/src/repair-progress.js";
@@ -30,8 +34,10 @@ import {
   defaultEvalModelKey,
   isEvalModelKey,
   resolveEvalLlmRoutes,
+  validateExpectedOpenAIRoute,
   type EvalClientRoute,
-  type EvalModelKey
+  type EvalModelKey,
+  type ExpectedOpenAIRoute
 } from "./eval-llm-routing.js";
 import {
   EvalBudget,
@@ -116,6 +122,7 @@ interface EvalCase {
   unchangedSymbols?: Record<string, string[]>;
   allowedSymbolAdditions?: Record<string, Record<string, string[]>>;
   expectedSafetyOutcome?: "accepted" | "rejected";
+  expectedOpenAIRoute?: ExpectedOpenAIRoute;
 }
 
 interface FrontendAssertion {
@@ -148,6 +155,7 @@ interface EvalResult {
   routes?: ReturnType<typeof resolveEvalLlmRoutes>;
   safetyAssessment?: AbuseAssessment;
   repairAttempts?: EvalRepairSummary;
+  classificationPasses?: OpenAIClassificationPass[];
 }
 
 interface EvalUsageCall extends Omit<LLMUsageObservation, "iterations"> {
@@ -1002,15 +1010,33 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     preset: options.preset,
     feedback: classifiedFeedback
   });
+  let classificationPasses: OpenAIClassificationPass[] | undefined;
 
   if (options.classify) {
-    const classifier = new FeedbackClassifier(createEvalLlmClient(
-      options.provider,
-      routes.classification,
-      telemetry,
-      "classification"
-    ));
-    classifiedFeedback = await classifier.classify(classifiedFeedback, visibleFileTreePaths(repoIndexer, repoContext, evalCase));
+    const classificationFileTree = visibleFileTreePaths(repoIndexer, repoContext, evalCase);
+    if (options.provider === "openai" && options.preset !== "direct") {
+      const routedClassification = await classifyFeedbackWithOpenAIRouting({
+        feedbackItem: classifiedFeedback,
+        fileTree: classificationFileTree,
+        modelPreset: options.preset,
+        createClient: (route) => createEvalLlmClient(
+          "openai",
+          route,
+          telemetry,
+          "classification"
+        )
+      });
+      classifiedFeedback = routedClassification.classifiedFeedback;
+      classificationPasses = routedClassification.passes;
+    } else {
+      const classifier = new FeedbackClassifier(createEvalLlmClient(
+        options.provider,
+        routes.classification,
+        telemetry,
+        "classification"
+      ));
+      classifiedFeedback = await classifier.classify(classifiedFeedback, classificationFileTree);
+    }
     routes = resolveEvalLlmRoutes({
       provider: options.provider,
       model: options.model,
@@ -1018,6 +1044,18 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
       feedback: classifiedFeedback
     });
   }
+  const routingErrors = evalCase.expectedOpenAIRoute
+    ? options.provider !== "openai"
+      ? ["Expected OpenAI route cannot be checked with a non-OpenAI provider"]
+      : !options.classify
+        ? ["Expected OpenAI route requires live classification"]
+        : validateExpectedOpenAIRoute(routes, evalCase.expectedOpenAIRoute)
+    : [];
+  await writeFile(join(artifactPath, "routing.json"), `${JSON.stringify({
+    classificationPasses: classificationPasses ?? [],
+    finalClassification: classifiedFeedback,
+    routes
+  }, null, 2)}\n`, "utf8");
 
   let relevantFiles = await repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
   relevantFiles = partitionVisibleContext(
@@ -1037,7 +1075,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
 
   let changes: GeneratedChange[] = [];
   let generated = false;
-  const errors: string[] = [];
+  const errors: string[] = [...routingErrors];
   let implementationPlan: ImplementationPlan | undefined;
   const validationHistory: Array<{ stage: string; errors: string[] }> = [];
   const validationCandidates: Array<{
@@ -1366,6 +1404,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     usage,
     scopeViolations: errors.filter((error) => error.startsWith("Unrelated protected symbol changed")),
     routes,
+    classificationPasses,
     safetyAssessment,
     repairAttempts: summarizeRepairAttempts(
       usage?.calls ?? [],

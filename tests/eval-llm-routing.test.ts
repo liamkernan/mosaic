@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ClassifiedFeedback } from "../packages/core/src/types.js";
-import { resolveEvalLlmRoutes } from "../scripts/eval-llm-routing.js";
+import { resolveEvalLlmRoutes, validateExpectedOpenAIRoute } from "../scripts/eval-llm-routing.js";
 
 function feedback(complexity: ClassifiedFeedback["complexity"]): ClassifiedFeedback {
   return {
@@ -71,5 +71,26 @@ describe("evaluation LLM routing", () => {
       advisorTool: { model: "claude-opus-4-8", maxUses: 1, maxTokens: 2048 }
     });
     expect(routes.generation).toEqual(routes.planning);
+  });
+
+  it("validates both automatically selected OpenAI implementation routes", () => {
+    const routes = resolveEvalLlmRoutes({
+      provider: "openai",
+      model: "terra",
+      preset: "quality",
+      feedback: feedback("moderate")
+    });
+
+    expect(validateExpectedOpenAIRoute(routes, {
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high"
+    })).toEqual([]);
+    expect(validateExpectedOpenAIRoute(routes, {
+      model: "gpt-5.6-terra",
+      reasoningEffort: "xhigh"
+    })).toEqual([
+      "Automatically selected planning route gpt-5.6-sol/high; expected gpt-5.6-terra/xhigh",
+      "Automatically selected generation route gpt-5.6-sol/high; expected gpt-5.6-terra/xhigh"
+    ]);
   });
 });

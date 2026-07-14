@@ -30,6 +30,26 @@ export interface EvalLlmRoutes {
   generation: EvalClientRoute;
 }
 
+export interface ExpectedOpenAIRoute {
+  model: string;
+  reasoningEffort: OpenAIReasoningEffort;
+}
+
+export function validateExpectedOpenAIRoute(
+  routes: EvalLlmRoutes,
+  expected: ExpectedOpenAIRoute
+): string[] {
+  return (["planning", "generation"] as const).flatMap((phase) => {
+    const route = routes[phase];
+    return route.model === expected.model && route.reasoningEffort === expected.reasoningEffort
+      ? []
+      : [
+          `Automatically selected ${phase} route ${route.model}/${route.reasoningEffort ?? "default"}; ` +
+          `expected ${expected.model}/${expected.reasoningEffort}`
+        ];
+  });
+}
+
 export function defaultEvalModelKey(provider: LLMProvider): EvalModelKey {
   return provider === "openai" ? "terra" : "sonnet";
 }

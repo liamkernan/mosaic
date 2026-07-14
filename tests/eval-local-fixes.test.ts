@@ -46,6 +46,8 @@ describe("local fix evaluation harness", () => {
     expect(source).not.toContain("advisorTool));");
     expect(source).toContain("routes.planning");
     expect(source).toContain("routes.generation");
+    expect(source).toContain("classifyFeedbackWithOpenAIRouting");
+    expect(source).toContain("validateExpectedOpenAIRoute");
   });
 
   it("reuses the accepted plan for focused check repair without replanning", async () => {
