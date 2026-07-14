@@ -266,7 +266,7 @@ describe("local fix evaluation harness", () => {
         { path: "mosaic_demo/service.py", reason: "fix behavior" },
         {
           path: "tests/generated/test_001_sla_sort.py",
-          reason: "Add independent generated regression coverage; the reported oracle remains verification-only"
+          reason: "Add independent generated regression coverage; verification-only tests remain immutable"
         }
       ],
       acceptanceCriteria: ["SLA ordering is correct"],
@@ -274,8 +274,37 @@ describe("local fix evaluation harness", () => {
         "Fix mosaic_demo/service.py",
         "Extend tests/generated/test_001_sla_sort.py with a tie-breaker"
       ],
-      verificationChecklist: ["Run tests/reported/test_001_sla_sort.py"],
-      verificationCommands: ["python3 -m unittest tests.reported.test_001_sla_sort"]
+      verificationChecklist: ["Run tests/generated/test_001_sla_sort.py"],
+      verificationCommands: ["python3 -m unittest tests.generated.test_001_sla_sort"]
+    });
+  });
+
+  it("relocates newly planned tests into the approved generated-test namespace", () => {
+    expect(sanitizePlanForImmutablePaths({
+      requiredFiles: [
+        { path: "storefront/service.py", reason: "fix confirmation behavior" },
+        { path: "tests/test_shipping_confirmation.py", reason: "add regression coverage" }
+      ],
+      acceptanceCriteria: ["Shipping confirmations use the current address"],
+      implementationChecklist: ["Add tests/test_shipping_confirmation.py"],
+      verificationChecklist: ["Run tests/test_shipping_confirmation.py"],
+      verificationCommands: ["python3 -m pytest tests/test_shipping_confirmation.py"]
+    }, {
+      oraclePaths: [],
+      oraclePathPrefixes: ["tests/baseline/", "tests/oracle/"],
+      generatedTestPathPrefixes: ["tests/generated/"]
+    })).toEqual({
+      requiredFiles: [
+        { path: "storefront/service.py", reason: "fix confirmation behavior" },
+        {
+          path: "tests/generated/test_shipping_confirmation.py",
+          reason: "Add independent generated regression coverage; verification-only tests remain immutable"
+        }
+      ],
+      acceptanceCriteria: ["Shipping confirmations use the current address"],
+      implementationChecklist: ["Add tests/generated/test_shipping_confirmation.py"],
+      verificationChecklist: ["Run tests/generated/test_shipping_confirmation.py"],
+      verificationCommands: ["python3 -m pytest tests/generated/test_shipping_confirmation.py"]
     });
   });
 

@@ -19,7 +19,7 @@
     "oracleTestPathPrefixes": ["tests/baseline/", "tests/oracle/"],
     "generatedTestPathPrefixes": ["tests/generated/"],
     "requiredChangedFilePatterns": ["index.html"],
-    "allowedChangedFilePatterns": ["index.html"],
+    "allowedChangedFilePatterns": ["index.html", ["tests/generated/"]],
     "requiredFileContains": [
       { "path": "index.html", "text": "Handmade arrivals" }
     ]
@@ -44,7 +44,7 @@
     "oracleTestPathPrefixes": ["tests/baseline/", "tests/oracle/"],
     "generatedTestPathPrefixes": ["tests/generated/"],
     "requiredChangedFilePatterns": ["index.html"],
-    "allowedChangedFilePatterns": ["index.html"],
+    "allowedChangedFilePatterns": ["index.html", ["tests/generated/"]],
     "requiredFileContains": [
       { "path": "index.html", "text": "aria-label=\"Open cart\"" }
     ],
@@ -79,7 +79,7 @@
     "oracleTestPathPrefixes": ["tests/baseline/", "tests/oracle/"],
     "generatedTestPathPrefixes": ["tests/generated/"],
     "requiredChangedFilePatterns": ["index.html"],
-    "allowedChangedFilePatterns": ["index.html"],
+    "allowedChangedFilePatterns": ["index.html", ["tests/generated/"]],
     "requiredFileContains": [
       { "path": "index.html", "text": "Your cart is ready for something special" },
       { "path": "index.html", "text": "Browse arrivals and add a favorite when you are ready." }
@@ -138,7 +138,7 @@
       "script.js": ["renderCart", "addToCart"]
     },
     "requiredChangedFilePatterns": ["index.html", "script.js", "styles.css"],
-    "allowedChangedFilePatterns": ["index.html", "script.js", "styles.css"],
+    "allowedChangedFilePatterns": ["index.html", "script.js", "styles.css", ["tests/generated/"]],
     "frontendAssertions": [
       {
         "name": "The selected product opens its own accessible quick view",

@@ -96,8 +96,11 @@ describe("fresh vague and causal benchmark", () => {
 
   it("declares exact allowed-file containment for every generated case", async () => {
     for (const benchmarkCase of (await loadCases()).filter(({ expectedSafetyOutcome }) => expectedSafetyOutcome === "accepted")) {
-      expect(benchmarkCase.allowedChangedFilePatterns, benchmarkCase.id)
-        .toEqual(benchmarkCase.requiredChangedFilePatterns);
+      const allowed = new Set((benchmarkCase.allowedChangedFilePatterns ?? []).map((pattern) => JSON.stringify(pattern)));
+      for (const required of benchmarkCase.requiredChangedFilePatterns ?? []) {
+        expect(allowed.has(JSON.stringify(required)), benchmarkCase.id).toBe(true);
+      }
+      expect(allowed.has(JSON.stringify(["tests/generated/"])), benchmarkCase.id).toBe(true);
     }
   });
 

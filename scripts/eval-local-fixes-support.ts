@@ -314,7 +314,10 @@ export function sanitizePlanForImmutablePaths<T extends PlanWithRequiredFiles>(
   const requiredFiles: Array<{ path: string; reason: string }> = [];
 
   for (const file of plan.requiredFiles) {
-    if (!pathMatches(file.path, oraclePaths, policy.oraclePathPrefixes ?? [])) {
+    const targetsOracle = pathMatches(file.path, oraclePaths, policy.oraclePathPrefixes ?? []);
+    const targetsUnapprovedTest = file.path.startsWith("tests/") &&
+      !policy.generatedTestPathPrefixes.some((prefix) => file.path.startsWith(prefix));
+    if (!targetsOracle && !targetsUnapprovedTest) {
       requiredFiles.push(file);
       continue;
     }
@@ -328,7 +331,7 @@ export function sanitizePlanForImmutablePaths<T extends PlanWithRequiredFiles>(
     if (!requiredFiles.some((requiredFile) => requiredFile.path === replacementPath)) {
       requiredFiles.push({
         path: replacementPath,
-        reason: "Add independent generated regression coverage; the reported oracle remains verification-only"
+        reason: "Add independent generated regression coverage; verification-only tests remain immutable"
       });
     }
   }
@@ -337,6 +340,11 @@ export function sanitizePlanForImmutablePaths<T extends PlanWithRequiredFiles>(
     let sanitized = text;
     for (const [oraclePath, replacementPath] of replacements) {
       sanitized = sanitized.replaceAll(oraclePath, replacementPath);
+      if (oraclePath.endsWith(".py") && replacementPath.endsWith(".py")) {
+        const oracleModule = oraclePath.replace(/\.py$/, "").replace(/\//g, ".");
+        const replacementModule = replacementPath.replace(/\.py$/, "").replace(/\//g, ".");
+        sanitized = sanitized.replaceAll(oracleModule, replacementModule);
+      }
     }
     return sanitized;
   };
@@ -344,7 +352,10 @@ export function sanitizePlanForImmutablePaths<T extends PlanWithRequiredFiles>(
   return {
     ...plan,
     requiredFiles,
-    implementationChecklist: plan.implementationChecklist.map(replaceImmutablePaths)
+    acceptanceCriteria: plan.acceptanceCriteria.map(replaceImmutablePaths),
+    implementationChecklist: plan.implementationChecklist.map(replaceImmutablePaths),
+    verificationChecklist: plan.verificationChecklist.map(replaceImmutablePaths),
+    verificationCommands: plan.verificationCommands.map(replaceImmutablePaths)
   };
 }
 
