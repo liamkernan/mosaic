@@ -1,12 +1,22 @@
 import type { ClassifiedFeedback, LLMModelPreset } from "@mosaic/core";
 import { OPENAI_MODEL_IDS, type ANTHROPIC_MODEL_IDS, type OpenAIReasoningEffort } from "@mosaic/llm";
 
+import { getModerateIssueMode } from "./staged-issues.js";
+
 export type ModelTier = keyof typeof ANTHROPIC_MODEL_IDS;
 export type ReviewMode = "moderate-safe" | "moderate-review-needed" | "complex-review-needed";
 
 export interface OpenAIModelSelection {
   model: typeof OPENAI_MODEL_IDS[keyof typeof OPENAI_MODEL_IDS];
   reasoningEffort: OpenAIReasoningEffort;
+}
+
+export function getOpenAIReviewMode(classifiedFeedback: ClassifiedFeedback): ReviewMode | undefined {
+  if (classifiedFeedback.complexity === "moderate") {
+    return getModerateIssueMode(classifiedFeedback);
+  }
+
+  return classifiedFeedback.complexity === "complex" ? "complex-review-needed" : undefined;
 }
 
 const CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.75;

@@ -5,7 +5,6 @@ import {
   ANTHROPIC_ADVISOR_MODEL_ID,
   ANTHROPIC_MODEL_IDS,
   LLMClient,
-  OPENAI_MODEL_IDS,
   resolveOpenAIBaseURL,
   type AdvisorToolOptions,
   type OpenAIReasoningEffort
@@ -14,6 +13,7 @@ import { Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
 
 import { FeedbackClassifier } from "./classifier.js";
+import { classifyFeedbackWithOpenAIRouting } from "./classification-routing.js";
 import { ArtifactStore } from "./artifact-store.js";
 import { mergeGeneratedChanges } from "./change-set.js";
 import { CodeGenerator, scopeValidationPattern } from "./code-generator.js";
@@ -26,7 +26,6 @@ import { loadRepoRuntimeConfig, type RepoRuntimeConfig } from "./repo-config.js"
 import { RepoIndexer } from "./repo-indexer.js";
 import {
   isFixThisCommand,
-  getModerateIssueMode,
   parseStagedIssueMetadata,
   STAGED_ISSUE_LABEL,
   STAGED_ISSUE_PROMOTED_LABEL,
@@ -727,30 +726,19 @@ export class FeedbackPipelineWorker {
     const topLevelFileTree = repoContext.fileTree.map((node) => node.path);
     let classifiedFeedback: ClassifiedFeedback;
     if (repoConfig.llmProvider === "openai") {
-      const initialClient = this.createLlmClient(
-        "openai",
-        repoConfig.llmKeyMode,
-        repoConfig.llmApiKey,
-        OPENAI_MODEL_IDS.luna,
-        "high"
-      );
-      classifiedFeedback = await new FeedbackClassifier(initialClient).classify(feedbackItem, topLevelFileTree);
-      if (classifiedFeedback.complexity !== "trivial") {
-        const reviewMode = classifiedFeedback.complexity === "moderate"
-          ? getModerateIssueMode(classifiedFeedback)
-          : classifiedFeedback.complexity === "complex"
-            ? "complex-review-needed"
-            : undefined;
-        const selection = selectOpenAIModel(classifiedFeedback, repoConfig.llmModelPreset, reviewMode);
-        const routedClient = this.createLlmClient(
+      const routedClassification = await classifyFeedbackWithOpenAIRouting({
+        feedbackItem,
+        fileTree: topLevelFileTree,
+        modelPreset: repoConfig.llmModelPreset,
+        createClient: (selection) => this.createLlmClient(
           "openai",
           repoConfig.llmKeyMode,
           repoConfig.llmApiKey,
           selection.model,
           selection.reasoningEffort
-        );
-        classifiedFeedback = await new FeedbackClassifier(routedClient).classify(feedbackItem, topLevelFileTree);
-      }
+        )
+      });
+      classifiedFeedback = routedClassification.classifiedFeedback;
     } else {
       const haikuClient = this.createLlmClient("anthropic", repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.haiku);
       const sonnetClient = this.createLlmClient("anthropic", repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.sonnet);

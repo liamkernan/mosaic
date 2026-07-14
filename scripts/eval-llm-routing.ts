@@ -8,12 +8,12 @@ import {
   type OpenAIReasoningEffort
 } from "../packages/llm/src/client.js";
 import {
+  getOpenAIReviewMode,
   selectGenerationModelTier,
   selectOpenAIModel,
   selectPlanningModelTier,
   shouldUseAdvisorTool
 } from "../packages/pipeline/src/model-routing.js";
-import { getModerateIssueMode } from "../packages/pipeline/src/staged-issues.js";
 
 export type EvalModelKey = keyof typeof ANTHROPIC_MODEL_IDS | keyof typeof OPENAI_MODEL_IDS;
 export type EvalPreset = "direct" | LLMModelPreset;
@@ -59,11 +59,7 @@ export function resolveEvalLlmRoutes(options: {
       model: OPENAI_MODEL_IDS[directModel],
       reasoningEffort: directOpenAIReasoningEffort(directModel)
     };
-    const reviewMode = options.feedback.complexity === "moderate"
-      ? getModerateIssueMode(options.feedback)
-      : options.feedback.complexity === "complex"
-        ? "complex-review-needed"
-        : undefined;
+    const reviewMode = getOpenAIReviewMode(options.feedback);
     const selection = options.preset === "direct"
       ? directRoute
       : selectOpenAIModel(options.feedback, options.preset, reviewMode);

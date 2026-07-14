@@ -6,6 +6,7 @@ import { FeedbackPipelineWorker } from "./worker.js";
 import { logCompletedWorkerStatus, logFailedWorkerStatus } from "./worker-status.js";
 
 export * from "./classifier.js";
+export * from "./classification-routing.js";
 export * from "./code-generator.js";
 export * from "./artifact-store.js";
 export * from "./disposition.js";
