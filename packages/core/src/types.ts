@@ -10,6 +10,7 @@ export type RoutingScope = "localized" | "coordinated" | "multi-component" | "cr
 
 export interface ClassificationRoutingSignals {
   scope: RoutingScope;
+  literalCorrection?: boolean;
   runtimeBehavior: boolean;
   persistentData: boolean;
   securitySensitive: boolean;

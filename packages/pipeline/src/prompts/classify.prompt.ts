@@ -25,8 +25,8 @@ export function buildClassificationPrompt(
 Your job:
 1. Determine the CATEGORY of this feedback: bug_report, feature_request, copy_change, ui_tweak, question, or other.
 2. Estimate the COMPLEXITY of implementing this:
-   - trivial: one isolated text, punctuation, or value correction in one location with no coordination or runtime behavior
-   - simple: a bounded static change that coordinates a few locations, or a small localized behavior change
+   - trivial: one isolated spelling, punctuation, or exact wrong-literal correction that does not change meaning, presentation, accessibility semantics, or runtime behavior
+   - simple: a bounded static change that coordinates a few locations, intentionally changes presentation or accessibility semantics, or makes a small localized behavior change
    - moderate: requires conditional, causal, interaction, or state-transition reasoning across components or modules, or changes persisted or sensitive behavior within one subsystem
    - complex: spans runtime layers such as UI, API, storage, and workers; changes architecture or schemas; or remains materially uncertain
 3. Write a one-sentence SUMMARY of what the user is asking for.
@@ -34,6 +34,7 @@ Your job:
 5. Rate your CONFIDENCE from 0 to 1 (decimal value).
 6. Return ROUTING SIGNALS:
    - scope: localized for one isolated location; coordinated for the same bounded static change in a few locations; multi-component for logic across components/modules in one subsystem; cross-layer for behavior spanning UI/API/storage/workers or architecture
+   - literalCorrection: true only for a spelling, punctuation, or exact wrong-literal correction that preserves meaning and presentation; false for a new label/name, style or spacing decision, or any semantic/behavioral change
    - runtimeBehavior: true for conditionals, state transitions, events, data selection, or control behavior; false for copy, style, or metadata only
    - persistentData: true if records, schemas, migrations, or durable writes can change
    - securitySensitive: true for authentication, authorization, secrets, permissions, containment, or destructive operations
@@ -49,6 +50,7 @@ Respond ONLY with a JSON object. No markdown, no explanation, no preamble.
   "confidence": 0.0,
   "routingSignals": {
     "scope": "localized | coordinated | multi-component | cross-layer",
+    "literalCorrection": false,
     "runtimeBehavior": false,
     "persistentData": false,
     "securitySensitive": false,

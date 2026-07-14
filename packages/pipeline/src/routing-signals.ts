@@ -14,6 +14,7 @@ export function isClassificationRoutingSignals(value: unknown): value is Classif
 
   const signals = value as Partial<ClassificationRoutingSignals>;
   return routingScopes.has(signals.scope as RoutingScope) &&
+    (signals.literalCorrection === undefined || typeof signals.literalCorrection === "boolean") &&
     typeof signals.runtimeBehavior === "boolean" &&
     typeof signals.persistentData === "boolean" &&
     typeof signals.securitySensitive === "boolean" &&
@@ -35,6 +36,10 @@ function minimumComplexity(signals: ClassificationRoutingSignals): ComplexityLev
   }
 
   if (signals.scope === "coordinated" || signals.runtimeBehavior) {
+    return "simple";
+  }
+
+  if (signals.literalCorrection === false) {
     return "simple";
   }
 

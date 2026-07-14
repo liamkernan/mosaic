@@ -16,6 +16,7 @@ const localizedSignals = {
 describe("structured classification routing signals", () => {
   it.each([
     ["coordinated static labels", "trivial", { ...localizedSignals, scope: "coordinated" }, "simple"],
+    ["localized semantic or presentation change", "trivial", { ...localizedSignals, literalCorrection: false }, "simple"],
     ["multi-component UI state", "simple", { ...localizedSignals, scope: "multi-component", runtimeBehavior: true }, "moderate"],
     ["persistent causal behavior", "simple", { ...localizedSignals, persistentData: true, runtimeBehavior: true }, "moderate"],
     ["cross-layer runtime behavior", "moderate", { ...localizedSignals, scope: "cross-layer", runtimeBehavior: true }, "complex"]
@@ -27,6 +28,12 @@ describe("structured classification routing signals", () => {
     expect(applyRoutingSignalComplexityFloor("complex", localizedSignals)).toBe("complex");
     expect(applyRoutingSignalComplexityFloor("moderate", { ...localizedSignals, scope: "coordinated" }))
       .toBe("moderate");
+  });
+
+  it("keeps an isolated literal correction trivial and preserves legacy signals", () => {
+    expect(applyRoutingSignalComplexityFloor("trivial", { ...localizedSignals, literalCorrection: true }))
+      .toBe("trivial");
+    expect(applyRoutingSignalComplexityFloor("trivial", localizedSignals)).toBe("trivial");
   });
 
   it("requires review only for explicit, persistent, security, or cross-layer risk", () => {

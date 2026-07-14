@@ -82,6 +82,19 @@ describe("FeedbackClassifier", () => {
         requiresHumanReview: false
       },
       "moderate"
+    ],
+    [
+      "localized semantic change",
+      "trivial",
+      {
+        scope: "localized",
+        literalCorrection: false,
+        runtimeBehavior: false,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      },
+      "simple"
     ]
   ] as const)("preserves structured signals and floors under-classified %s", async (_name, complexity, routingSignals, expected) => {
     const complete = vi.fn(async () => JSON.stringify({
