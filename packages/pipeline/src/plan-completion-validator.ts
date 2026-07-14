@@ -26,6 +26,8 @@ const unchangedIntentPattern = /\b(?:remain(?:s|ing)? unchanged|without (?:chang
 const unchangedRelativeClausePattern = /\bwhich (?:must|should) remain unchanged\b/i;
 const preservationLeadPattern = /^\s*(?:preserve|keep)\b/i;
 const explicitNoEditPattern = /\b(?:do not|don't|must not)\s+(?:change|alter|modify|edit)\b/i;
+const preservationChecklistLeadPattern = /^\s*(?:preserve|keep|leave)\b/i;
+const implementationMutationPattern = /\b(?:add|create|fix|implement|modify|remove|replace|style|update|wire)(?:s|d|ing)?\b/i;
 
 function requiresFullStackContract(text: string): boolean {
   return text.split(/\n+/).some((line) =>
@@ -94,6 +96,15 @@ function implementationRequiredFiles(plan: ImplementationPlan): ImplementationPl
       (verificationIntentPattern.test(reason) && unchangedIntentPattern.test(reason)) ||
       (preservationLeadPattern.test(reason) && checklistExplicitlyForbidsEditing);
     return !isVerificationOnly;
+  });
+}
+
+function implementationActionChecklist(plan: ImplementationPlan): string[] {
+  return plan.implementationChecklist.filter((item) => {
+    if (explicitNoEditPattern.test(item)) {
+      return false;
+    }
+    return !preservationChecklistLeadPattern.test(item) || implementationMutationPattern.test(item);
   });
 }
 
@@ -547,7 +558,7 @@ function missingRequiredFrontendLayerErrors(
   const planBehaviorText = [
     ...implementationRequiredFiles(plan).map((file) => file.reason),
     ...plan.acceptanceCriteria,
-    ...plan.implementationChecklist
+    ...implementationActionChecklist(plan)
   ].join("\n");
   const requiresInferredJavaScript = /\b(?:javascript|dom api|read (?:the )?.{0,30}(?:url|query|slug)|render (?:the )?.{0,30}(?:record|data|matching)|event listener|keyboard behavior)\b/i.test(planBehaviorText);
   const requiredLayers = new Set<FrontendLayer>();

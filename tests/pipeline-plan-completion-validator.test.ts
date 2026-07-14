@@ -94,7 +94,7 @@ describe("validatePlanCompletion", () => {
         acceptanceCriteria: ["The cart button has a clear accessible name."],
         implementationChecklist: [
           "Give #cartButton an explicit accessible name.",
-          "Do not alter the existing cart drawer toggle behavior."
+          "Preserve #cartButton's existing aria-expanded state and JavaScript event behavior."
         ]
       }
     );
