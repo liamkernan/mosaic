@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ClassifiedFeedback } from "../packages/core/src/types.js";
 import type { OpenAIModelSelection } from "../packages/pipeline/src/model-routing.js";
+import { parseRoutingBenchmarkArgs } from "../scripts/eval-routing-benchmark.js";
 import {
   runUnscoredRoutingCase,
   scoreRoutingResults,
@@ -116,6 +117,32 @@ function expectation(
 }
 
 describe("routing benchmark support", () => {
+  it("accepts pnpm's conventional argument separator and keeps holdout guarded", () => {
+    expect(parseRoutingBenchmarkArgs([
+      "--",
+      "--split",
+      "development",
+      "--pricing",
+      "evals/openai-model-pricing-2026-07-09.json",
+      "--max-cost-usd",
+      "1"
+    ])).toMatchObject({
+      split: "development",
+      maxCostUsd: 1,
+      acknowledgeHoldout: false
+    });
+
+    expect(() => parseRoutingBenchmarkArgs([
+      "--",
+      "--split",
+      "holdout",
+      "--pricing",
+      "evals/openai-model-pricing-2026-07-09.json",
+      "--max-cost-usd",
+      "1"
+    ])).toThrow("--acknowledge-untouched-holdout");
+  });
+
   it("rejects unsafe feedback before creating a model client", async () => {
     const createClient = vi.fn(() => {
       throw new Error("model must not be called");

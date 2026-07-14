@@ -54,7 +54,7 @@ interface CliOptions {
   acknowledgeHoldout: boolean;
 }
 
-function parseArgs(argv: string[]): CliOptions {
+export function parseRoutingBenchmarkArgs(argv: string[]): CliOptions {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const options: CliOptions = {
     split: "development",
@@ -65,7 +65,9 @@ function parseArgs(argv: string[]): CliOptions {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "--split") {
+    if (arg === "--") {
+      continue;
+    } else if (arg === "--split") {
       const split = argv[++index];
       if (split !== "development" && split !== "holdout") {
         throw new Error("--split must be development or holdout");
@@ -179,7 +181,7 @@ function usageSummary(calls: RoutingUsageCall[]): {
 }
 
 async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseRoutingBenchmarkArgs(process.argv.slice(2));
   const env = getEnv();
   if (env.MOSAIC_OPENAI_MODEL || env.MOSAIC_OPENAI_REASONING_EFFORT) {
     throw new Error("Routing benchmark refuses MOSAIC_OPENAI_MODEL or MOSAIC_OPENAI_REASONING_EFFORT overrides");
