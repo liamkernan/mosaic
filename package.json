@@ -16,6 +16,7 @@
     "test:security:docker": "MOSAIC_REQUIRE_DOCKER_TESTS=1 vitest run tests/pipeline-verification-runner.test.ts",
     "test:watch": "vitest",
     "eval:local": "tsx scripts/eval-local-fixes.ts",
+    "eval:routing": "tsx scripts/eval-routing-benchmark.ts",
     "setup": "tsx scripts/setup.ts",
     "demo": "tsx scripts/demo.ts",
     "webhooks:dev": "node scripts/dev-webhooks.mjs"

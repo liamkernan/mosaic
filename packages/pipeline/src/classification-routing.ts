@@ -32,6 +32,7 @@ export async function classifyFeedbackWithOpenAIRouting(options: {
   fileTree: string[];
   modelPreset: LLMModelPreset;
   createClient: (route: OpenAIModelSelection) => ClassificationClient;
+  onPass?: (pass: OpenAIClassificationPass) => void;
 }): Promise<OpenAIRoutedClassification> {
   const initialRoute: OpenAIModelSelection = {
     model: OPENAI_MODEL_IDS.luna,
@@ -40,7 +41,9 @@ export async function classifyFeedbackWithOpenAIRouting(options: {
   const passes: OpenAIClassificationPass[] = [];
   let classifiedFeedback = await new FeedbackClassifier(options.createClient(initialRoute))
     .classify(options.feedbackItem, options.fileTree);
-  passes.push({ route: initialRoute, classifiedFeedback });
+  const initialPass = { route: initialRoute, classifiedFeedback };
+  passes.push(initialPass);
+  options.onPass?.(initialPass);
 
   if (classifiedFeedback.complexity !== "trivial") {
     const routedSelection = selectOpenAIModel(
@@ -50,7 +53,9 @@ export async function classifyFeedbackWithOpenAIRouting(options: {
     );
     classifiedFeedback = await new FeedbackClassifier(options.createClient(routedSelection))
       .classify(options.feedbackItem, options.fileTree);
-    passes.push({ route: routedSelection, classifiedFeedback });
+    const routedPass = { route: routedSelection, classifiedFeedback };
+    passes.push(routedPass);
+    options.onPass?.(routedPass);
   }
 
   return { classifiedFeedback, passes };
