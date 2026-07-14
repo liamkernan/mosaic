@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Northstar Account</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="account-header">
+      <h1 id="welcomeTitle">Welcomme back</h1>
+      <button id="saveFilterButton" type="button" aria-pressed="false">
+        <span aria-hidden="true">★</span>
+      </button>
+      <p id="filterStatus" aria-live="polite">Filter not saved</p>
+    </header>
+
+    <main>
+      <section aria-labelledby="ordersTitle">
+        <div class="orders-heading">
+          <h2 id="ordersTitle">Recent orders</h2>
+          <button id="sortToggle" type="button" aria-controls="sortPanel" aria-expanded="false">
+            Sort orders
+          </button>
+        </div>
+
+        <section id="sortPanel" class="sort-panel" aria-labelledby="sortTitle" hidden>
+          <h3 id="sortTitle">Sort orders</h3>
+          <button class="sort-option" type="button" data-direction="newest">Newest first</button>
+          <button class="sort-option" type="button" data-direction="oldest">Oldest first</button>
+          <button id="sortClose" type="button">Close sorting</button>
+        </section>
+
+        <ol id="orderList">
+          <li data-created-at="2026-07-10">Order 103</li>
+          <li data-created-at="2026-07-08">Order 102</li>
+          <li data-created-at="2026-07-01">Order 101</li>
+        </ol>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>

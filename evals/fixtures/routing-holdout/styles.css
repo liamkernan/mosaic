@@ -1,0 +1,32 @@
+:root {
+  color: #172238;
+  background: #f6f8fc;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 2rem;
+}
+
+.account-header,
+.orders-heading {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.sort-panel {
+  background: white;
+  border: 1px solid #aeb9cc;
+  border-radius: 0.5rem;
+  margin-block: 1rem;
+  padding: 1rem;
+}
+
+#orderList {
+  background: white;
+  border-radius: 0.5rem;
+  padding: 1rem 2.5rem;
+}
