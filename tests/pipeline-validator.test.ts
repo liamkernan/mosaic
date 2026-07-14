@@ -660,6 +660,87 @@ describe("validate", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("uses native dialog ids and classes as modal style and behavior hooks", async () => {
+    const localPath = await tempDirs.create("mosaic-validator-");
+    const originalHtml = '<button class="quick-view">Open</button><aside id="quickViewPanel" class="quick-view-panel" aria-hidden="true"></aside>\n';
+    await writeFile(join(localPath, "index.html"), originalHtml, "utf8");
+    await writeFile(join(localPath, "styles.css"), ".quick-view-panel { display: none; }\n", "utf8");
+    await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "index.html",
+          originalContent: originalHtml,
+          modifiedContent: '<button class="quick-view">Open</button><dialog id="quickViewPanel" class="quick-view-panel" aria-modal="true"><button id="quickViewClose">Close</button></dialog>\n',
+          explanation: "use an accessible quick-view dialog"
+        },
+        {
+          filePath: "styles.css",
+          originalContent: ".quick-view-panel { display: none; }\n",
+          modifiedContent: ".quick-view-panel { border: 1px solid; }\n.quick-view-panel::backdrop { background: #0008; }\n",
+          explanation: "style the native dialog"
+        },
+        {
+          filePath: "script.js",
+          originalContent: "console.log('ready');\n",
+          modifiedContent:
+            "const quickViewPanel = document.querySelector('#quickViewPanel');\n" +
+            "document.querySelector('.quick-view').addEventListener('click', () => quickViewPanel.showModal());\n" +
+            "document.querySelector('#quickViewClose').addEventListener('click', () => quickViewPanel.close());\n" +
+            "document.addEventListener('keydown', (event) => { if (event.key === 'Escape') quickViewPanel.close(); });\n",
+          explanation: "wire complete native dialog behavior"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [
+          { path: "index.html", type: "file" },
+          { path: "styles.css", type: "file" },
+          { path: "script.js", type: "file" }
+        ],
+        installationId: 1
+      }
+    );
+
+    expect(result.errors).toEqual([]);
+  });
+
+  it("still rejects a native dialog without complete script behavior", async () => {
+    const localPath = await tempDirs.create("mosaic-validator-");
+    const originalHtml = '<aside id="quickViewPanel" class="quick-view-panel" aria-hidden="true"></aside>\n';
+    await writeFile(join(localPath, "index.html"), originalHtml, "utf8");
+    await writeFile(join(localPath, "styles.css"), ".quick-view-panel { border: 1px solid; }\n", "utf8");
+    await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
+
+    const result = await validate(
+      [
+        {
+          filePath: "index.html",
+          originalContent: originalHtml,
+          modifiedContent: '<dialog id="quickViewPanel" class="quick-view-panel" aria-modal="true"></dialog>\n',
+          explanation: "use a native dialog"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [
+          { path: "index.html", type: "file" },
+          { path: "styles.css", type: "file" },
+          { path: "script.js", type: "file" }
+        ],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("does not update a script");
+  });
+
   it("accepts modal UI changes when related styles and behavior are added without every content token", async () => {
     const localPath = await tempDirs.create("mosaic-validator-");
     await writeFile(join(localPath, "index.html"), "<div>before</div>\n", "utf8");

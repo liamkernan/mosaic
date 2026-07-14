@@ -21,6 +21,8 @@ export interface ValidationLimits {
 const urlPattern = /\bhttps?:\/\/[^\s"'`]+/g;
 const ipPattern = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
 const modalTokenPattern = /\b[a-z0-9-]*(?:modal|overlay|dialog)(?:-[a-z0-9]+)*\b/gi;
+const semanticModalTokens = new Set(["aria-modal", "dialog"]);
+const htmlTagPattern = /<([a-z0-9-]+)\b([^>]*)>/gi;
 const inertAnchorPattern = /<a\b(?=[^>]*\bhref\s*=\s*["'](?:#|javascript:void\(0\);?|)["'])[^>]*>[\s\S]*?<\/a>/gi;
 const nonInteractiveClickableTagPattern = /<(div|article|section|li|span|figure)\b[^>]*(?:\bonclick\s*=|\bclass\s*=\s*["'][^"']*(?:clickable|interactive|card-link)[^"']*["'])[^>]*>/gi;
 const getElementByIdPattern = /getElementById\(\s*["']([^"']+)["']\s*\)/g;
@@ -382,10 +384,51 @@ async function collectFileExistence(
   return new Map(entries.filter((entry): entry is readonly [number, boolean] => entry !== undefined));
 }
 
+function modalElementHookTokens(content: string): Set<string> {
+  const tokens = new Set<string>();
+  for (const match of content.matchAll(htmlTagPattern)) {
+    const tag = match[1].toLowerCase();
+    const attributes = match[2];
+    const hasDialogSemantics = tag === "dialog" ||
+      /\brole\s*=\s*["']dialog["']/i.test(attributes) ||
+      /\baria-modal\s*=\s*["']true["']/i.test(attributes);
+    if (!hasDialogSemantics) {
+      continue;
+    }
+
+    const elementTokens: string[] = [];
+    const id = attributes.match(/\bid\s*=\s*["']([^"']+)["']/i)?.[1];
+    if (id) {
+      elementTokens.push(id.toLowerCase());
+    }
+    const classes = attributes.match(/\bclass\s*=\s*["']([^"']+)["']/i)?.[1];
+    if (classes) {
+      elementTokens.push(...classes.toLowerCase().split(/\s+/).filter(Boolean));
+    }
+    if (elementTokens.length === 0) {
+      elementTokens.push(tag === "dialog" ? "dialog" : "role-dialog");
+    }
+    for (const token of elementTokens) {
+      tokens.add(token);
+    }
+  }
+  return tokens;
+}
+
 function findNewModalTokens(original: string, modified: string): string[] {
-  const originalMatches = new Set((original.match(modalTokenPattern) ?? []).map((match) => match.toLowerCase()));
-  return [...new Set((modified.match(modalTokenPattern) ?? []).map((match) => match.toLowerCase()))]
-    .filter((match) => !originalMatches.has(match));
+  const originalMatches = new Set([
+    ...(original.match(modalTokenPattern) ?? [])
+      .map((match) => match.toLowerCase())
+      .filter((match) => !semanticModalTokens.has(match)),
+    ...modalElementHookTokens(original)
+  ]);
+  const modifiedMatches = new Set([
+    ...(modified.match(modalTokenPattern) ?? [])
+      .map((match) => match.toLowerCase())
+      .filter((match) => !semanticModalTokens.has(match)),
+    ...modalElementHookTokens(modified)
+  ]);
+  return [...modifiedMatches].filter((match) => !originalMatches.has(match));
 }
 
 function compactToken(token: string): string {
