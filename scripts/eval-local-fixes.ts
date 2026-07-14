@@ -1,5 +1,5 @@
 import { exec as execCallback, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -17,6 +17,7 @@ import { applyValidationFallbacks, applyVerificationFallbacks } from "../package
 import { getEnv } from "../packages/core/src/config.js";
 import { LLMError } from "../packages/core/src/errors.js";
 import type { ClassifiedFeedback, ComplexityLevel, FeedbackCategory, FeedbackSource, FileNode, GeneratedChange, LLMProvider, RepoContext } from "../packages/core/src/types.js";
+import { assessFeedbackContent, type AbuseAssessment } from "../packages/intake/src/abuse-protection.js";
 import {
   LLMClient,
   type LLMRequestAuthorization,
@@ -36,6 +37,7 @@ import {
   EvalBudget,
   DEFAULT_EVAL_CASE_TIMEOUT_MS,
   assertGeneratedPathsAllowed,
+  buildChangedPythonTestCommand,
   calculateUsageCostUsd,
   calculateUsageIterationsCostUsd,
   createEvalTrialRuns,
@@ -47,10 +49,13 @@ import {
   runEvalCaseBatch,
   sanitizePlanForImmutablePaths,
   summarizeEvalTrials,
+  summarizeRepairAttempts,
+  validateAllowedChangedPaths,
   writeCaseArtifacts,
   writeEvalReport,
   type EvalBatchResult,
   type EvalTrialRun,
+  type EvalRepairSummary,
   type FrontendRepairRequirement,
   type ModelPricing,
   validateUnchangedSymbols,
@@ -77,8 +82,9 @@ function isRecoverableLlmFailure(error: unknown): boolean {
 interface EvalCase {
   id: string;
   repoFullName: string;
-  repoDirName: string;
-  baseRef: string;
+  repoDirName?: string;
+  baseRef?: string;
+  fixturePath?: string;
   issueNumber?: number;
   feedback: {
     source: FeedbackSource;
@@ -92,10 +98,13 @@ interface EvalCase {
   };
   expectedReferenceFiles?: string[];
   requiredChangedFilePatterns?: Array<string | string[]>;
+  allowedChangedFilePatterns?: Array<string | string[]>;
   requiredFileContains?: Array<{ path: string | string[]; text: string }>;
   verificationCommands?: string[];
   runPythonUnitTests?: boolean;
   runChangedPythonTests?: boolean;
+  runChangedPytestTests?: boolean;
+  pytestCommand?: string;
   frontendAssertions?: FrontendAssertion[];
   oracleTestPaths?: string[];
   oracleTestPathPrefixes?: string[];
@@ -103,6 +112,7 @@ interface EvalCase {
   unchangedPythonSymbols?: Record<string, string[]>;
   unchangedSymbols?: Record<string, string[]>;
   allowedSymbolAdditions?: Record<string, Record<string, string[]>>;
+  expectedSafetyOutcome?: "accepted" | "rejected";
 }
 
 interface FrontendAssertion {
@@ -130,6 +140,9 @@ interface EvalResult {
   artifactPath: string;
   usage?: EvalUsageSummary;
   scopeViolations?: string[];
+  routes?: ReturnType<typeof resolveEvalLlmRoutes>;
+  safetyAssessment?: AbuseAssessment;
+  repairAttempts?: EvalRepairSummary;
 }
 
 interface EvalUsageCall extends Omit<LLMUsageObservation, "iterations"> {
@@ -336,6 +349,13 @@ async function copyRepoAtRef(sourceRepo: string, baseRef: string): Promise<strin
   return worktreePath;
 }
 
+async function copyFixtureSource(sourcePath: string): Promise<string> {
+  const tempPath = await mkdtemp(join(tmpdir(), "mosaic-eval-"));
+  const worktreePath = join(tempPath, "repo");
+  await cp(sourcePath, worktreePath, { recursive: true, force: false });
+  return worktreePath;
+}
+
 function createEvalLlmClient(
   provider: LLMProvider,
   route: EvalClientRoute,
@@ -516,21 +536,23 @@ async function runVerification(evalCase: EvalCase, repoPath: string, changes: Ge
     }
   }
 
-  if (evalCase.runChangedPythonTests) {
-    const modules = changes
-      .map((change) => change.filePath)
-      .filter((path) => path.startsWith("tests/") && path.endsWith(".py"))
-      .map((path) => path.replace(/\.py$/, "").replace(/\//g, "."))
-      .sort();
+  if (evalCase.runChangedPythonTests || evalCase.runChangedPytestTests) {
+    const command = buildChangedPythonTestCommand(
+      changes.map((change) => change.filePath),
+      {
+        runner: evalCase.runChangedPytestTests ? "pytest" : "unittest",
+        pytestCommand: evalCase.pytestCommand
+      }
+    );
 
-    if (modules.length === 0) {
+    if (!command) {
       errors.push("No changed Python test modules found under tests/");
     } else {
-      const command = `python3 -m unittest ${modules.map((module) => JSON.stringify(module)).join(" ")}`;
       try {
         await runCommand(command, repoPath);
       } catch (error) {
-        errors.push(`Changed Python test verification failed: ${error instanceof Error ? error.message : String(error)}`);
+        const runner = evalCase.runChangedPytestTests ? "pytest" : "unittest";
+        errors.push(`Changed Python ${runner} verification failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   }
@@ -593,6 +615,12 @@ async function evaluateChecks(
 
 function evaluateContainmentChecks(evalCase: EvalCase, changes: GeneratedChange[]): string[] {
   const errors: string[] = [];
+  if (evalCase.allowedChangedFilePatterns) {
+    errors.push(...validateAllowedChangedPaths(
+      changes.map((change) => change.filePath),
+      evalCase.allowedChangedFilePatterns
+    ));
+  }
   for (const change of changes) {
     const unchangedSymbols = [
       ...(evalCase.unchangedPythonSymbols?.[change.filePath] ?? []),
@@ -858,10 +886,44 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
 }
 
 async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>): Promise<EvalResult> {
-  const sourceRepo = resolve(options.repoRoot, evalCase.repoDirName);
-  const repoPath = await copyRepoAtRef(sourceRepo, evalCase.baseRef);
   const runId = options.runId ?? evalCase.id;
   const artifactPath = join(options.outputDir, runId);
+  const safetyAssessment = assessFeedbackContent(evalCase.feedback.rawContent);
+  if (evalCase.expectedSafetyOutcome === "rejected") {
+    await mkdir(artifactPath, { recursive: true });
+    await writeFile(join(artifactPath, "safety.json"), `${JSON.stringify(safetyAssessment, null, 2)}\n`, "utf8");
+    const passed = !safetyAssessment.accepted;
+    return {
+      id: runId,
+      caseId: evalCase.id,
+      trial: options.trial,
+      passed,
+      tempPath: "",
+      generated: false,
+      references: [],
+      loadedFiles: [],
+      changedFiles: [],
+      errors: passed ? [] : ["Unsafe benchmark feedback was unexpectedly accepted"],
+      artifactPath,
+      scopeViolations: [],
+      safetyAssessment,
+      repairAttempts: { modelAttempts: 0, deterministicAttempts: 0, totalAttempts: 0, stages: [] }
+    };
+  }
+  if (evalCase.expectedSafetyOutcome === "accepted" && !safetyAssessment.accepted) {
+    throw new Error(`Safe benchmark feedback was unexpectedly rejected: ${safetyAssessment.reasons.join("; ")}`);
+  }
+
+  if (!evalCase.fixturePath && (!evalCase.repoDirName || !evalCase.baseRef)) {
+    throw new Error(`Eval case ${evalCase.id} requires fixturePath or both repoDirName and baseRef`);
+  }
+
+  const sourceRepo = evalCase.fixturePath
+    ? resolve(evalCase.fixturePath)
+    : resolve(options.repoRoot, evalCase.repoDirName ?? "");
+  const repoPath = evalCase.fixturePath
+    ? await copyFixtureSource(sourceRepo)
+    : await copyRepoAtRef(sourceRepo, evalCase.baseRef ?? "");
   const telemetry = await createEvalTelemetry(options, artifactPath);
   const repoIndexer = new RepoIndexer();
   const repoContext: RepoContext = {
@@ -1234,6 +1296,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   errors.push(...checkErrors);
   await persistArtifacts();
 
+  const usage = telemetry?.snapshot();
   return {
     id: runId,
     caseId: evalCase.id,
@@ -1246,8 +1309,15 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     changedFiles: changes.map((change) => change.filePath),
     errors,
     artifactPath,
-    usage: telemetry?.snapshot(),
-    scopeViolations: errors.filter((error) => error.startsWith("Unrelated protected symbol changed"))
+    usage,
+    scopeViolations: errors.filter((error) => error.startsWith("Unrelated protected symbol changed")),
+    routes,
+    safetyAssessment,
+    repairAttempts: summarizeRepairAttempts(
+      usage?.calls ?? [],
+      validationHistory.map(({ stage }) => stage),
+      verificationHistory.map(({ stage }) => stage)
+    )
   };
 }
 
@@ -1579,7 +1649,8 @@ function failedResult(evalCase: EvalCase, options: ReturnType<typeof parseArgs>,
     changedFiles: [],
     errors: [error instanceof Error ? error.message : String(error)],
     artifactPath: join(options.outputDir, runId),
-    scopeViolations: []
+    scopeViolations: [],
+    repairAttempts: { modelAttempts: 0, deterministicAttempts: 0, totalAttempts: 0, stages: [] }
   };
 }
 
@@ -1599,6 +1670,13 @@ async function runInternalCase(
     result.usage = await readFile(join(result.artifactPath, "usage.json"), "utf8")
       .then((content) => JSON.parse(content) as EvalUsageSummary)
       .catch(() => undefined);
+    const validationStages = await readFile(join(result.artifactPath, "validation-history.json"), "utf8")
+      .then((content) => (JSON.parse(content) as Array<{ stage: string }>).map(({ stage }) => stage))
+      .catch(() => [] as string[]);
+    const verificationStages = await readFile(join(result.artifactPath, "verification-history.json"), "utf8")
+      .then((content) => (JSON.parse(content) as Array<{ stage: string }>).map(({ stage }) => stage))
+      .catch(() => [] as string[]);
+    result.repairAttempts = summarizeRepairAttempts(result.usage?.calls ?? [], validationStages, verificationStages);
   }
   await mkdir(dirname(options.resultPath), { recursive: true });
   await writeFile(options.resultPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");

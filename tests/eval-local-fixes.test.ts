@@ -7,6 +7,7 @@ import {
   EvalBudget,
   DEFAULT_EVAL_CASE_TIMEOUT_MS,
   assertGeneratedPathsAllowed,
+  buildChangedPythonTestCommand,
   calculateUsageCostUsd,
   calculateUsageIterationsCostUsd,
   createEvalTrialRuns,
@@ -16,7 +17,9 @@ import {
   relocateGeneratedTestsFromImmutablePaths,
   sanitizePlanForImmutablePaths,
   runEvalCaseBatch,
+  summarizeRepairAttempts,
   summarizeEvalTrials,
+  validateAllowedChangedPaths,
   validateUnchangedSymbols,
   validateUnchangedSymbolsWithAllowedLines,
   validateUnchangedPythonSymbols,
@@ -183,6 +186,50 @@ describe("local fix evaluation harness", () => {
         generatedTestPathPrefixes: ["tests/generated/"]
       }
     )).toThrow("unapproved test path");
+  });
+
+  it("enforces case-level allowed-file containment", () => {
+    expect(validateAllowedChangedPaths(
+      ["storefront/service.py", "tests/generated/test_confirmation.py"],
+      ["storefront/service.py", ["tests/generated/"]]
+    )).toEqual([]);
+    expect(validateAllowedChangedPaths(
+      ["storefront/service.py", "README.md"],
+      ["storefront/service.py", ["tests/generated/"]]
+    )).toEqual(["Generated change exceeded allowed file containment: README.md"]);
+  });
+
+  it("builds pytest and unittest commands only for changed Python tests", () => {
+    const changedPaths = ["storefront/service.py", "tests/generated/test_confirmation.py"];
+    expect(buildChangedPythonTestCommand(changedPaths, {
+      runner: "pytest",
+      pytestCommand: "uv run --with pytest==8.4.1 python -m pytest -q"
+    })).toBe('uv run --with pytest==8.4.1 python -m pytest -q "tests/generated/test_confirmation.py"');
+    expect(buildChangedPythonTestCommand(changedPaths, { runner: "unittest" }))
+      .toBe('python3 -m unittest "tests.generated.test_confirmation"');
+    expect(buildChangedPythonTestCommand(["storefront/service.py"], { runner: "pytest" })).toBeUndefined();
+  });
+
+  it("reports model and deterministic repair attempts separately", () => {
+    expect(summarizeRepairAttempts(
+      [
+        { phase: "planning" },
+        { phase: "generation-and-repair" },
+        { phase: "generation-and-repair" },
+        { phase: "check-repair" }
+      ],
+      ["initial", "model-repair-improved-1", "deterministic-repair-improved-1"],
+      ["check-repair-improved"]
+    )).toEqual({
+      modelAttempts: 2,
+      deterministicAttempts: 1,
+      totalAttempts: 3,
+      stages: [
+        "model-repair-improved-1",
+        "deterministic-repair-improved-1",
+        "check-repair-improved"
+      ]
+    });
   });
 
   it("removes immutable oracles from model-visible context", () => {

@@ -1,0 +1,36 @@
+:root {
+  color: #29251f;
+  background: #fbf8f2;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.site-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 1rem 2rem;
+}
+
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+
+.product-card,
+.cart-drawer {
+  border: 1px solid #c8bda9;
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.quick-view-panel {
+  display: none;
+}
+
+.quick-view-panel.is-open {
+  display: block;
+}

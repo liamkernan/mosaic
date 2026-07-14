@@ -1,0 +1,1 @@
+"""Cedar Market storefront fixture."""

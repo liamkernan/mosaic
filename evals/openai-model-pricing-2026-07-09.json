@@ -1,0 +1,23 @@
+{
+  "gpt-5.6-sol": {
+    "inputUsdPerMillion": 5,
+    "outputUsdPerMillion": 30,
+    "cacheReadUsdPerMillion": 0.5,
+    "cacheCreationUsdPerMillion": 6.25,
+    "inputTokensIncludeCacheReads": true
+  },
+  "gpt-5.6-terra": {
+    "inputUsdPerMillion": 2.5,
+    "outputUsdPerMillion": 15,
+    "cacheReadUsdPerMillion": 0.25,
+    "cacheCreationUsdPerMillion": 3.125,
+    "inputTokensIncludeCacheReads": true
+  },
+  "gpt-5.6-luna": {
+    "inputUsdPerMillion": 1,
+    "outputUsdPerMillion": 6,
+    "cacheReadUsdPerMillion": 0.1,
+    "cacheCreationUsdPerMillion": 1.25,
+    "inputTokensIncludeCacheReads": true
+  }
+}

@@ -159,6 +159,69 @@ export interface GeneratedPathPolicy {
   generatedTestPathPrefixes: string[];
 }
 
+export interface EvalRepairSummary {
+  modelAttempts: number;
+  deterministicAttempts: number;
+  totalAttempts: number;
+  stages: string[];
+}
+
+export function pathMatchesAnyPattern(path: string, patterns: Array<string | string[]>): boolean {
+  return patterns.some((pattern) => {
+    const alternatives = Array.isArray(pattern) ? pattern : [pattern];
+    return alternatives.some((candidate) => path === candidate || path.includes(candidate));
+  });
+}
+
+export function validateAllowedChangedPaths(
+  changedPaths: string[],
+  allowedPatterns: Array<string | string[]>
+): string[] {
+  return changedPaths
+    .filter((path) => !pathMatchesAnyPattern(path, allowedPatterns))
+    .map((path) => `Generated change exceeded allowed file containment: ${path}`);
+}
+
+export function buildChangedPythonTestCommand(
+  changedPaths: string[],
+  options: { runner: "unittest" | "pytest"; pytestCommand?: string }
+): string | undefined {
+  const testPaths = changedPaths
+    .filter((path) => path.startsWith("tests/") && path.endsWith(".py"))
+    .sort();
+  if (testPaths.length === 0) {
+    return undefined;
+  }
+
+  if (options.runner === "pytest") {
+    const command = options.pytestCommand ?? "python3 -m pytest";
+    return `${command} ${testPaths.map((path) => JSON.stringify(path)).join(" ")}`;
+  }
+
+  const modules = testPaths.map((path) => path.replace(/\.py$/, "").replace(/\//g, "."));
+  return `python3 -m unittest ${modules.map((module) => JSON.stringify(module)).join(" ")}`;
+}
+
+export function summarizeRepairAttempts(
+  calls: Array<{ phase: string }>,
+  validationStages: string[],
+  verificationStages: string[]
+): EvalRepairSummary {
+  const generationCalls = calls.filter((call) => call.phase === "generation-and-repair").length;
+  const otherRepairCalls = calls.filter((call) => call.phase === "check-repair").length;
+  const modelAttempts = Math.max(0, generationCalls - 1) + otherRepairCalls;
+  const stages = [...validationStages, ...verificationStages]
+    .filter((stage) => stage.includes("repair"));
+  const deterministicAttempts = stages.filter((stage) => stage.includes("deterministic-repair")).length;
+
+  return {
+    modelAttempts,
+    deterministicAttempts,
+    totalAttempts: modelAttempts + deterministicAttempts,
+    stages
+  };
+}
+
 export interface FrontendRepairRequirement {
   assertion: string;
   action: "click" | "keyboard_activate" | "assert" | "runtime";

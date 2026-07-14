@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cedar Market</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#featured">Cedar Market</a>
+      <button id="cartButton" type="button" aria-controls="cartDrawer" aria-expanded="false">
+        <span aria-hidden="true">Bag</span> <span id="cartCount">0</span>
+      </button>
+    </header>
+
+    <main>
+      <section id="featured" aria-labelledby="featuredTitle">
+        <h1 id="featuredTitle">Handmade arrvials</h1>
+        <div class="product-grid">
+          <article class="product-card" data-product-key="clay-lamp">
+            <h2>Clay Lamp</h2>
+            <p>Warm light through a hand-thrown clay shade.</p>
+            <p>Matte clay · 14 inches tall</p>
+            <button class="quick-view" type="button" data-product-key="clay-lamp">Quick view</button>
+            <button class="add-to-cart" type="button" data-product-key="clay-lamp">Add to cart</button>
+          </article>
+          <article class="product-card" data-product-key="linen-throw">
+            <h2>Linen Throw</h2>
+            <p>A soft woven linen layer for cool evenings.</p>
+            <p>Woven linen · 50 × 70 inches</p>
+            <button class="quick-view" type="button" data-product-key="linen-throw">Quick view</button>
+            <button class="add-to-cart" type="button" data-product-key="linen-throw">Add to cart</button>
+          </article>
+        </div>
+      </section>
+
+      <section id="cartDrawer" class="cart-drawer" aria-labelledby="cartTitle" hidden>
+        <h2 id="cartTitle">Your bag is empty</h2>
+        <p id="cartHelper">Try adding an item.</p>
+        <ul id="cartItems"></ul>
+      </section>
+    </main>
+
+    <aside id="quickViewPanel" class="quick-view-panel" aria-hidden="true">
+      <span id="quickViewClose" tabindex="0">Close</span>
+      <h2 id="quickViewTitle"></h2>
+      <p id="quickViewDetails"></p>
+    </aside>
+
+    <script src="script.js"></script>
+  </body>
+</html>
