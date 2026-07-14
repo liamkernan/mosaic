@@ -113,6 +113,43 @@ describe("staged issues", () => {
     ).toBe("moderate-review-needed");
   });
 
+  it("uses structured risk instead of file count for new moderate classifications", () => {
+    const boundedUiState = {
+      scope: "multi-component",
+      runtimeBehavior: true,
+      persistentData: false,
+      securitySensitive: false,
+      requiresHumanReview: false
+    } as const;
+    const safeFeedback = {
+      ...baseFeedback,
+      relevantFiles: ["src/a.ts", "src/b.ts", "src/c.ts", "tests/a.test.ts"],
+      routingSignals: boundedUiState
+    };
+
+    expect(getModerateIssueMode(safeFeedback)).toBe("moderate-safe");
+    expect(getModerateIssueMode({
+      ...safeFeedback,
+      routingSignals: { ...boundedUiState, persistentData: true }
+    })).toBe("moderate-review-needed");
+  });
+
+  it("round-trips signed structured routing signals for staged promotion", () => {
+    const metadata = buildStagedIssueMetadata({
+      ...baseFeedback,
+      routingSignals: {
+        scope: "multi-component",
+        runtimeBehavior: true,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      }
+    }, "moderate-safe");
+    const comment = buildStagedIssueMetadataComment(metadata, stagedIssueSecret);
+
+    expect(parseStagedIssueMetadata(comment, stagedIssueSecret)).toEqual(metadata);
+  });
+
   it("uses the configured trigger phrase in promotion instructions", () => {
     expect(getPromotionDescription("moderate-safe")).toContain("`@custombot fix this`");
     expect(getPromotionDescription("moderate-review-needed")).toContain("`@custombot open PR`");

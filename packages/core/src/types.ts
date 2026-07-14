@@ -6,6 +6,16 @@ export type FeedbackCategory = "bug_report" | "feature_request" | "copy_change" 
 
 export type ComplexityLevel = "trivial" | "simple" | "moderate" | "complex";
 
+export type RoutingScope = "localized" | "coordinated" | "multi-component" | "cross-layer";
+
+export interface ClassificationRoutingSignals {
+  scope: RoutingScope;
+  runtimeBehavior: boolean;
+  persistentData: boolean;
+  securitySensitive: boolean;
+  requiresHumanReview: boolean;
+}
+
 export interface FeedbackItem {
   id: string;
   source: FeedbackSource;
@@ -22,6 +32,7 @@ export interface ClassifiedFeedback extends FeedbackItem {
   summary: string;
   relevantFiles: string[];
   confidence: number;
+  routingSignals?: ClassificationRoutingSignals;
 }
 
 // === REPO TYPES ===

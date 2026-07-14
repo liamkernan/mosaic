@@ -1,7 +1,9 @@
 import { Buffer } from "node:buffer";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { ConfigError, getEnv, type ClassifiedFeedback } from "@mosaic/core";
+import { ConfigError, getEnv, type ClassificationRoutingSignals, type ClassifiedFeedback } from "@mosaic/core";
+
+import { isClassificationRoutingSignals, routingSignalsRequireReview } from "./routing-signals.js";
 
 export const STAGED_ISSUE_LABEL = "mosaic:staged";
 export const STAGED_ISSUE_PROMOTED_LABEL = "mosaic:pr-opened";
@@ -30,9 +32,16 @@ export interface StagedIssueMetadata {
   confidence: number;
   rawContent: string;
   issueMode: StagedIssueMode;
+  routingSignals?: ClassificationRoutingSignals;
 }
 
 export function getModerateIssueMode(classifiedFeedback: ClassifiedFeedback): StagedIssueMode {
+  if (classifiedFeedback.routingSignals) {
+    return routingSignalsRequireReview(classifiedFeedback.routingSignals)
+      ? "moderate-review-needed"
+      : "moderate-safe";
+  }
+
   const combinedText = `${classifiedFeedback.summary}\n${classifiedFeedback.rawContent}`;
   const looksSafe =
     classifiedFeedback.category !== "feature_request" &&
@@ -64,7 +73,8 @@ export function buildStagedIssueMetadata(classifiedFeedback: ClassifiedFeedback,
     relevantFiles: classifiedFeedback.relevantFiles,
     confidence: classifiedFeedback.confidence,
     rawContent: classifiedFeedback.rawContent,
-    issueMode
+    issueMode,
+    ...(classifiedFeedback.routingSignals ? { routingSignals: classifiedFeedback.routingSignals } : {})
   };
 }
 
@@ -107,7 +117,8 @@ function isStagedIssueMetadata(value: unknown): value is StagedIssueMetadata {
     metadata.relevantFiles.every((filePath) => typeof filePath === "string") &&
     typeof metadata.confidence === "number" &&
     typeof metadata.rawContent === "string" &&
-    ["moderate-safe", "moderate-review-needed", "complex-review-needed"].includes(metadata.issueMode ?? "");
+    ["moderate-safe", "moderate-review-needed", "complex-review-needed"].includes(metadata.issueMode ?? "") &&
+    (metadata.routingSignals === undefined || isClassificationRoutingSignals(metadata.routingSignals));
 }
 
 export function buildStagedIssueMetadataComment(metadata: StagedIssueMetadata, secret = resolveStagedIssueSecret()): string {

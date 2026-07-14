@@ -13,6 +13,12 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("src/app.tsx");
     expect(prompt).toContain("README.md");
     expect(prompt).not.toContain("lower-relevance repository path(s) omitted");
+    expect(prompt).toContain("ROUTING SIGNALS");
+    expect(prompt).toContain('"scope": "localized | coordinated | multi-component | cross-layer"');
+    expect(prompt).toContain('"runtimeBehavior": false');
+    expect(prompt).toContain('"persistentData": false');
+    expect(prompt).toContain('"securitySensitive": false');
+    expect(prompt).toContain('"requiresHumanReview": false');
   });
 
   it("compacts large classification file trees while keeping likely relevant paths", () => {

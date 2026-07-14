@@ -1,10 +1,15 @@
 import {
   type ClassifiedFeedback,
+  type ClassificationRoutingSignals,
   type FeedbackCategory,
   type FeedbackItem,
   type ComplexityLevel
 } from "@mosaic/core";
 import { buildClassificationPrompt } from "./prompts/classify.prompt.js";
+import {
+  applyRoutingSignalComplexityFloor,
+  isClassificationRoutingSignals
+} from "./routing-signals.js";
 
 interface ClassificationClient {
   setUsageContext(context: { repoFullName: string; feedbackId: string }): void;
@@ -21,6 +26,7 @@ interface ClassifierResponse {
   summary: string;
   relevantFiles: string[];
   confidence: number;
+  routingSignals?: unknown;
 }
 
 export class FeedbackClassifier {
@@ -60,13 +66,18 @@ export class FeedbackClassifier {
       };
     }
 
+    const routingSignals: ClassificationRoutingSignals | undefined = isClassificationRoutingSignals(parsed.routingSignals)
+      ? parsed.routingSignals
+      : undefined;
+
     return {
       ...item,
       category: parsed.category,
-      complexity: parsed.complexity,
+      complexity: applyRoutingSignalComplexityFloor(parsed.complexity, routingSignals),
       summary: parsed.summary,
       relevantFiles: parsed.relevantFiles.slice(0, 5),
-      confidence: parsed.confidence
+      confidence: parsed.confidence,
+      ...(routingSignals ? { routingSignals } : {})
     };
   }
 }

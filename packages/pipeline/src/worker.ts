@@ -673,7 +673,8 @@ export class FeedbackPipelineWorker {
       complexity: stagedMetadata.complexity,
       summary: stagedMetadata.summary,
       relevantFiles: stagedMetadata.relevantFiles,
-      confidence: stagedMetadata.confidence
+      confidence: stagedMetadata.confidence,
+      ...(stagedMetadata.routingSignals ? { routingSignals: stagedMetadata.routingSignals } : {})
     };
 
     const result = await this.automatePullRequest(stagedFeedback, repoContext, repoConfig, {

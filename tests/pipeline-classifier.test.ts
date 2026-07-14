@@ -57,4 +57,48 @@ describe("FeedbackClassifier", () => {
       confidence: 0
     });
   });
+
+  it.each([
+    [
+      "coordinated copy",
+      "trivial",
+      {
+        scope: "coordinated",
+        runtimeBehavior: false,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      },
+      "simple"
+    ],
+    [
+      "multi-component state",
+      "simple",
+      {
+        scope: "multi-component",
+        runtimeBehavior: true,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      },
+      "moderate"
+    ]
+  ] as const)("preserves structured signals and floors under-classified %s", async (_name, complexity, routingSignals, expected) => {
+    const complete = vi.fn(async () => JSON.stringify({
+      category: "bug_report",
+      complexity,
+      summary: "Fix the reported behavior",
+      relevantFiles: ["src/a.ts", "src/b.ts"],
+      confidence: 0.95,
+      routingSignals
+    }));
+
+    const result = await new FeedbackClassifier({ setUsageContext: vi.fn(), complete }).classify(feedback, [
+      "src/a.ts",
+      "src/b.ts"
+    ]);
+
+    expect(result.complexity).toBe(expected);
+    expect(result.routingSignals).toEqual(routingSignals);
+  });
 });
