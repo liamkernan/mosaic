@@ -1,4 +1,4 @@
-import type { ClassifiedFeedback, FeedbackItem, LLMModelPreset } from "@mosaic/core";
+import type { ClassifiedFeedback, ComplexityLevel, FeedbackItem, LLMModelPreset } from "@mosaic/core";
 import { OPENAI_MODEL_IDS } from "@mosaic/llm";
 
 import { FeedbackClassifier } from "./classifier.js";
@@ -27,6 +27,12 @@ export interface OpenAIRoutedClassification {
   passes: OpenAIClassificationPass[];
 }
 
+const complexityRanking: ComplexityLevel[] = ["trivial", "simple", "moderate", "complex"];
+
+function higherComplexity(left: ComplexityLevel, right: ComplexityLevel): ComplexityLevel {
+  return complexityRanking.indexOf(left) >= complexityRanking.indexOf(right) ? left : right;
+}
+
 export async function classifyFeedbackWithOpenAIRouting(options: {
   feedbackItem: FeedbackItem;
   fileTree: string[];
@@ -39,9 +45,10 @@ export async function classifyFeedbackWithOpenAIRouting(options: {
     reasoningEffort: "high"
   };
   const passes: OpenAIClassificationPass[] = [];
-  let classifiedFeedback = await new FeedbackClassifier(options.createClient(initialRoute))
+  const initialClassification = await new FeedbackClassifier(options.createClient(initialRoute))
     .classify(options.feedbackItem, options.fileTree);
-  const initialPass = { route: initialRoute, classifiedFeedback };
+  let classifiedFeedback = initialClassification;
+  const initialPass = { route: initialRoute, classifiedFeedback: initialClassification };
   passes.push(initialPass);
   options.onPass?.(initialPass);
 
@@ -51,11 +58,15 @@ export async function classifyFeedbackWithOpenAIRouting(options: {
       options.modelPreset,
       getOpenAIReviewMode(classifiedFeedback)
     );
-    classifiedFeedback = await new FeedbackClassifier(options.createClient(routedSelection))
+    const routedClassification = await new FeedbackClassifier(options.createClient(routedSelection))
       .classify(options.feedbackItem, options.fileTree);
-    const routedPass = { route: routedSelection, classifiedFeedback };
+    const routedPass = { route: routedSelection, classifiedFeedback: routedClassification };
     passes.push(routedPass);
     options.onPass?.(routedPass);
+    classifiedFeedback = {
+      ...routedClassification,
+      complexity: higherComplexity(initialClassification.complexity, routedClassification.complexity)
+    };
   }
 
   return { classifiedFeedback, passes };

@@ -105,4 +105,24 @@ describe("OpenAI production classification routing", () => {
     expect(result.passes.map((pass) => pass.route)).toEqual(factory.routes);
     expect(result.classifiedFeedback.complexity).toBe(initial.complexity);
   });
+
+  it("retains the higher initial complexity when routed reclassification downgrades it", async () => {
+    const factory = createFactory([
+      classification({ complexity: "moderate" }),
+      classification({ complexity: "simple" })
+    ]);
+
+    const result = await classifyFeedbackWithOpenAIRouting({
+      feedbackItem,
+      fileTree: ["src/Profile.tsx"],
+      modelPreset: "quality",
+      createClient: factory.createClient
+    });
+
+    expect(result.passes.map((pass) => pass.classifiedFeedback.complexity)).toEqual(["moderate", "simple"]);
+    expect(result.classifiedFeedback).toMatchObject({
+      complexity: "moderate",
+      summary: "Correct the profile label"
+    });
+  });
 });
