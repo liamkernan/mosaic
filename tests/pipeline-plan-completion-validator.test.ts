@@ -157,6 +157,61 @@ describe("validatePlanCompletion", () => {
     );
 
     expect(errors).toEqual([]);
+
+    const preservationLedErrors = validatePlanCompletion(
+      [
+        {
+          filePath: "index.html",
+          originalContent: '<button id="cartButton">Bag</button>\n',
+          modifiedContent: '<button id="cartButton" aria-label="Open cart">Bag</button>\n',
+          explanation: "name the existing cart control"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "index.html", reason: "Add a clear accessible name to the cart button." },
+          {
+            path: "script.js",
+            reason: "Preserve the existing cart-button interaction and drawer state behavior while the button's accessible name is updated."
+          }
+        ],
+        acceptanceCriteria: ["The cart control has a meaningful accessible name."],
+        implementationChecklist: [
+          "Give #cartButton an explicit accessible name.",
+          "Do not change the cart button click handling or drawer behavior in script.js."
+        ]
+      }
+    );
+
+    expect(preservationLedErrors).toEqual([]);
+
+    const actionLedErrors = validatePlanCompletion(
+      [
+        {
+          filePath: "tests/service.test.ts",
+          originalContent: "",
+          modifiedContent: "it('preserves the API', () => expect(true).toBe(true));\n",
+          explanation: "cover the public API"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          {
+            path: "src/service.ts",
+            reason: "Update the service implementation while preserving its public API."
+          }
+        ],
+        acceptanceCriteria: ["The service fixes the reported behavior."],
+        implementationChecklist: [
+          "Update src/service.ts to fix the behavior.",
+          "Do not change the public API in src/service.ts."
+        ]
+      }
+    );
+
+    expect(actionLedErrors.join("\n")).toContain("requires runtime/source changes");
   });
 
   it("rejects substituted ordered tie-breakers from acceptance criteria", () => {

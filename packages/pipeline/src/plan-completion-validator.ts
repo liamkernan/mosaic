@@ -24,6 +24,8 @@ const backendPlanReasonPattern = /\b(?:back-?end|server|api|route|handler|servic
 const verificationIntentPattern = /\b(?:verify|check(?:ed)?|inspect|review|confirm|ensure)\b/i;
 const unchangedIntentPattern = /\b(?:remain(?:s|ing)? unchanged|without (?:changing|modifying)|do not (?:change|modify)|does not (?:change|alter|modify)|copy-only|verification-only)\b/i;
 const unchangedRelativeClausePattern = /\bwhich (?:must|should) remain unchanged\b/i;
+const preservationLeadPattern = /^\s*(?:preserve|keep)\b/i;
+const explicitNoEditPattern = /\b(?:do not|don't|must not)\s+(?:change|alter|modify|edit)\b/i;
 
 function requiresFullStackContract(text: string): boolean {
   return text.split(/\n+/).some((line) =>
@@ -81,8 +83,16 @@ interface CompletionChangeGroups {
 function implementationRequiredFiles(plan: ImplementationPlan): ImplementationPlan["requiredFiles"] {
   return plan.requiredFiles.filter((file) => {
     const reason = file.reason;
+    const normalizedPath = normalizeRepoPath(file.path).toLowerCase();
+    const fileName = basename(normalizedPath);
+    const checklistExplicitlyForbidsEditing = plan.implementationChecklist.some((item) => {
+      const normalizedItem = item.toLowerCase();
+      return explicitNoEditPattern.test(item) &&
+        (normalizedItem.includes(normalizedPath) || normalizedItem.includes(fileName));
+    });
     const isVerificationOnly = unchangedRelativeClausePattern.test(reason) ||
-      (verificationIntentPattern.test(reason) && unchangedIntentPattern.test(reason));
+      (verificationIntentPattern.test(reason) && unchangedIntentPattern.test(reason)) ||
+      (preservationLeadPattern.test(reason) && checklistExplicitlyForbidsEditing);
     return !isVerificationOnly;
   });
 }
