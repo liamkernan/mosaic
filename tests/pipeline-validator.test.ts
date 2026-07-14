@@ -662,7 +662,7 @@ describe("validate", () => {
 
   it("uses native dialog ids and classes as modal style and behavior hooks", async () => {
     const localPath = await tempDirs.create("mosaic-validator-");
-    const originalHtml = '<button class="quick-view">Open</button><aside id="quickViewPanel" class="quick-view-panel" aria-hidden="true"></aside>\n';
+    const originalHtml = '<button class="quick-view" data-product-key="linen-throw">Open</button><aside id="quickViewPanel" class="quick-view-panel" aria-hidden="true"></aside>\n';
     await writeFile(join(localPath, "index.html"), originalHtml, "utf8");
     await writeFile(join(localPath, "styles.css"), ".quick-view-panel { display: none; }\n", "utf8");
     await writeFile(join(localPath, "script.js"), "console.log('ready');\n", "utf8");
@@ -672,7 +672,7 @@ describe("validate", () => {
         {
           filePath: "index.html",
           originalContent: originalHtml,
-          modifiedContent: '<button class="quick-view">Open</button><dialog id="quickViewPanel" class="quick-view-panel" aria-modal="true"><button id="quickViewClose">Close</button></dialog>\n',
+          modifiedContent: '<button class="quick-view product-card-clickable" data-product-key="linen-throw">Open</button><dialog id="quickViewPanel" class="quick-view-panel" aria-modal="true"><button id="quickViewClose">Close</button></dialog>\n',
           explanation: "use an accessible quick-view dialog"
         },
         {
@@ -686,7 +686,7 @@ describe("validate", () => {
           originalContent: "console.log('ready');\n",
           modifiedContent:
             "const quickViewPanel = document.querySelector('#quickViewPanel');\n" +
-            "document.querySelector('.quick-view').addEventListener('click', () => quickViewPanel.showModal());\n" +
+            "document.querySelector('.quick-view.product-card-clickable[data-product-key]').addEventListener('click', () => quickViewPanel.showModal());\n" +
             "document.querySelector('#quickViewClose').addEventListener('click', () => quickViewPanel.close());\n" +
             "document.addEventListener('keydown', (event) => { if (event.key === 'Escape') quickViewPanel.close(); });\n",
           explanation: "wire complete native dialog behavior"

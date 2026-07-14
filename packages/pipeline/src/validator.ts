@@ -739,15 +739,16 @@ function selectorExistsInHtml(facts: HtmlFacts, selector: string): boolean {
     return htmlFactsHaveId(facts, selector.slice(1));
   }
 
-  const classAttributeMatch = selector.match(/^\.([a-zA-Z0-9_-]+)(\[[^\]]+\])$/);
-  if (classAttributeMatch) {
-    return (facts.tagsByClass.get(classAttributeMatch[1].toLowerCase()) ?? []).some((tag) =>
-      tagHasAttributeSelector(tag, classAttributeMatch[2])
-    );
-  }
-
-  if (selector.startsWith(".")) {
-    return facts.tagsByClass.has(selector.slice(1).toLowerCase());
+  const compoundClassMatch = selector.match(/^((?:\.[a-zA-Z0-9_-]+)+)(\[[^\]]+\])?$/);
+  if (compoundClassMatch) {
+    const classNames = [...compoundClassMatch[1].matchAll(/\.([a-zA-Z0-9_-]+)/g)]
+      .map((match) => match[1].toLowerCase());
+    const candidateTags = facts.tagsByClass.get(classNames[0]) ?? [];
+    return candidateTags.some((tag) => {
+      const tagClasses = new Set(tagClassValues(tag).map((className) => className.toLowerCase()));
+      return classNames.every((className) => tagClasses.has(className)) &&
+        (!compoundClassMatch[2] || tagHasAttributeSelector(tag, compoundClassMatch[2]));
+    });
   }
 
   const attrMatch = selector.match(/^\[([a-zA-Z0-9_-]+)(?:=["']?([^"'\]]+)["']?)?\]$/);
