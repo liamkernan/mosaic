@@ -49,6 +49,18 @@
     "maxCostUsd": 3,
     "outputDir": "evals/runs/2026-07-15-gpt-5.6-offline-reliability-paid-confirmation-3-case-1x"
   },
+  "prepaidLaunchIncident": {
+    "occurredAt": "2026-07-15T06:11:07Z",
+    "status": "invalidated-zero-call-launch",
+    "reason": "The clean detached worktree had not compiled workspace package dist outputs, so module resolution failed before the evaluation harness loaded.",
+    "reachedHarnessMain": false,
+    "outputDirCreated": false,
+    "caseTrialsStarted": 0,
+    "requestAuthorizations": 0,
+    "modelCalls": 0,
+    "observedCostUsd": 0,
+    "correctivePreflight": "Run pnpm build before the unchanged paid command."
+  },
   "cases": [
     {
       "id": "post-routing-simple-watch-label",

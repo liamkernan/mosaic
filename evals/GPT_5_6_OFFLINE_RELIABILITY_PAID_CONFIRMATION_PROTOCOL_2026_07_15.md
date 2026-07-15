@@ -31,6 +31,7 @@ The exact visible acceptance criteria, removed false diagnostics, stop rules, an
 Before the paid command:
 
 ```sh
+pnpm build
 pnpm exec vitest run \
   tests/eval-gpt-5.6-post-routing-reliability.test.ts \
   tests/pipeline-plan-completion-validator.test.ts \
@@ -48,6 +49,12 @@ pnpm typecheck:tests
 ```
 
 These checks cover production-layer inference, current-candidate repair and stalled-loop rejection, Python declaration parsing, generated-test independent execution, dotted and filesystem oracle isolation, atomic reservations, retry settlement, child interruption accounting, and the actual late-trial cap arithmetic. Remove only test-generated `__pycache__` directories before reconfirming the frozen fixture hash. The tracked worktree and index must then be clean, `main` must match `origin/main`, and only the four pre-existing untracked files may remain.
+
+## Invalidated zero-call launch
+
+At `2026-07-15T06:11:07Z`, the fixed command was invoked from the clean detached worktree before its workspace packages had been built. Node failed to resolve a package `dist` entry while loading the script, before the harness `main` function, output-directory creation, case selection, authorization, or model-client construction. No trial or paid call started, no output directory was created, and observed cost was zero.
+
+This launch is retained transparently in the manifest as `invalidated-zero-call-launch` and is outside the three-case denominator. The only correction is the missing offline `pnpm build` preflight above; the implementation, paid command, cases, labels, routes, acceptance criteria, pricing, fixture, prompts, and oracles are unchanged. Because no case or request started, executing the unchanged command after the amended freeze is the first and only paid proof run, not a rerun of a trial result.
 
 ## Single paid command
 
@@ -78,7 +85,7 @@ pnpm eval:local -- \
 ```
 <!-- PAID_COMMAND_END -->
 
-Do not issue a second paid command. Do not rerun a failure, timeout, refusal, budget stop, or poor response. If hidden-oracle exposure or another integrity violation appears while the command is active, terminate it, preserve and invalidate the artifacts, and make no further paid call.
+Once the harness starts a case or authorizes a request, do not issue another paid command. Do not rerun a failure, timeout, refusal, budget stop, or poor response. If hidden-oracle exposure or another integrity violation appears while the command is active, terminate it, preserve and invalidate the artifacts, and make no further paid call.
 
 ## Predeclared scoring and report
 
