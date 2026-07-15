@@ -143,49 +143,123 @@ function pythonModuleForPath(path: string): string {
   return path.replace(/\.py$/, "").replace(/\//g, ".");
 }
 
-function inferredChangedTestCommand(changes: GeneratedChange[]): string | undefined {
-  const pythonModules: string[] = [];
+interface InferredTestCommand {
+  command: string;
+  paths: string[];
+  runner: "pytest" | "unittest";
+}
+
+interface CollectedVerificationCommands {
+  commands: string[];
+  generatedTestPathsByCommand: Map<string, string[]>;
+}
+
+function isPytestStyle(change: GeneratedChange): boolean {
+  return /(?:^|\n)\s*(?:from\s+pytest\b|import\s+pytest\b)|\bpytest\.|^(?:async\s+)?def\s+test_/m
+    .test(change.modifiedContent);
+}
+
+function inferredChangedTestCommandRecords(changes: GeneratedChange[]): InferredTestCommand[] {
+  const pytestPaths: string[] = [];
+  const unittestPaths: string[] = [];
   for (const change of changes) {
     if (change.filePath.startsWith("tests/") && change.filePath.endsWith(".py")) {
-      pythonModules.push(pythonModuleForPath(change.filePath));
+      (isPytestStyle(change) ? pytestPaths : unittestPaths).push(change.filePath);
     }
   }
 
-  if (pythonModules.length === 0) {
-    return undefined;
+  const records: InferredTestCommand[] = [];
+  if (pytestPaths.length > 0) {
+    pytestPaths.sort();
+    records.push({
+      command: `python3 -m pytest ${pytestPaths.map((path) => JSON.stringify(path)).join(" ")}`,
+      paths: pytestPaths,
+      runner: "pytest"
+    });
+  }
+  if (unittestPaths.length > 0) {
+    unittestPaths.sort();
+    records.push({
+      command: `python3 -m unittest ${unittestPaths.map((path) => JSON.stringify(pythonModuleForPath(path))).join(" ")}`,
+      paths: unittestPaths,
+      runner: "unittest"
+    });
   }
 
-  pythonModules.sort();
-  return `python3 -m unittest ${pythonModules.map((module) => JSON.stringify(module)).join(" ")}`;
+  return records;
 }
 
-function addVerificationCommand(commands: string[], seen: Set<string>, command: string): void {
+export function inferredChangedTestCommands(changes: GeneratedChange[]): string[] {
+  return inferredChangedTestCommandRecords(changes).map(({ command }) => command);
+}
+
+function addVerificationCommand(commands: string[], seen: Set<string>, command: string): string | undefined {
   const trimmed = command.trim();
   if (trimmed.length === 0 || seen.has(trimmed) || !isAllowedVerificationCommand(trimmed)) {
-    return;
+    return undefined;
   }
 
   seen.add(trimmed);
   commands.push(trimmed);
+  return trimmed;
 }
 
-function collectVerificationCommands(changes: GeneratedChange[], implementationPlan?: ImplementationPlan): string[] {
+function commandSelectsPath(command: string, path: string): boolean {
+  return command.includes(path) || command.includes(pythonModuleForPath(path));
+}
+
+function commandUsesRunner(command: string, runner: InferredTestCommand["runner"]): boolean {
+  return runner === "pytest" ? /\bpytest\b/.test(command) : /\bunittest\b/.test(command);
+}
+
+function collectVerificationCommands(
+  changes: GeneratedChange[],
+  implementationPlan?: ImplementationPlan
+): CollectedVerificationCommands {
   const commands: string[] = [];
   const seen = new Set<string>();
+  const generatedTestPathsByCommand = new Map<string, string[]>();
+  const plannedCommands = (implementationPlan?.verificationCommands ?? [])
+    .map((command) => command.trim())
+    .filter((command) => isAllowedVerificationCommand(command));
+  const inferredRecords = inferredChangedTestCommandRecords(changes);
+  const requiredInferredRecords = inferredRecords.filter(({ paths, runner }) =>
+    !plannedCommands.some((command) =>
+      paths.every((path) => commandSelectsPath(command, path)) &&
+      commandUsesRunner(command, runner)
+    )
+  );
+  const plannedLimit = Math.max(0, maxCommands - requiredInferredRecords.length);
 
-  for (const command of implementationPlan?.verificationCommands ?? []) {
-    addVerificationCommand(commands, seen, command);
-    if (commands.length >= maxCommands) {
-      return commands;
+  for (const command of plannedCommands) {
+    if (commands.length >= plannedLimit) {
+      break;
+    }
+    const selectsWithWrongRunner = inferredRecords.some(({ paths, runner }) =>
+      paths.every((path) => commandSelectsPath(command, path)) && !commandUsesRunner(command, runner)
+    );
+    if (selectsWithWrongRunner) {
+      continue;
+    }
+    const added = addVerificationCommand(commands, seen, command);
+    if (added) {
+      const selectedPaths = inferredRecords
+        .flatMap(({ paths }) => paths)
+        .filter((path) => commandSelectsPath(added, path));
+      if (selectedPaths.length > 0) {
+        generatedTestPathsByCommand.set(added, selectedPaths);
+      }
     }
   }
 
-  const inferredCommand = inferredChangedTestCommand(changes);
-  if (inferredCommand) {
-    addVerificationCommand(commands, seen, inferredCommand);
+  for (const record of requiredInferredRecords) {
+    const added = addVerificationCommand(commands, seen, record.command);
+    if (added) {
+      generatedTestPathsByCommand.set(added, record.paths);
+    }
   }
 
-  return commands;
+  return { commands, generatedTestPathsByCommand };
 }
 
 function unsupportedPlannedVerificationCommands(implementationPlan?: ImplementationPlan): string[] {
@@ -246,6 +320,35 @@ function shouldCopyPath(sourcePath: string, rootPath: string): boolean {
 function truncateOutput(output: string): string {
   const trimmed = output.trim();
   return trimmed.length > 4_000 ? `${trimmed.slice(0, 4_000)}\n...[truncated]` : trimmed;
+}
+
+function conciseGeneratedTestOutput(output: string, tempRepo: string): string {
+  const scrubbed = output
+    .replaceAll(tempRepo, "<repo>")
+    .replaceAll(dockerWorkdir, "<repo>")
+    .trim();
+  return scrubbed.length > 2_000 ? `${scrubbed.slice(0, 2_000)}\n...[truncated]` : scrubbed;
+}
+
+function generatedTestNonExecutionReason(output: string): string | undefined {
+  if (/\bRan 0 tests?\b|\bcollected 0 items?\b|\bno tests ran\b/i.test(output)) {
+    return "the runner reported zero executed tests";
+  }
+
+  const unittestCount = output.match(/\bRan (\d+) tests?\b/i);
+  const unittestSkipped = output.match(/\bskipped=(\d+)\b/i);
+  if (unittestCount && unittestSkipped && Number(unittestCount[1]) === Number(unittestSkipped[1])) {
+    return "the runner skipped every selected test";
+  }
+  if (/\b\d+ skipped\b/i.test(output) && !/\b\d+ passed\b/i.test(output)) {
+    return "the runner skipped every selected test";
+  }
+
+  return undefined;
+}
+
+function generatedTestLabel(paths: string[]): string {
+  return paths.join(", ");
 }
 
 function shouldRunFrontendSmoke(changes: GeneratedChange[]): boolean {
@@ -564,7 +667,8 @@ export async function runVerificationCommands(
   implementationPlan?: ImplementationPlan,
   options: VerificationRunnerOptions = {}
 ): Promise<VerificationResult> {
-  const commands = collectVerificationCommands(changes, implementationPlan);
+  const collectedCommands = collectVerificationCommands(changes, implementationPlan);
+  const { commands, generatedTestPathsByCommand } = collectedCommands;
   const unsupportedCommands = unsupportedPlannedVerificationCommands(implementationPlan);
   const runFrontend = shouldRunFrontendSmoke(changes);
   if (commands.length === 0 && unsupportedCommands.length === 0 && !runFrontend) {
@@ -638,10 +742,28 @@ export async function runVerificationCommands(
           errors.push(`Unsupported verification command was not run: ${command}`);
           continue;
         }
-        await executor(tokens[0], tokens.slice(1), tempRepo);
+        const completed = await executor(tokens[0], tokens.slice(1), tempRepo);
+        const generatedTestPaths = generatedTestPathsByCommand.get(command);
+        if (generatedTestPaths) {
+          const output = `${completed.stdout}\n${completed.stderr}`;
+          const nonExecutionReason = generatedTestNonExecutionReason(output);
+          if (nonExecutionReason) {
+            errors.push(
+              `Generated test did not execute independently (${generatedTestLabel(generatedTestPaths)}): ${nonExecutionReason}`
+            );
+          }
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        errors.push(`Command failed (${command}): ${truncateOutput(message)}`);
+        const generatedTestPaths = generatedTestPathsByCommand.get(command);
+        const nonExecutionReason = generatedTestPaths
+          ? generatedTestNonExecutionReason(message)
+          : undefined;
+        errors.push(generatedTestPaths
+          ? nonExecutionReason
+            ? `Generated test did not execute independently (${generatedTestLabel(generatedTestPaths)}): ${nonExecutionReason}`
+            : `Generated test failed independently (${generatedTestLabel(generatedTestPaths)}): ${conciseGeneratedTestOutput(message, tempRepo)}`
+          : `Command failed (${command}): ${truncateOutput(message)}`);
       }
     }
   } finally {

@@ -211,6 +211,26 @@ export function buildChangedPythonTestCommand(
   return `python3 -m unittest ${modules.map((module) => JSON.stringify(module)).join(" ")}`;
 }
 
+export function inferChangedPythonTestRunner(
+  changes: Array<{ filePath: string; modifiedContent: string }>,
+  verificationCommands: string[] = []
+): "unittest" | "pytest" | undefined {
+  const pythonTests = changes.filter((change) =>
+    change.filePath.startsWith("tests/") && change.filePath.endsWith(".py")
+  );
+  if (pythonTests.length === 0) {
+    return undefined;
+  }
+  if (verificationCommands.some((command) => /\bpytest\b/.test(command)) ||
+      pythonTests.some((change) =>
+        /(?:^|\n)\s*(?:from\s+pytest\b|import\s+pytest\b)|\bpytest\.|^(?:async\s+)?def\s+test_/m
+          .test(change.modifiedContent)
+      )) {
+    return "pytest";
+  }
+  return "unittest";
+}
+
 export function summarizeRepairAttempts(
   calls: Array<{ phase: string }>,
   validationStages: string[],
@@ -347,6 +367,29 @@ export function partitionVisibleContext<T extends { path: string }>(
   const oracles: T[] = [];
   for (const file of files) {
     (pathMatches(file.path, immutablePaths, oraclePathPrefixes) ? oracles : visible).push(file);
+  }
+  return { visible, oracles };
+}
+
+export function partitionVerificationCommands(
+  commands: string[],
+  oraclePaths: string[],
+  oraclePathPrefixes: string[] = []
+): { visible: string[]; oracles: string[] } {
+  const patterns = [...oraclePaths, ...oraclePathPrefixes];
+  const visible: string[] = [];
+  const oracles: string[] = [];
+  for (const command of commands) {
+    const tokens = command.match(/"[^"]*"|'[^']*'|\S+/g)?.map((token) =>
+      token.replace(/^["']|["']$/g, "")
+    ) ?? [];
+    const targetsOracle = patterns.some((pattern) => {
+      const normalizedPattern = pattern.replace(/\/$/, "");
+      return tokens.some((token) =>
+        token === normalizedPattern || token.startsWith(`${normalizedPattern}/`)
+      );
+    });
+    (targetsOracle ? oracles : visible).push(command);
   }
   return { visible, oracles };
 }

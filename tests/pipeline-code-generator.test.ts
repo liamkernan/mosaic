@@ -1167,6 +1167,42 @@ self.assertIn("screenshot", second["body"])
     expect(capturedTimeoutMs).toBe(180_000);
   });
 
+  it("routes independent generated DOM test failures to focused fixture repair", async () => {
+    let capturedUserMessage = "";
+    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {
+      capturedUserMessage = userMessage;
+      return "<changes></changes>";
+    });
+
+    await new CodeGenerator(fakeClient).repairValidationFailure(
+      buildClassifiedFeedback({
+        rawContent: "Synchronize the details panel state",
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Synchronize the details panel state",
+        relevantFiles: ["script.js", "tests/generated/test_panel.py"],
+        confidence: 0.9
+      }),
+      [
+        { path: "script.js", content: "", reason: "implementation" },
+        { path: "tests/generated/test_panel.py", content: "", reason: "generated test" }
+      ],
+      ["script.js", "tests/generated/test_panel.py"],
+      [],
+      [
+        "Generated test failed independently (tests/generated/test_panel.py): TypeError: Cannot read properties of null while booting #saveFilterButton"
+      ],
+      undefined,
+      { completeSolution: true }
+    );
+
+    expect(capturedUserMessage).toContain("failing test or verification output");
+    expect(capturedUserMessage).toContain("complete its mock fixture");
+    expect(capturedUserMessage).toContain("every application element named by the failure");
+    expect(capturedUserMessage).toContain("instead of changing correct application behavior");
+    expect(capturedUserMessage).toContain("do not remove test files, skip tests, or drop assertions");
+  });
+
   it("uses focused idempotency repair instructions when update path is missing", async () => {
     let capturedUserMessage = "";
     const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {

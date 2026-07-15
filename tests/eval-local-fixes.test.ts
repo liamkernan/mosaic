@@ -18,7 +18,9 @@ import {
   formatFrontendRepairRequirement,
   frontendElementHasDialogSemantics,
   frontendElementIsOpen,
+  inferChangedPythonTestRunner,
   partitionVisibleContext,
+  partitionVerificationCommands,
   relocateGeneratedTestsFromImmutablePaths,
   sanitizePlanForImmutablePaths,
   runEvalCaseBatch,
@@ -238,6 +240,47 @@ describe("local fix evaluation harness", () => {
     expect(buildChangedPythonTestCommand(changedPaths, { runner: "unittest" }))
       .toBe('python3 -m unittest "tests.generated.test_confirmation"');
     expect(buildChangedPythonTestCommand(["storefront/service.py"], { runner: "pytest" })).toBeUndefined();
+  });
+
+  it("selects pytest for generated discovery functions and unittest otherwise", () => {
+    expect(inferChangedPythonTestRunner([{
+      filePath: "tests/generated/test_panel.py",
+      modifiedContent: "import pytest\n\ndef test_panel_opens():\n    assert True\n"
+    }])).toBe("pytest");
+    expect(inferChangedPythonTestRunner([{
+      filePath: "tests/generated/test_service.py",
+      modifiedContent: "import unittest\n\nclass ServiceTest(unittest.TestCase):\n    pass\n"
+    }])).toBe("unittest");
+    expect(inferChangedPythonTestRunner([{
+      filePath: "src/service.py",
+      modifiedContent: "def service(): pass\n"
+    }])).toBeUndefined();
+  });
+
+  it("keeps hidden oracle commands out of repair-visible verification", () => {
+    expect(partitionVerificationCommands(
+      [
+        "python3 -m pytest tests/generated/test_panel.py",
+        "python3 -m pytest tests/baseline tests/oracle/test_panel.py"
+      ],
+      [],
+      ["tests/baseline/", "tests/oracle/"]
+    )).toEqual({
+      visible: ["python3 -m pytest tests/generated/test_panel.py"],
+      oracles: ["python3 -m pytest tests/baseline tests/oracle/test_panel.py"]
+    });
+  });
+
+  it("automatically runs generated tests before final hidden oracles", async () => {
+    const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
+    const verificationStart = source.indexOf("async function runVerification(");
+    const verificationEnd = source.indexOf("async function evaluateChecks(", verificationStart);
+    const verification = source.slice(verificationStart, verificationEnd);
+
+    expect(verification).toContain("inferChangedPythonTestRunner(changes, verificationCommands)");
+    expect(verification).toContain("Generated test failed independently");
+    expect(source).toContain('scope: "oracle"');
+    expect(source.indexOf('scope: "oracle"')).toBeGreaterThan(source.indexOf('stage: "check-repair-no-candidate"'));
   });
 
   it("reports model and deterministic repair attempts separately", () => {

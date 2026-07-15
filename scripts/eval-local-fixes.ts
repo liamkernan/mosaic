@@ -54,7 +54,9 @@ import {
   formatFrontendRepairRequirement,
   frontendElementHasDialogSemantics,
   frontendElementIsOpen,
+  inferChangedPythonTestRunner,
   partitionVisibleContext,
+  partitionVerificationCommands,
   relocateGeneratedTestsFromImmutablePaths,
   runEvalCaseBatch,
   sanitizePlanForImmutablePaths,
@@ -514,8 +516,8 @@ async function findPythonTestModules(repoPath: string, currentPath = "tests"): P
   return modules.sort();
 }
 
-async function runCommand(command: string, cwd: string): Promise<void> {
-  await exec(command, {
+async function runCommand(command: string, cwd: string): Promise<{ stdout: string; stderr: string }> {
+  return await exec(command, {
     cwd,
     maxBuffer: 1024 * 1024 * 10,
     env: {
@@ -525,10 +527,47 @@ async function runCommand(command: string, cwd: string): Promise<void> {
   });
 }
 
-async function runVerification(evalCase: EvalCase, repoPath: string, changes: GeneratedChange[]): Promise<string[]> {
-  const errors: string[] = [];
+type EvalVerificationScope = "visible" | "oracle";
 
-  for (const command of evalCase.verificationCommands ?? []) {
+function conciseGeneratedTestFailure(error: unknown, repoPath: string): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const scrubbed = message.replaceAll(repoPath, "<repo>").trim();
+  return scrubbed.length > 2_000 ? `${scrubbed.slice(0, 2_000)}\n...[truncated]` : scrubbed;
+}
+
+function generatedTestNonExecutionReason(output: string): string | undefined {
+  if (/\bRan 0 tests?\b|\bcollected 0 items?\b|\bno tests ran\b/i.test(output)) {
+    return "the runner reported zero executed tests";
+  }
+  const unittestCount = output.match(/\bRan (\d+) tests?\b/i);
+  const unittestSkipped = output.match(/\bskipped=(\d+)\b/i);
+  if (unittestCount && unittestSkipped && Number(unittestCount[1]) === Number(unittestSkipped[1])) {
+    return "the runner skipped every selected test";
+  }
+  if (/\b\d+ skipped\b/i.test(output) && !/\b\d+ passed\b/i.test(output)) {
+    return "the runner skipped every selected test";
+  }
+  return undefined;
+}
+
+async function runVerification(
+  evalCase: EvalCase,
+  repoPath: string,
+  changes: GeneratedChange[],
+  options: { scope?: EvalVerificationScope; runChangedTests?: boolean } = {}
+): Promise<string[]> {
+  const errors: string[] = [];
+  const scope = options.scope ?? "visible";
+  const partitionedCommands = partitionVerificationCommands(
+    evalCase.verificationCommands ?? [],
+    evalCase.oracleTestPaths ?? [],
+    evalCase.oracleTestPathPrefixes ?? []
+  );
+  const verificationCommands = scope === "oracle"
+    ? partitionedCommands.oracles
+    : partitionedCommands.visible;
+
+  for (const command of verificationCommands) {
     try {
       await runCommand(command, repoPath);
     } catch (error) {
@@ -536,7 +575,7 @@ async function runVerification(evalCase: EvalCase, repoPath: string, changes: Ge
     }
   }
 
-  if (evalCase.runPythonUnitTests) {
+  if (scope === "visible" && evalCase.runPythonUnitTests) {
     const modules = await findPythonTestModules(repoPath);
     if (modules.length === 0) {
       errors.push("No Python unit test modules found under tests/");
@@ -550,12 +589,26 @@ async function runVerification(evalCase: EvalCase, repoPath: string, changes: Ge
     }
   }
 
-  if (evalCase.runChangedPythonTests || evalCase.runChangedPytestTests) {
+  const inferredRunner = scope === "visible" && options.runChangedTests !== false
+    ? inferChangedPythonTestRunner(changes, verificationCommands)
+    : undefined;
+  const changedTestRunner = evalCase.runChangedPytestTests
+    ? "pytest"
+    : evalCase.runChangedPythonTests
+      ? "unittest"
+      : inferredRunner;
+  if (scope === "visible" && options.runChangedTests !== false && changedTestRunner) {
+    const matchingPytestCommand = verificationCommands.find((command) => /\bpytest\b/.test(command));
+    const configuredPytestCommand = evalCase.pytestCommand && partitionVerificationCommands(
+      [evalCase.pytestCommand],
+      evalCase.oracleTestPaths ?? [],
+      evalCase.oracleTestPathPrefixes ?? []
+    ).visible[0];
     const command = buildChangedPythonTestCommand(
       changes.map((change) => change.filePath),
       {
-        runner: evalCase.runChangedPytestTests ? "pytest" : "unittest",
-        pytestCommand: evalCase.pytestCommand
+        runner: changedTestRunner,
+        pytestCommand: configuredPytestCommand ?? matchingPytestCommand
       }
     );
 
@@ -563,10 +616,25 @@ async function runVerification(evalCase: EvalCase, repoPath: string, changes: Ge
       errors.push("No changed Python test modules found under tests/");
     } else {
       try {
-        await runCommand(command, repoPath);
+        const completed = await runCommand(command, repoPath);
+        const nonExecutionReason = generatedTestNonExecutionReason(`${completed.stdout}\n${completed.stderr}`);
+        if (nonExecutionReason) {
+          const paths = changes
+            .map((change) => change.filePath)
+            .filter((path) => path.startsWith("tests/") && path.endsWith(".py"))
+            .sort();
+          errors.push(
+            `Generated test did not execute independently (${paths.join(", ")}): ${nonExecutionReason}`
+          );
+        }
       } catch (error) {
-        const runner = evalCase.runChangedPytestTests ? "pytest" : "unittest";
-        errors.push(`Changed Python ${runner} verification failed: ${error instanceof Error ? error.message : String(error)}`);
+        const paths = changes
+          .map((change) => change.filePath)
+          .filter((path) => path.startsWith("tests/") && path.endsWith(".py"))
+          .sort();
+        errors.push(
+          `Generated test failed independently (${paths.join(", ")}): ${conciseGeneratedTestFailure(error, repoPath)}`
+        );
       }
     }
   }
@@ -1412,6 +1480,12 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   }
 
   errors.push(...checkErrors);
+  const hiddenOracleErrors = await runVerification(evalCase, repoPath, changes, {
+    scope: "oracle",
+    runChangedTests: false
+  });
+  verificationHistory.push({ stage: "hidden-oracle", errors: hiddenOracleErrors });
+  errors.push(...hiddenOracleErrors);
   await persistArtifacts();
 
   const usage = telemetry?.snapshot();

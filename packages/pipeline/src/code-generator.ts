@@ -535,7 +535,7 @@ export function buildFrontendRepairChecklist(validationErrors: string[]): string
 
 function hasTestVerificationFailure(validationErrors: string[]): boolean {
   return validationErrors.some((error) =>
-    /Verification failed:/i.test(error) &&
+    /Verification failed:|(?:verification )?command failed|Generated test (?:failed|did not execute) independently/i.test(error) &&
     /(?:FAILED|ERROR|AssertionError|KeyError|AttributeError|Traceback|pytest|unittest|jest|vitest|test_|\.(?:test|spec)\.)/i.test(error)
   );
 }
@@ -666,7 +666,7 @@ const VALIDATION_REPAIR_ROUTES: ValidationRepairRoute[] = [
   },
   {
     match: hasTestVerificationFailure,
-    instruction: "Return only a repaired <changes> payload focused on the failing test or verification output. Preserve required behavioral test coverage; do not remove test files or drop assertions to pass validation. If a generated test asserts a field on the wrong public API shape, repair the test to assert through an existing returned object or supported accessor, or update the implementation only when the user request requires that API surface.",
+    instruction: "Return only a repaired <changes> payload focused on the failing test or verification output. Preserve required behavioral test coverage; do not remove test files, skip tests, or drop assertions to pass validation. When an independently executed frontend test is missing boot-time DOM dependencies, complete its mock fixture for every application element named by the failure instead of changing correct application behavior to accommodate an incomplete mock. If a generated test asserts a field on the wrong public API shape, repair the test to assert through an existing returned object or supported accessor, or update the implementation only when the user request requires that API surface.",
     maxTokens: focusedValidationRepairMaxTokens,
     timeoutMs: VALIDATION_REPAIR_TIMEOUT_MS
   },

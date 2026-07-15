@@ -26,7 +26,7 @@ const errorCategoryPatterns: Array<[string, RegExp]> = [
   ["endpoint", /endpoint route|requested HTTP path|falling through to not found/i],
   ["runtime-source", /runtime\/source changes|actual application source/i],
   ["security", /requires review|secret|credential|unsafe|security/i],
-  ["verification", /verification failed|verification command failed|unittest verification failed/i],
+  ["verification", /verification failed|(?:verification )?command failed|unittest verification failed|Generated test (?:failed|did not execute) independently/i],
   ["frontend-assertion", /frontend assertion|click target not found|expected element not found|expected at least/i]
 ];
 

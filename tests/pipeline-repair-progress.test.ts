@@ -128,4 +128,16 @@ describe("repair progress", () => {
       trend: "increased"
     }));
   });
+
+  it("keeps independent generated-test failures in the verification category", () => {
+    expect(assessRepairProgress(
+      [existingChange],
+      [{ ...existingChange, modifiedContent: "export const value = 3;\n" }],
+      ["Verification command failed: test_panel.py"],
+      ["Generated test failed independently (tests/generated/test_panel.py): missing #saveFilterButton"]
+    )).toEqual(expect.objectContaining({
+      accepted: true,
+      introducedCategories: []
+    }));
+  });
 });

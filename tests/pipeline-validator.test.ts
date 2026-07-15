@@ -255,6 +255,34 @@ describe("validate", () => {
     expect(result.errors.join("\n")).toContain("skipped or trivial test assertions");
   });
 
+  it("rejects direct runtime skips in generated tests", async () => {
+    const localPath = await tempDirs.create("mosaic-validator-");
+    await mkdir(join(localPath, "tests", "generated"), { recursive: true });
+
+    const result = await validate(
+      [
+        {
+          filePath: "tests/generated/test_panel.py",
+          originalContent: "",
+          modifiedContent:
+            "import pytest\n\ndef test_panel_opens():\n    pytest.skip('node unavailable')\n    assert panel_is_open\n",
+          explanation: "add regression test"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("skipped or trivial test assertions");
+    expect(result.errors.join("\n")).toContain("pytest.skip");
+  });
+
   it("accepts generated tests that preserve and add meaningful assertions", async () => {
     const localPath = await tempDirs.create("mosaic-validator-");
     await mkdir(join(localPath, "tests", "reported"), { recursive: true });

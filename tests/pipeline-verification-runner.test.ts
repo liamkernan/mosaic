@@ -5,7 +5,10 @@ import { basename, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { runVerificationCommands } from "../packages/pipeline/src/verification-runner.js";
+import {
+  inferredChangedTestCommands,
+  runVerificationCommands
+} from "../packages/pipeline/src/verification-runner.js";
 import { createTempDirTracker } from "./helpers/temp-dirs.js";
 
 describe("runVerificationCommands", () => {
@@ -30,6 +33,50 @@ describe("runVerificationCommands", () => {
     await writeFile(localPath + "/index.html", "<!doctype html><html><body><div id=\"target\"></div><script src=\"script.js\"></script></body></html>\n", "utf8");
     await writeFile(localPath + "/script.js", script, "utf8");
     return localPath;
+  }
+
+  async function createGeneratedDomRepo(): Promise<string> {
+    const localPath = await tempDirs.create("mosaic-verify-generated-dom-");
+    await writeFile(
+      join(localPath, "script.js"),
+      [
+        'document.querySelector("#saveFilterButton").addEventListener("click", () => {});',
+        'document.querySelector("#sortToggle").addEventListener("click", () => {});',
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+    return localPath;
+  }
+
+  function generatedDomUnittest(includeSaveFilterButton: boolean): string {
+    const saveFilterEntry = includeSaveFilterButton
+      ? '  "#saveFilterButton": element(),'
+      : "";
+    return [
+      "import subprocess",
+      "import unittest",
+      "from pathlib import Path",
+      "",
+      "NODE_TEST = r'''",
+      'const fs = require("fs");',
+      'const vm = require("vm");',
+      "function element() { return { addEventListener() {} }; }",
+      "const elements = {",
+      saveFilterEntry,
+      '  "#sortToggle": element(),',
+      "};",
+      "const document = { querySelector(selector) { return elements[selector] || null; } };",
+      'vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), { document });',
+      "'''",
+      "",
+      "class GeneratedDomTest(unittest.TestCase):",
+      "    def test_script_boots_with_independent_dom_fixture(self):",
+      "        script_path = Path(__file__).resolve().parents[2] / 'script.js'",
+      "        completed = subprocess.run(['node', '-e', NODE_TEST, str(script_path)], capture_output=True, text=True)",
+      "        self.assertEqual(completed.returncode, 0, completed.stderr)",
+      ""
+    ].filter(Boolean).join("\n");
   }
 
   async function dockerInfoAvailable(): Promise<boolean> {
@@ -368,6 +415,158 @@ describe("runVerificationCommands", () => {
 
     expect(result.valid).toBe(true);
     expect(result.commands).toEqual(['python3 -m unittest "tests.reported.test_example"']);
+  });
+
+  it("infers pytest for top-level generated test functions", () => {
+    expect(inferredChangedTestCommands([{
+      filePath: "tests/generated/test_panel.py",
+      originalContent: "",
+      modifiedContent: "import pytest\n\ndef test_panel_opens():\n    assert True\n",
+      explanation: "add generated coverage"
+    }])).toEqual(['python3 -m pytest "tests/generated/test_panel.py"']);
+  });
+
+  it("replaces an incompatible planned runner with the inferred generated-test runner", async () => {
+    const localPath = await createPythonRepo();
+    const result = await runVerificationCommands(
+      [{
+        filePath: "tests/generated/test_panel.py",
+        originalContent: "",
+        modifiedContent: "def test_panel_opens():\n    assert True\n",
+        explanation: "add generated coverage"
+      }],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      {
+        requiredFiles: [],
+        acceptanceCriteria: [],
+        implementationChecklist: [],
+        verificationChecklist: [],
+        verificationCommands: ["python3 -m unittest tests.generated.test_panel"]
+      },
+      fallbackOptions
+    );
+
+    expect(result.commands).toEqual(['python3 -m pytest "tests/generated/test_panel.py"']);
+  });
+
+  it("executes a generated frontend test with a complete DOM fixture independently", async () => {
+    const localPath = await createGeneratedDomRepo();
+    const result = await runVerificationCommands(
+      [{
+        filePath: "tests/generated/test_dom_boot.py",
+        originalContent: "",
+        modifiedContent: generatedDomUnittest(true),
+        explanation: "cover frontend boot behavior"
+      }],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      undefined,
+      fallbackOptions
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.commands).toEqual(['python3 -m unittest "tests.generated.test_dom_boot"']);
+  });
+
+  it("rejects a generated frontend test with an incomplete boot-time DOM fixture", async () => {
+    const localPath = await createGeneratedDomRepo();
+    const result = await runVerificationCommands(
+      [{
+        filePath: "tests/generated/test_dom_boot.py",
+        originalContent: "",
+        modifiedContent: generatedDomUnittest(false),
+        explanation: "cover frontend boot behavior"
+      }],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      undefined,
+      fallbackOptions
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("Generated test failed independently");
+    expect(result.errors.join("\n")).toContain("#saveFilterButton");
+    expect(result.errors.join("\n")).not.toContain(localPath);
+  });
+
+  it("rejects a generated test command that executes zero tests", async () => {
+    const localPath = await createPythonRepo();
+    const result = await runVerificationCommands(
+      [{
+        filePath: "tests/generated/test_empty.py",
+        originalContent: "",
+        modifiedContent: "import unittest\n",
+        explanation: "add generated coverage"
+      }],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      undefined,
+      fallbackOptions
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain(
+      "Generated test did not execute independently (tests/generated/test_empty.py): the runner reported zero executed tests"
+    );
+  });
+
+  it("reserves a verification slot for candidate-added tests", async () => {
+    const localPath = await createPythonRepo();
+    await writeFile(join(localPath, "tests", "reported", "test_second.py"), "import unittest\n\nclass SecondTest(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n", "utf8");
+    await writeFile(join(localPath, "tests", "reported", "test_third.py"), "import unittest\n\nclass ThirdTest(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n", "utf8");
+    const result = await runVerificationCommands(
+      [{
+        filePath: "tests/generated/test_candidate.py",
+        originalContent: "",
+        modifiedContent: "import unittest\n\nclass CandidateTest(unittest.TestCase):\n    def test_failure(self):\n        self.fail('candidate executed')\n",
+        explanation: "add generated coverage"
+      }],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      {
+        requiredFiles: [],
+        acceptanceCriteria: [],
+        implementationChecklist: [],
+        verificationChecklist: [],
+        verificationCommands: [
+          "python3 -m unittest tests.reported.test_example",
+          "python3 -m unittest tests.reported.test_second",
+          "python3 -m unittest tests.reported.test_third"
+        ]
+      },
+      fallbackOptions
+    );
+
+    expect(result.commands).toHaveLength(3);
+    expect(result.commands).toContain('python3 -m unittest "tests.generated.test_candidate"');
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("candidate executed");
   });
 
   it("rejects generated change paths that escape the verification repo", async () => {
