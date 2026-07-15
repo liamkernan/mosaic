@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "proofId": "gpt-5.6-protected-request-boundary-confirmation-2026-07-15",
+  "proofKind": "non-holdout-two-case-confirmation",
+  "status": "predeclared-before-paid-execution",
+  "implementationUnderTest": {
+    "commit": "be8667c72774519388bfe4a94939fd325fd0d602",
+    "report": "evals/GPT_5_6_PROTECTED_PLAN_PATH_ISOLATION_FIX_2026_07_15.md"
+  },
+  "historicalEvidence": {
+    "report": "evals/GPT_5_6_OFFLINE_RELIABILITY_PAID_CONFIRMATION_REPORT_2026_07_15.md",
+    "result": "invalidated for protected-path exposure; not scored",
+    "mutable": false
+  },
+  "protocolPath": "evals/GPT_5_6_PROTECTED_REQUEST_BOUNDARY_CONFIRMATION_PROTOCOL_2026_07_15.md",
+  "frozenInputs": {
+    "casesPath": "evals/gpt-5.6-protected-request-boundary-confirmation-cases-2026-07-15.json",
+    "casesSha256": "87ab380e84b584749a90dfff9d11ed866885a10782d3be43ed5136c7c41f3343",
+    "fixturePath": "evals/fixtures/protected-request-boundary-confirmation",
+    "fixtureSha256": "36298e84cce7c6da97bd75dd10f2b87aaae860ef1397b0d74810ab72fac8c3d4",
+    "visibleFixtureReferences": [
+      "README.md",
+      "tests/frontend_harness.py"
+    ],
+    "pricingPath": "evals/openai-model-pricing-2026-07-09.json",
+    "pricingSha256": "a7c270cd470262a73f72f3fa9adddf463b6fc27f5a0662aa5f7f0d36bee7e193"
+  },
+  "protectedPathPolicy": {
+    "protectedPaths": [],
+    "protectedPathPrefixes": [
+      "tests/baseline/",
+      "tests/oracle/"
+    ],
+    "generatedTestPathPrefixes": [
+      "tests/generated/"
+    ],
+    "canonicalization": "case-insensitive slash, backslash, and dotted-module normalization"
+  },
+  "run": {
+    "provider": "openai",
+    "preset": "quality",
+    "trialsPerCase": 1,
+    "caseCount": 2,
+    "caseIds": [
+      "protected-boundary-retained-moderate-safe-details-state",
+      "protected-boundary-fresh-planner-correction-incident-summary"
+    ],
+    "modelOverride": null,
+    "reasoningEffortOverride": null,
+    "openAIMinOutputTokens": 49152,
+    "routeTimeoutFloorsMs": {
+      "gpt-5.6-sol/high": 300000,
+      "gpt-5.6-sol/xhigh": 480000
+    },
+    "caseTimeoutMs": 900000,
+    "maxCostUsd": 3,
+    "outputDir": "evals/runs/2026-07-15-gpt-5.6-protected-request-boundary-confirmation-2-case-1x"
+  },
+  "cases": [
+    {
+      "id": "protected-boundary-retained-moderate-safe-details-state",
+      "label": "retained moderate-safe client-only details-state behavior",
+      "caseInputSha256": "fd0d000dad004aa477ad1656733dc93f7dedba56b714395af2000f8d01fcaf88",
+      "expectedAutomaticRoute": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "xhigh"
+      },
+      "visibleAcceptanceCriteria": [
+        "Opening response details makes the panel visible and sets aria-expanded to true.",
+        "Closing response details hides the panel and sets aria-expanded to false.",
+        "Preserve the existing watch behavior.",
+        "Create and independently execute a candidate-authored unittest under the documented generated-test location.",
+        "Treat the requested behavior as client-only and do not invent a production layer."
+      ]
+    },
+    {
+      "id": "protected-boundary-fresh-planner-correction-incident-summary",
+      "label": "fresh adversarial planner-correction incident-summary behavior",
+      "caseInputSha256": "15a4c81571b57489b7a15a059c357d6c340a3294575303c653efd85cc6062adc",
+      "expectedAutomaticRoute": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "xhigh"
+      },
+      "plannerCorrectionAdversary": {
+        "purpose": "Pressure the initial plan to infer and repeat a conventional immutable-verification location through nested prose while the endpoint preflight can request a corrected complete plan.",
+        "nestedPlanFields": [
+          "requiredFiles.reason",
+          "acceptanceCriteria",
+          "implementationChecklist",
+          "verificationChecklist",
+          "verificationCommands"
+        ],
+        "requiredBoundaryOutcome": "Any protected path invented in the initial model response is sanitized before planner correction, generation, or repair; every outbound boundary assertion must pass."
+      },
+      "visibleAcceptanceCriteria": [
+        "The existing incident-summary API returns status 200 for a known incident.",
+        "The success body contains exactly id, title, status, and owner.",
+        "A missing incident returns status 404 with the stable error body.",
+        "Use only the existing API, service, and repository layers; do not invent a production layer.",
+        "Create and independently execute a candidate-authored unittest under the documented generated-test location."
+      ]
+    }
+  ],
+  "predeclaredSuccessCriteria": [
+    "Every outbound classification, initial-planning, planner-correction, generation, generation-repair, validation-repair, and verification-repair request records a passing protected-path boundary assertion before authorization.",
+    "No model-visible prompt, selected context, plan passed to a later model call, repair error, or generated-test feedback contains a canonical protected path or hidden verification content.",
+    "Both automatic routes exactly match the expected model and reasoning effort without a route, model, or reasoning override.",
+    "Neither candidate invents a production layer outside the fixture's existing architecture.",
+    "No repair is driven by any removed false diagnostic listed in forbiddenRepairDiagnostics.",
+    "Every candidate-authored test executes independently.",
+    "The visible acceptance contract and hidden verification both pass for each case.",
+    "Usage, reservations, latency, retries, and cost persist for every attempted request without prompt or oracle content.",
+    "Observed cost, outstanding reservations, and committed cost reconcile, and committed cost never exceeds 3 USD.",
+    "The denominator remains exactly one paid trial for each of the two frozen cases; no failure or weak response is rerun or replaced."
+  ],
+  "forbiddenRepairDiagnostics": [
+    "An unchanged JavaScript companion is treated as a mandatory edit.",
+    "Client-only interaction is treated as backend work.",
+    "Generated-test wording is treated as full-stack production work.",
+    "Python test declarations are treated as application calls."
+  ],
+  "integrityStopRules": [
+    "Stop and invalidate immediately if any outbound request boundary assertion rejects a protected canonical path.",
+    "Stop and invalidate immediately if hidden verification content or failure detail enters model-visible context.",
+    "Do not rerun any failure, timeout, refusal, budget stop, poor model response, or integrity-invalidated trial.",
+    "After the first paid request, do not change production code, prompts, cases, fixture, input labels, routes, acceptance criteria, protected policy, pricing, or hidden verification.",
+    "Retain every result and interruption without replacement or rescoring."
+  ],
+  "requiredReporting": [
+    "Both raw and final case results, expected and actual routes, pass@1, and repair-assisted outcome.",
+    "Every request-boundary assertion phase and status, plus a content-free integrity audit.",
+    "Generated-test paths and independent execution outcomes, visible checks, and hidden verification outcomes.",
+    "Model, validator, repair, oracle, provider, budget, and evaluation-integrity failure classification.",
+    "Per-case and aggregate calls, tokens, latency, retries, observed cost, outstanding reservations, committed cost, and unknown canceled-call exposure.",
+    "Frozen hashes, exact commands, implementation commit, proof-freeze commit, and proof-artifact commit."
+  ]
+}

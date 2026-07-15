@@ -1,0 +1,17 @@
+body {
+  font-family: system-ui, sans-serif;
+  margin: 2rem;
+}
+
+.incident-card {
+  max-width: 42rem;
+  border: 1px solid #c5cbd3;
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+
+.response-details {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f4f6f8;
+}
