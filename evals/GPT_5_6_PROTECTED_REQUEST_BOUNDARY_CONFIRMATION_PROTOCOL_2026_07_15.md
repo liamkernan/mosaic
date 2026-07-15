@@ -9,9 +9,18 @@ does not replace, rerun, or rescore the earlier invalidated proof or the
 immutable historical 7/15 evaluation.
 
 The implementation under test is commit
-`be8667c72774519388bfe4a94939fd325fd0d602`. The commit containing this
+`320f225b1a538c5dad45ab09c4715a637d9a1ce6`. The commit containing this
 protocol, the two-case file, fixture, manifest, and freeze test is the proof
 freeze point. No paid request may occur before that commit is green and pushed.
+
+The first freeze commit was audited before launch. No paid command or request
+assertion had started, and no provider call or cost occurred. That audit found
+that a rejected child request would stop before authorization, but the parent
+batch could still advance to its next case after recording the failed child.
+Commit `320f225b1a538c5dad45ab09c4715a637d9a1ce6` makes that integrity result
+batch-fatal, writes a content-free `invalidation.json`, and records unattempted
+case IDs. This pre-paid amendment changes no case, fixture, visible criterion,
+route, policy, price, hidden verification, transport minimum, timeout, or cap.
 
 ## Frozen inputs
 

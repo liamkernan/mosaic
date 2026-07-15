@@ -149,7 +149,7 @@ describe("frozen GPT-5.6 protected-request boundary paid confirmation", () => {
       status: "predeclared-before-paid-execution"
     }));
     expect(manifest.implementationUnderTest).toEqual({
-      commit: "be8667c72774519388bfe4a94939fd325fd0d602",
+      commit: "320f225b1a538c5dad45ab09c4715a637d9a1ce6",
       report: "evals/GPT_5_6_PROTECTED_PLAN_PATH_ISOLATION_FIX_2026_07_15.md"
     });
     await expect(sha256File(manifest.frozenInputs.casesPath)).resolves.toBe(manifest.frozenInputs.casesSha256);
@@ -299,5 +299,18 @@ describe("frozen GPT-5.6 protected-request boundary paid confirmation", () => {
     expect(command).not.toMatch(/^\s*--model\s+/m);
     expect(command).not.toMatch(/^\s*--reasoning-effort\s+/m);
     expect(command).not.toMatch(/API_KEY=/);
+  });
+
+  it("fails the frozen batch closed after the first rejected boundary assertion", async () => {
+    const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
+    const support = await readFile("scripts/eval-local-fixes-support.ts", "utf8");
+
+    expect(source).toContain('type: "protected-request-boundary-rejection"');
+    expect(source).toContain("stopAfterResult: (result) => result.integrityViolation !== undefined");
+    expect(source).toContain('join(options.outputDir, "invalidation.json")');
+    expect(source).toContain("unattemptedCaseIds");
+    expect(source).toContain("noFurtherPaidCalls: true");
+    expect(support).toContain("stopAfterResult?: (result: EvalBatchResult) => boolean");
+    expect(support).toContain("if (options.stopAfterResult?.(batchResult))");
   });
 });

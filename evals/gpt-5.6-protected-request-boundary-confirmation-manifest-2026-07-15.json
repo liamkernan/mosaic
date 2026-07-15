@@ -4,13 +4,24 @@
   "proofKind": "non-holdout-two-case-confirmation",
   "status": "predeclared-before-paid-execution",
   "implementationUnderTest": {
-    "commit": "be8667c72774519388bfe4a94939fd325fd0d602",
+    "commit": "320f225b1a538c5dad45ab09c4715a637d9a1ce6",
     "report": "evals/GPT_5_6_PROTECTED_PLAN_PATH_ISOLATION_FIX_2026_07_15.md"
   },
   "historicalEvidence": {
     "report": "evals/GPT_5_6_OFFLINE_RELIABILITY_PAID_CONFIRMATION_REPORT_2026_07_15.md",
     "result": "invalidated for protected-path exposure; not scored",
     "mutable": false
+  },
+  "prepaidFreezeAmendment": {
+    "status": "zero-call-launch-audit-correction",
+    "reason": "The pre-launch audit found that a child boundary rejection stopped its request but the parent batch could still advance to the next case. The harness now stops after the invalidated result and writes a content-free invalidation artifact before any next child launch.",
+    "previousFreezeCommit": "70d92b8e4f12d42846859ac2ae3eec812aad2589",
+    "implementationCommit": "320f225b1a538c5dad45ab09c4715a637d9a1ce6",
+    "paidCommandsIssued": 0,
+    "requestAssertionsStarted": 0,
+    "requestAuthorizations": 0,
+    "providerCalls": 0,
+    "observedCostUsd": 0
   },
   "protocolPath": "evals/GPT_5_6_PROTECTED_REQUEST_BOUNDARY_CONFIRMATION_PROTOCOL_2026_07_15.md",
   "frozenInputs": {
