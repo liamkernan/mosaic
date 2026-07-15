@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { LLMError } from "../packages/core/src/errors.js";
 import { OpenAIOutputLimitError } from "../packages/llm/src/client.js";
 import { buildFrontendRepairChecklist, CodeGenerator } from "../packages/pipeline/src/code-generator.js";
+import { validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
+import { validate } from "../packages/pipeline/src/validator.js";
 import { buildClassifiedFeedback, createPipelineLlmClient } from "./helpers/pipeline.js";
 
 describe("CodeGenerator", () => {
@@ -51,8 +53,10 @@ describe("CodeGenerator", () => {
   });
 
   it("uses focused complete-layer repair instructions when planned CSS is missing", async () => {
+    let capturedSystemPrompt = "";
     let capturedUserMessage = "";
-    const fakeClient = createPipelineLlmClient(async (_systemPrompt: string, userMessage: string) => {
+    const fakeClient = createPipelineLlmClient(async (systemPrompt: string, userMessage: string) => {
+      capturedSystemPrompt = systemPrompt;
       capturedUserMessage = userMessage;
       return `<changes>
   <change>
@@ -67,7 +71,7 @@ describe("CodeGenerator", () => {
 
     await new CodeGenerator(fakeClient).repairValidationFailure(
       buildClassifiedFeedback({
-        rawContent: "Add product details",
+        rawContent: "Add product details and keep the exact visible product SKU in the dialog.",
         category: "feature_request",
         complexity: "complex",
         summary: "Add product details",
@@ -100,6 +104,7 @@ describe("CodeGenerator", () => {
     expect(capturedUserMessage).toContain("HTML hooks must match JavaScript selectors");
     expect(capturedUserMessage).toContain("keyboard accessible");
     expect(capturedUserMessage).toContain("Do not omit an existing layer or add files outside the implementation plan");
+    expect(capturedSystemPrompt).toContain("keep the exact visible product SKU in the dialog");
   });
 
   it("compacts large static JS/CSS prompt context while preserving original diff inputs", async () => {
@@ -132,7 +137,7 @@ const generated = true;
 
     const generatedChanges = await new CodeGenerator(fakeClient).generate(
       buildClassifiedFeedback({
-        rawContent: "Add a popup",
+        rawContent: "Add a popup whose visible close control is labeled Done.",
         category: "feature_request",
         complexity: "complex",
         summary: "Add a popup",
@@ -152,6 +157,7 @@ const generated = true;
     expect(capturedPrompt).toContain("middle of script.js omitted for generation speed");
     expect(capturedPrompt).toContain("middle of styles.css omitted for generation speed");
     expect(capturedPrompt).toContain("LARGE STATIC FRONTEND NOTE");
+    expect(capturedPrompt).toContain("visible close control is labeled Done");
     expect(capturedPrompt).toContain("const firstLine = true;");
     expect(capturedPrompt).toContain("const lastLine = true;");
     expect(capturedPrompt).not.toContain("const omitted1000 = 1000;");
@@ -1109,6 +1115,71 @@ document.getElementById("productDetailReviews").innerHTML = '<div class="modal-r
         modifiedContent: expect.stringContaining('class="modal-review-item pd-review"')
       })
     ]);
+  });
+
+  it("repairs the current candidate within plan scope and passes normal revalidation", async () => {
+    const currentContent = 'function visibleLabel() { return "wrong"; }\n';
+    let capturedSystemPrompt = "";
+    const fakeClient = createPipelineLlmClient(async (systemPrompt: string) => {
+      capturedSystemPrompt = systemPrompt;
+      return `<changes>
+  <edit>
+    <filePath>src/service.js</filePath>
+    <search><![CDATA[${currentContent}]]></search>
+    <replace><![CDATA[function visibleLabel() { return "visible"; }
+]]></replace>
+    <explanation>Return the visible label required by the user.</explanation>
+  </edit>
+</changes>`;
+    });
+    const plan = {
+      requiredFiles: [{ path: "src/service.js", reason: "fix the visible service label" }],
+      acceptanceCriteria: ["The service returns the visible label."],
+      implementationChecklist: ["Update visibleLabel to return visible."],
+      verificationChecklist: ["Check the visible label."],
+      verificationCommands: []
+    };
+
+    const repaired = await new CodeGenerator(fakeClient).repairValidationFailure(
+      buildClassifiedFeedback({
+        rawContent: "The service currently returns wrong; make it return visible.",
+        category: "bug_report",
+        complexity: "simple",
+        summary: "Fix the visible service label",
+        relevantFiles: ["src/service.js"],
+        confidence: 0.9
+      }),
+      [{ path: "src/service.js", content: "", reason: "service implementation" }],
+      ["src/service.js"],
+      [{
+        filePath: "src/service.js",
+        originalContent: "",
+        modifiedContent: currentContent,
+        explanation: "add the initial service implementation"
+      }],
+      ["Verification failed: expected visible but received wrong"],
+      plan
+    );
+
+    expect(capturedSystemPrompt).toContain(currentContent);
+    expect(repaired).toEqual([expect.objectContaining({
+      filePath: "src/service.js",
+      originalContent: "",
+      modifiedContent: 'function visibleLabel() { return "visible"; }\n'
+    })]);
+    expect(Function(`${repaired[0]?.modifiedContent}\nreturn visibleLabel();`)()).toBe("visible");
+    await expect(validate(repaired, {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath: process.cwd(),
+      fileTree: [],
+      installationId: 1
+    })).resolves.toEqual({ valid: true, errors: [] });
+    expect(validatePlanCompletion(
+      repaired,
+      plan,
+      "The service currently returns wrong; make it return visible."
+    )).toEqual([]);
   });
 
   it("uses focused test verification repair instructions without dropping coverage", async () => {

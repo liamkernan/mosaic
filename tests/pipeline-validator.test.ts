@@ -1117,4 +1117,46 @@ describe("validate", () => {
 
     expect(result.errors.join("\n")).not.toContain("does not import or define");
   });
+
+  it("does not mistake a generated-test method declaration for an unqualified sibling call", async () => {
+    const result = await validate(
+      [
+        {
+          filePath: "incident/repository.py",
+          originalContent: "def save_incident(incident):\n    return incident\n",
+          modifiedContent: "def save_incident(incident):\n    return incident\n\ndef get_incident(incident_id):\n    return None\n",
+          explanation: "add incident lookup"
+        },
+        {
+          filePath: "tests/generated/test_escalation_export.py",
+          originalContent: "",
+          modifiedContent: [
+            "import unittest",
+            "",
+            "from incident import repository",
+            "",
+            "class EscalationExportTest(unittest.TestCase):",
+            "    def save_incident(self, incident_id):",
+            "        return repository.save_incident({'id': incident_id})",
+            "",
+            "    def test_save_incident(self):",
+            "        self.assertEqual('INC-1', self.save_incident('INC-1')['id'])",
+            ""
+          ].join("\n"),
+          explanation: "cover the visible incident export behavior"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath: process.cwd(),
+        fileTree: [],
+        installationId: 1
+      }
+    );
+
+    expect(result.errors.join("\n")).not.toContain(
+      "calls save_incident from repository.py but does not import or define save_incident"
+    );
+  });
 });

@@ -29,6 +29,8 @@ const preservationLeadPattern = /^\s*(?:preserve|keep)\b/i;
 const explicitNoEditPattern = /\b(?:do not|don't|must not)\s+(?:change|alter|modify|edit)\b/i;
 const preservationChecklistLeadPattern = /^\s*(?:preserve|keep|leave)\b/i;
 const implementationMutationPattern = /\b(?:add|create|fix|implement|modify|remove|replace|style|update|wire)(?:s|d|ing)?\b/i;
+const implementationMutationLeadPattern = /^\s*(?:add|create|fix|implement|modify|remove|replace|style|update|wire)\b/i;
+const explicitUnchangedRequirementPattern = /\b(?:must|should)\s+remain unchanged\b/i;
 const optionalCompanionPattern = /\b(?:if (?:it|the file)\b|when applicable\b)/i;
 
 function requiresFullStackContract(text: string): boolean {
@@ -95,6 +97,7 @@ function implementationRequiredFiles(plan: ImplementationPlan): ImplementationPl
         (normalizedItem.includes(normalizedPath) || normalizedItem.includes(fileName));
     });
     const isVerificationOnly = unchangedRelativeClausePattern.test(reason) ||
+      (explicitUnchangedRequirementPattern.test(reason) && !implementationMutationLeadPattern.test(reason)) ||
       (verificationIntentPattern.test(reason) && unchangedIntentPattern.test(reason)) ||
       (preservationLeadPattern.test(reason) && checklistExplicitlyForbidsEditing) ||
       (verificationIntentPattern.test(reason) && optionalCompanionPattern.test(reason));

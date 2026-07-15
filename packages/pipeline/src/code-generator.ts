@@ -157,6 +157,16 @@ function promptKeywordText(feedback: ClassifiedFeedback, implementationPlan?: Im
   ].filter(Boolean).join("\n");
 }
 
+function visibleRequestText(feedback: ClassifiedFeedback): string {
+  const summary = feedback.summary.trim();
+  const rawContent = feedback.rawContent.trim();
+  if (rawContent.length === 0 || rawContent === summary) {
+    return summary;
+  }
+
+  return `${summary}\n\n${rawContent}`;
+}
+
 function totalPromptFileBytes(relevantFiles: RelevantFile[]): number {
   return relevantFiles.reduce((sum, file) => sum + fileContentByteLength(file), 0);
 }
@@ -790,7 +800,7 @@ export class CodeGenerator {
     let response;
     try {
       response = await this.llmClient.complete(
-        buildGenerationPrompt(feedback.summary, promptFiles, fileTree, implementationPlan, options),
+        buildGenerationPrompt(visibleRequestText(feedback), promptFiles, fileTree, implementationPlan, options),
         "Return only the <changes> payload; use exact <edit> blocks for existing files and complete CDATA content only for new files or changes that cannot be expressed safely as localized edits.",
         {
           temperature: 0.3,
@@ -813,7 +823,7 @@ export class CodeGenerator {
         ? "hit the OpenAI max_output_tokens limit"
         : "timed out";
       response = await this.llmClient.complete(
-        buildGenerationPrompt(feedback.summary, retryFiles, fileTree, implementationPlan, options),
+        buildGenerationPrompt(visibleRequestText(feedback), retryFiles, fileTree, implementationPlan, options),
         `The previous static frontend generation ${retryReason}. Return only a compact, complete <changes> payload: prefer exact <edit> blocks or new scoped supplemental JS/CSS files linked from HTML. Do not rewrite full existing HTML/CSS/JS files. Implement one reusable data-driven modal/dialog and matching behavior/styles.`,
         {
           temperature: 0.2,
@@ -888,7 +898,7 @@ export class CodeGenerator {
     const baseUserMessage = repairRoute?.instruction ?? "Return only the repaired <changes> payload with complete file contents in CDATA blocks.";
     const userMessage = `${baseUserMessage}${buildFrontendRepairChecklist(validationErrors)}`;
     const response = await this.llmClient.complete(
-      buildValidationRepairPrompt(feedback.summary, promptFiles, currentChanges, validationErrors, fileTree, implementationPlan),
+      buildValidationRepairPrompt(visibleRequestText(feedback), promptFiles, currentChanges, validationErrors, fileTree, implementationPlan),
       userMessage,
       {
         temperature: 0,

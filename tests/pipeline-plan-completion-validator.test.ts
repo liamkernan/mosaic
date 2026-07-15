@@ -214,6 +214,63 @@ describe("validatePlanCompletion", () => {
     expect(actionLedErrors.join("\n")).toContain("requires runtime/source changes");
   });
 
+  it("does not require a companion whose reason independently says it must remain unchanged", () => {
+    const unchangedCompanionErrors = validatePlanCompletion(
+      [
+        {
+          filePath: "index.html",
+          originalContent: '<button id="watchIncident">★</button>\n',
+          modifiedContent: '<button id="watchIncident" aria-label="Watch incident">★</button>\n',
+          explanation: "name the existing watch control"
+        },
+        {
+          filePath: "tests/generated/test_watch_incident_accessibility.py",
+          originalContent: "",
+          modifiedContent: "import unittest\n",
+          explanation: "cover the visible watch contract"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "index.html", reason: "Add the accessible name to the existing watch button." },
+          {
+            path: "dashboard.js",
+            reason: "The existing watch-button click state and status behavior must remain unchanged when the accessibility name is added."
+          },
+          { path: "tests/generated/test_watch_incident_accessibility.py", reason: "Add generated regression coverage." }
+        ],
+        acceptanceCriteria: ["The existing star button has the spoken accessible name Watch incident."],
+        implementationChecklist: [
+          "Add aria-label to #watchIncident in index.html.",
+          "Do not alter dashboard.js watch-toggle logic."
+        ]
+      },
+      "Give the existing star button the spoken name Watch incident without changing what happens when I press it."
+    );
+
+    expect(unchangedCompanionErrors).toEqual([]);
+
+    const actionLedErrors = validatePlanCompletion(
+      [{
+        filePath: "tests/service.test.ts",
+        originalContent: "",
+        modifiedContent: "it('preserves the API', () => expect(true).toBe(true));\n",
+        explanation: "cover the service fix"
+      }],
+      {
+        ...basePlan,
+        requiredFiles: [{
+          path: "src/service.ts",
+          reason: "Update the service implementation while its public API must remain unchanged."
+        }],
+        acceptanceCriteria: ["The reported service behavior is fixed."]
+      }
+    );
+
+    expect(actionLedErrors.join("\n")).toContain("requires runtime/source changes");
+  });
+
   it("rejects substituted ordered tie-breakers from acceptance criteria", () => {
     const errors = validatePlanCompletion(
       [

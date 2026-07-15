@@ -599,6 +599,12 @@ function pythonCallNames(content: string): Set<string> {
   const names = new Set<string>();
 
   for (const match of content.matchAll(/(?<![\w.])([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)) {
+    const lineStart = content.lastIndexOf("\n", (match.index ?? 0) - 1) + 1;
+    const linePrefix = content.slice(lineStart, match.index);
+    if (/^\s*(?:async\s+)?def\s+$/.test(linePrefix)) {
+      continue;
+    }
+
     const name = match[1];
     if (!pythonBuiltinCallNames.has(name)) {
       names.add(name);

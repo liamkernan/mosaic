@@ -129,6 +129,24 @@ describe("repair progress", () => {
     }));
   });
 
+  it("rejects a changed candidate when revalidation returns the exact same errors", () => {
+    expect(assessRepairProgress(
+      [existingChange],
+      [{ ...existingChange, modifiedContent: "export const value = 3;\n" }],
+      [
+        "Implementation plan requires runtime/source changes for backing server behavior",
+        "Implementation plan requires runtime/source changes for a full-stack UI request"
+      ],
+      [
+        "Implementation plan requires runtime/source changes for a full-stack UI request",
+        "Implementation plan requires runtime/source changes for backing server behavior"
+      ]
+    )).toEqual(expect.objectContaining({
+      accepted: false,
+      trend: "stalled"
+    }));
+  });
+
   it("keeps independent generated-test failures in the verification category", () => {
     expect(assessRepairProgress(
       [existingChange],

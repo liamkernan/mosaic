@@ -1,6 +1,6 @@
 import type { GeneratedChange } from "@mosaic/core";
 
-export type RepairTrend = "reduced" | "preserved" | "increased";
+export type RepairTrend = "reduced" | "preserved" | "stalled" | "increased";
 
 export interface RepairProgressAssessment {
   accepted: boolean;
@@ -49,6 +49,16 @@ function errorCategories(errors: string[]): Set<string> {
   return new Set(errors.map(repairErrorCategory));
 }
 
+function hasSameErrors(left: string[], right: string[]): boolean {
+  if (left.length === 0 || left.length !== right.length) {
+    return false;
+  }
+
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+  return sortedLeft.every((error, index) => error === sortedRight[index]);
+}
+
 function addedFilePaths(
   currentChanges: GeneratedChange[],
   candidateChanges: GeneratedChange[]
@@ -87,18 +97,22 @@ export function assessRepairProgress(
     .filter((category) => !beforeCategories.has(category))
     .sort();
   const plannedFilesWithoutProgress = addedFiles.length > 0 && afterErrors.length >= beforeErrors.length;
+  const unchangedErrors = hasSameErrors(beforeErrors, afterErrors);
   const increased = unplannedAddedFiles.length > 0 ||
     plannedFilesWithoutProgress ||
     introducedCategories.length > 0 ||
     afterErrors.length > beforeErrors.length;
-  const trend: RepairTrend = increased
-    ? "increased"
-    : afterErrors.length < beforeErrors.length
-      ? "reduced"
-      : "preserved";
+  let trend: RepairTrend = "preserved";
+  if (increased) {
+    trend = "increased";
+  } else if (unchangedErrors) {
+    trend = "stalled";
+  } else if (afterErrors.length < beforeErrors.length) {
+    trend = "reduced";
+  }
 
   return {
-    accepted: !increased,
+    accepted: !increased && !unchangedErrors,
     trend,
     addedFiles,
     unplannedAddedFiles,
