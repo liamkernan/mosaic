@@ -56,12 +56,15 @@ describe("local fix evaluation harness", () => {
     expect(source).toContain("validateExpectedOpenAIRoute");
   });
 
-  it("wires one protected-plan policy through planning, generation, and focused repair", async () => {
+  it("wires one protected-path policy through classification, planning, generation, and focused repair", async () => {
     const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
 
     expect(source).toContain('"tests/baseline/"');
     expect(source).toContain("...(evalCase.oracleTestPathPrefixes ?? [])");
-    expect(source.match(/modelVisiblePlanPathPolicy:/g)).toHaveLength(3);
+    expect(source).toContain("sanitizeModelVisiblePaths(repoIndexer.fileTreeToPaths(repoContext), policy)");
+    expect(source).toContain("sanitizeModelVisibleFileEntries(");
+    expect(source).toContain("modelVisiblePlanPathPolicy: modelVisiblePathPolicy");
+    expect(source).not.toContain("visibleFileTreePaths(repoIndexer, repoContext, evalCase)");
     expect(source).not.toContain("implementationPlan = sanitizePlanForImmutablePaths");
   });
 

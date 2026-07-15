@@ -10,6 +10,11 @@ import {
   applyRoutingSignalComplexityFloor,
   isClassificationRoutingSignals
 } from "./routing-signals.js";
+import {
+  sanitizeModelVisibleContext,
+  sanitizeModelVisiblePaths,
+  type ModelVisiblePlanPathPolicy
+} from "./implementation-plan-sanitizer.js";
 
 interface ClassificationClient {
   setUsageContext(context: { repoFullName: string; feedbackId: string }): void;
@@ -29,8 +34,15 @@ interface ClassifierResponse {
   routingSignals?: unknown;
 }
 
+export interface FeedbackClassifierOptions {
+  modelVisiblePlanPathPolicy?: ModelVisiblePlanPathPolicy;
+}
+
 export class FeedbackClassifier {
-  constructor(private readonly llmClient: ClassificationClient) {}
+  constructor(
+    private readonly llmClient: ClassificationClient,
+    private readonly options: FeedbackClassifierOptions = {}
+  ) {}
 
   async classify(item: FeedbackItem, fileTree: string[]): Promise<ClassifiedFeedback> {
     this.llmClient.setUsageContext({
@@ -38,7 +50,14 @@ export class FeedbackClassifier {
       feedbackId: item.id
     });
 
-    const systemPrompt = buildClassificationPrompt(item.rawContent, fileTree);
+    const policy = this.options.modelVisiblePlanPathPolicy;
+    const modelVisibleItem = policy
+      ? { ...item, rawContent: sanitizeModelVisibleContext(item.rawContent, policy) }
+      : item;
+    const modelVisibleFileTree = policy
+      ? sanitizeModelVisiblePaths(fileTree, policy)
+      : fileTree;
+    const systemPrompt = buildClassificationPrompt(modelVisibleItem.rawContent, modelVisibleFileTree);
 
     let parsed: ClassifierResponse | undefined;
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -58,7 +77,7 @@ export class FeedbackClassifier {
 
     if (!parsed) {
       return {
-        ...item,
+        ...modelVisibleItem,
         category: "other",
         complexity: "complex",
         summary: "Unable to classify feedback safely",
@@ -70,13 +89,19 @@ export class FeedbackClassifier {
     const routingSignals: ClassificationRoutingSignals | undefined = isClassificationRoutingSignals(parsed.routingSignals)
       ? parsed.routingSignals
       : undefined;
+    const summary = policy
+      ? sanitizeModelVisibleContext(parsed.summary, policy)
+      : parsed.summary;
+    const relevantFiles = policy
+      ? sanitizeModelVisiblePaths(parsed.relevantFiles, policy)
+      : parsed.relevantFiles;
 
     return {
-      ...item,
+      ...modelVisibleItem,
       category: parsed.category,
       complexity: applyRoutingSignalComplexityFloor(parsed.complexity, routingSignals),
-      summary: parsed.summary,
-      relevantFiles: parsed.relevantFiles.slice(0, 5),
+      summary,
+      relevantFiles: relevantFiles.slice(0, 5),
       confidence: parsed.confidence,
       ...(routingSignals ? { routingSignals } : {})
     };

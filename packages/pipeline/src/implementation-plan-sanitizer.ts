@@ -116,6 +116,32 @@ export function sanitizeModelVisiblePlanText(
   return collapseGenericReferences(sanitized);
 }
 
+export function sanitizeModelVisiblePaths(
+  paths: readonly string[],
+  policy: ModelVisiblePlanPathPolicy
+): string[] {
+  return paths.filter((path) =>
+    !isProtectedModelVisiblePath(path, policy) &&
+    !containsProtectedModelVisiblePath(path, policy)
+  );
+}
+
+export function sanitizeModelVisibleContext<T>(
+  value: T,
+  policy: ModelVisiblePlanPathPolicy
+): T {
+  return sanitizeUnknown(value, policy, []) as T;
+}
+
+export function sanitizeModelVisibleFileEntries<T extends { path: string }>(
+  files: readonly T[],
+  policy: ModelVisiblePlanPathPolicy
+): T[] {
+  return files
+    .filter((file) => sanitizeModelVisiblePaths([file.path], policy).length === 1)
+    .map((file) => sanitizeModelVisibleContext(file, policy));
+}
+
 function extensionForGeneratedTest(path: string): string {
   const normalized = path.replaceAll("\\", "/");
   const fileName = normalized.slice(normalized.lastIndexOf("/") + 1);

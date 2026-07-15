@@ -16,6 +16,8 @@ import {
 import { ImplementationPlanner, type ImplementationPlan } from "../packages/pipeline/src/implementation-planner.js";
 import {
   containsProtectedModelVisiblePath,
+  sanitizeModelVisibleFileEntries,
+  sanitizeModelVisiblePaths,
   type ModelVisiblePlanPathPolicy
 } from "../packages/pipeline/src/implementation-plan-sanitizer.js";
 import { pruneChangesToPlanScope, validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
@@ -592,12 +594,12 @@ function mergeFiles<T extends { path: string }>(left: T[], right: T[]): T[] {
   return [...merged.values()];
 }
 
-function visibleFileTreePaths(repoIndexer: RepoIndexer, repoContext: RepoContext, evalCase: EvalCase): string[] {
-  return partitionVisibleContext(
-    repoIndexer.fileTreeToPaths(repoContext).map((path) => ({ path })),
-    evalCase.oracleTestPaths ?? [],
-    evalCase.oracleTestPathPrefixes ?? []
-  ).visible.map(({ path }) => path);
+function visibleFileTreePaths(
+  repoIndexer: RepoIndexer,
+  repoContext: RepoContext,
+  policy: ModelVisiblePlanPathPolicy
+): string[] {
+  return sanitizeModelVisiblePaths(repoIndexer.fileTreeToPaths(repoContext), policy);
 }
 
 async function writeGeneratedChanges(repoPath: string, changes: GeneratedChange[]): Promise<void> {
@@ -1195,7 +1197,8 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     : await copyRepoAtRef(sourceRepo, evalCase.baseRef ?? "");
   await mkdir(artifactPath, { recursive: true });
   await writeFile(join(artifactPath, "temp-path.txt"), `${repoPath}\n`, "utf8");
-  const telemetry = await createEvalTelemetry(options, artifactPath, modelVisiblePlanPathPolicy(evalCase));
+  const modelVisiblePathPolicy = modelVisiblePlanPathPolicy(evalCase);
+  const telemetry = await createEvalTelemetry(options, artifactPath, modelVisiblePathPolicy);
   const repoIndexer = new RepoIndexer();
   const repoContext: RepoContext = {
     fullName: evalCase.repoFullName,
@@ -1222,12 +1225,13 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   let classificationPasses: OpenAIClassificationPass[] | undefined;
 
   if (options.classify) {
-    const classificationFileTree = visibleFileTreePaths(repoIndexer, repoContext, evalCase);
+    const classificationFileTree = visibleFileTreePaths(repoIndexer, repoContext, modelVisiblePathPolicy);
     if (options.provider === "openai" && options.preset !== "direct") {
       const routedClassification = await classifyFeedbackWithOpenAIRouting({
         feedbackItem: classifiedFeedback,
         fileTree: classificationFileTree,
         modelPreset: options.preset,
+        modelVisiblePlanPathPolicy: modelVisiblePathPolicy,
         createClient: (route) => createEvalLlmClient(
           "openai",
           route,
@@ -1238,12 +1242,15 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
       classifiedFeedback = routedClassification.classifiedFeedback;
       classificationPasses = routedClassification.passes;
     } else {
-      const classifier = new FeedbackClassifier(createEvalLlmClient(
-        options.provider,
-        routes.classification,
-        telemetry,
-        "classification"
-      ));
+      const classifier = new FeedbackClassifier(
+        createEvalLlmClient(
+          options.provider,
+          routes.classification,
+          telemetry,
+          "classification"
+        ),
+        { modelVisiblePlanPathPolicy: modelVisiblePathPolicy }
+      );
       classifiedFeedback = await classifier.classify(classifiedFeedback, classificationFileTree);
     }
     routes = resolveEvalLlmRoutes({
@@ -1266,21 +1273,17 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     routes
   }, null, 2)}\n`, "utf8");
 
-  let relevantFiles = await repoIndexer.findRelevantFiles(repoContext, classifiedFeedback);
-  relevantFiles = partitionVisibleContext(
-    relevantFiles,
-    evalCase.oracleTestPaths ?? [],
-    evalCase.oracleTestPathPrefixes ?? []
-  ).visible;
+  let relevantFiles = sanitizeModelVisibleFileEntries(
+    await repoIndexer.findRelevantFiles(repoContext, classifiedFeedback),
+    modelVisiblePathPolicy
+  );
   const referenceFiles = await repoIndexer.findRepositoryReferenceFiles(repoContext, classifiedFeedback, {
     issueNumber: evalCase.issueNumber
   });
-  const partitionedReferences = partitionVisibleContext(
-    referenceFiles,
-    evalCase.oracleTestPaths ?? [],
-    evalCase.oracleTestPathPrefixes ?? []
+  relevantFiles = mergeFiles(
+    relevantFiles,
+    sanitizeModelVisibleFileEntries(referenceFiles, modelVisiblePathPolicy)
   );
-  relevantFiles = mergeFiles(relevantFiles, partitionedReferences.visible);
 
   let changes: GeneratedChange[] = [];
   let generated = false;
@@ -1307,8 +1310,8 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
 
   if (options.generate) {
     generated = true;
-    const fileTree = visibleFileTreePaths(repoIndexer, repoContext, evalCase);
-    const planPathPolicy = modelVisiblePlanPathPolicy(evalCase);
+    const fileTree = visibleFileTreePaths(repoIndexer, repoContext, modelVisiblePathPolicy);
+    const planPathPolicy = modelVisiblePathPolicy;
     const planner = new ImplementationPlanner(
       createEvalLlmClient(options.provider, routes.planning, telemetry, "planning"),
       { modelVisiblePlanPathPolicy: planPathPolicy }
@@ -1316,12 +1319,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     implementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
     const plannedFiles = await repoIndexer.readFiles(repoContext, implementationPlan.requiredFiles);
     relevantFiles = mergeFiles(relevantFiles, plannedFiles);
-    const partitionedPlannedFiles = partitionVisibleContext(
-      relevantFiles,
-      evalCase.oracleTestPaths ?? [],
-      evalCase.oracleTestPathPrefixes ?? []
-    );
-    relevantFiles = partitionedPlannedFiles.visible;
+    relevantFiles = sanitizeModelVisibleFileEntries(relevantFiles, modelVisiblePathPolicy);
     await persistArtifacts();
     const generator = new CodeGenerator(
       createEvalLlmClient(options.provider, routes.generation, telemetry, "generation-and-repair"),
@@ -1556,14 +1554,14 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
 
   if (options.generate && implementationPlan && checkErrors.length > 0) {
     const preRepairChanges = changes;
-    const fileTree = visibleFileTreePaths(repoIndexer, repoContext, evalCase);
+    const fileTree = visibleFileTreePaths(repoIndexer, repoContext, modelVisiblePathPolicy);
     const generator = new CodeGenerator(createEvalLlmClient(
       options.provider,
       routes.generation,
       telemetry,
       "check-repair"
     ), {
-      modelVisiblePlanPathPolicy: modelVisiblePlanPathPolicy(evalCase)
+      modelVisiblePlanPathPolicy: modelVisiblePathPolicy
     });
     let repairedChanges = await repairVerificationFailure(
       generator,

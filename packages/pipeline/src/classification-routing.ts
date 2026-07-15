@@ -2,6 +2,7 @@ import type { ClassifiedFeedback, ComplexityLevel, FeedbackItem, LLMModelPreset 
 import { OPENAI_MODEL_IDS } from "@mosaic/llm";
 
 import { FeedbackClassifier } from "./classifier.js";
+import type { ModelVisiblePlanPathPolicy } from "./implementation-plan-sanitizer.js";
 import {
   getOpenAIReviewMode,
   selectOpenAIModel,
@@ -37,6 +38,7 @@ export async function classifyFeedbackWithOpenAIRouting(options: {
   feedbackItem: FeedbackItem;
   fileTree: string[];
   modelPreset: LLMModelPreset;
+  modelVisiblePlanPathPolicy?: ModelVisiblePlanPathPolicy;
   createClient: (route: OpenAIModelSelection) => ClassificationClient;
   onPass?: (pass: OpenAIClassificationPass) => void;
 }): Promise<OpenAIRoutedClassification> {
@@ -45,7 +47,9 @@ export async function classifyFeedbackWithOpenAIRouting(options: {
     reasoningEffort: "high"
   };
   const passes: OpenAIClassificationPass[] = [];
-  const initialClassification = await new FeedbackClassifier(options.createClient(initialRoute))
+  const initialClassification = await new FeedbackClassifier(options.createClient(initialRoute), {
+    modelVisiblePlanPathPolicy: options.modelVisiblePlanPathPolicy
+  })
     .classify(options.feedbackItem, options.fileTree);
   let classifiedFeedback = initialClassification;
   const initialPass = { route: initialRoute, classifiedFeedback: initialClassification };
@@ -58,7 +62,9 @@ export async function classifyFeedbackWithOpenAIRouting(options: {
       options.modelPreset,
       getOpenAIReviewMode(classifiedFeedback)
     );
-    const routedClassification = await new FeedbackClassifier(options.createClient(routedSelection))
+    const routedClassification = await new FeedbackClassifier(options.createClient(routedSelection), {
+      modelVisiblePlanPathPolicy: options.modelVisiblePlanPathPolicy
+    })
       .classify(options.feedbackItem, options.fileTree);
     const routedPass = { route: routedSelection, classifiedFeedback: routedClassification };
     passes.push(routedPass);

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { FeedbackItem } from "../packages/core/src/types.js";
 import { classifyFeedbackWithOpenAIRouting } from "../packages/pipeline/src/classification-routing.js";
+import { containsProtectedModelVisiblePath } from "../packages/pipeline/src/implementation-plan-sanitizer.js";
 import type { OpenAIModelSelection } from "../packages/pipeline/src/model-routing.js";
 
 const feedbackItem: FeedbackItem = {
@@ -27,21 +28,27 @@ function classification(overrides: Record<string, unknown> = {}): Record<string,
 
 function createFactory(responses: Record<string, unknown>[]): {
   routes: OpenAIModelSelection[];
+  prompts: string[];
   createClient: (route: OpenAIModelSelection) => {
     setUsageContext: ReturnType<typeof vi.fn>;
     complete: ReturnType<typeof vi.fn>;
   };
 } {
   const routes: OpenAIModelSelection[] = [];
+  const prompts: string[] = [];
   const queuedResponses = [...responses];
   return {
     routes,
+    prompts,
     createClient: (route) => {
       routes.push(route);
       const response = queuedResponses.shift();
       return {
         setUsageContext: vi.fn(),
-        complete: vi.fn(async () => JSON.stringify(response))
+        complete: vi.fn(async (systemPrompt: string) => {
+          prompts.push(systemPrompt);
+          return JSON.stringify(response);
+        })
       };
     }
   };
@@ -124,5 +131,60 @@ describe("OpenAI production classification routing", () => {
       complexity: "moderate",
       summary: "Correct the profile label"
     });
+  });
+
+  it("sanitizes canonical protected variants across both classification passes and their outputs", async () => {
+    const policy = {
+      protectedPaths: ["fixtures/hidden/expected.json"],
+      protectedPathPrefixes: ["tests/baseline/", "tests/oracle/"],
+      generatedTestPathPrefixes: ["tests/generated/"]
+    };
+    const allowedPaths = [
+      "tests/generated/test_public.py",
+      "src/Profile.tsx",
+      "tests/oracle-helper/test_public.py",
+      "tests/baseline_data/test_public.py",
+      "fixtures/hidden/expected.schema.json"
+    ];
+    const factory = createFactory([
+      classification({
+        summary: "Compare tests/oracle/test_secret.py with Fixtures.Hidden.Expected.JSON.",
+        relevantFiles: ["tests.baseline.test_snapshot", ...allowedPaths]
+      }),
+      classification({
+        summary: "Keep TESTS\\BASELINE\\TEST_SNAPSHOT.PY unchanged.",
+        relevantFiles: ["fixtures/hidden/expected.json", ...allowedPaths]
+      })
+    ]);
+
+    const result = await classifyFeedbackWithOpenAIRouting({
+      feedbackItem: {
+        ...feedbackItem,
+        rawContent: "Before editing, inspect tests.baseline.test_snapshot, TESTS\\ORACLE\\Test_Secret.py, and Fixtures.Hidden.Expected.JSON."
+      },
+      fileTree: [
+        "tests/baseline/test_snapshot.py",
+        "TESTS\\ORACLE\\Test_Secret.py",
+        "fixtures.hidden.expected.json",
+        ...allowedPaths
+      ],
+      modelPreset: "quality",
+      modelVisiblePlanPathPolicy: policy,
+      createClient: factory.createClient
+    });
+
+    expect(factory.prompts).toHaveLength(2);
+    for (const prompt of factory.prompts) {
+      expect(containsProtectedModelVisiblePath(prompt, policy)).toBe(false);
+      expect(prompt).toContain("immutable verification tests");
+      for (const allowedPath of allowedPaths) {
+        expect(prompt).toContain(allowedPath);
+      }
+    }
+    for (const pass of result.passes) {
+      expect(containsProtectedModelVisiblePath(pass.classifiedFeedback.rawContent, policy)).toBe(false);
+      expect(containsProtectedModelVisiblePath(pass.classifiedFeedback.summary, policy)).toBe(false);
+      expect(pass.classifiedFeedback.relevantFiles).toEqual(allowedPaths.slice(0, 5));
+    }
   });
 });
