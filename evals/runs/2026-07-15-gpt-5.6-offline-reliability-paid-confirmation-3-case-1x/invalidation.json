@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "proofId": "gpt-5.6-offline-reliability-paid-confirmation-2026-07-15",
+  "status": "invalidated-evaluation-integrity",
+  "scored": false,
+  "startedAt": "2026-07-15T06:14:55.905Z",
+  "terminatedDuringCase": "post-routing-complex-escalation-export",
+  "terminationEvidenceRecordedAt": "2026-07-15T06:17:16.669Z",
+  "reason": "The completed moderate case's model-authored implementation plan included the hidden path prefix tests/oracle/. That plan was passed into model-visible generation context, violating the predeclared oracle-isolation criterion.",
+  "evidence": {
+    "caseId": "post-routing-moderate-safe-details-state",
+    "artifact": "post-routing-moderate-safe-details-state/plan.json",
+    "jsonPointer": "/implementationChecklist/4",
+    "exposedText": "Do not modify tests/baseline/ or tests/oracle/.",
+    "exposureStage": "generation",
+    "oracleContentsExposed": false,
+    "oracleFailureDetailsExposed": false
+  },
+  "response": {
+    "processTerminated": true,
+    "exitCode": 130,
+    "additionalPaidCallsIssued": 0,
+    "rerunPermitted": false,
+    "artifactsRetained": true
+  },
+  "complexCaseAtTermination": {
+    "resultWritten": false,
+    "generationCompleted": false,
+    "changesApplied": false,
+    "verificationStarted": false,
+    "completedCalls": 3,
+    "outstandingAuthorization": "eval-request-4",
+    "outstandingReservedCostUsd": 1.507075
+  }
+}

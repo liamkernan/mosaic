@@ -1,0 +1,273 @@
+{
+  "id": "post-routing-moderate-safe-details-state",
+  "caseId": "post-routing-moderate-safe-details-state",
+  "trial": 1,
+  "passed": true,
+  "tempPath": "/var/folders/fg/cvqdvtjx1g98hw6k7ybsn48h0000gn/T/mosaic-eval-VErx5W/repo",
+  "generated": true,
+  "references": [
+    "tests/frontend_harness.py",
+    "tests/oracle/test_details_state.py",
+    "README.md",
+    "tests/baseline/test_fixture_baseline.py",
+    "tests/oracle/test_watch_label.py",
+    "tests/__init__.py",
+    "tests/oracle/__init__.py",
+    "tests/oracle/test_escalation_export.py"
+  ],
+  "loadedFiles": [
+    "dashboard.js",
+    "tests/baseline/test_fixture_baseline.py",
+    "tests/frontend_harness.py",
+    "index.html",
+    "README.md",
+    "tests/__init__.py"
+  ],
+  "changedFiles": [
+    "dashboard.js",
+    "tests/generated/test_response_details_accessibility.py"
+  ],
+  "errors": [],
+  "artifactPath": "/private/tmp/mosaic-offline-reliability-proof-2026-07-15/evals/runs/2026-07-15-gpt-5.6-offline-reliability-paid-confirmation-3-case-1x/post-routing-moderate-safe-details-state",
+  "usage": {
+    "calls": [
+      {
+        "authorizationId": "eval-request-1",
+        "model": "gpt-5.6-luna",
+        "inputTokens": 746,
+        "outputTokens": 723,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "latencyMs": 5333,
+        "retries": 0,
+        "advisorOffered": false,
+        "advisorUsed": false,
+        "advisorUnavailable": false,
+        "iterations": [
+          {
+            "type": "message",
+            "model": "gpt-5.6-luna",
+            "inputTokens": 746,
+            "outputTokens": 723,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "costUsd": 0.005084
+          }
+        ],
+        "phase": "classification",
+        "costUsd": 0.005084
+      },
+      {
+        "authorizationId": "eval-request-2",
+        "model": "gpt-5.6-terra",
+        "inputTokens": 746,
+        "outputTokens": 301,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "latencyMs": 3076,
+        "retries": 0,
+        "advisorOffered": false,
+        "advisorUsed": false,
+        "advisorUnavailable": false,
+        "iterations": [
+          {
+            "type": "message",
+            "model": "gpt-5.6-terra",
+            "inputTokens": 746,
+            "outputTokens": 301,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "costUsd": 0.00638
+          }
+        ],
+        "phase": "classification",
+        "costUsd": 0.00638
+      },
+      {
+        "authorizationId": "eval-request-3",
+        "model": "gpt-5.6-terra",
+        "inputTokens": 2430,
+        "outputTokens": 2061,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "latencyMs": 20960,
+        "retries": 0,
+        "advisorOffered": false,
+        "advisorUsed": false,
+        "advisorUnavailable": false,
+        "iterations": [
+          {
+            "type": "message",
+            "model": "gpt-5.6-terra",
+            "inputTokens": 2430,
+            "outputTokens": 2061,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "costUsd": 0.03699
+          }
+        ],
+        "phase": "planning",
+        "costUsd": 0.03699
+      },
+      {
+        "authorizationId": "eval-request-4",
+        "model": "gpt-5.6-terra",
+        "inputTokens": 3622,
+        "outputTokens": 574,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "latencyMs": 4923,
+        "retries": 0,
+        "advisorOffered": false,
+        "advisorUsed": false,
+        "advisorUnavailable": false,
+        "iterations": [
+          {
+            "type": "message",
+            "model": "gpt-5.6-terra",
+            "inputTokens": 3622,
+            "outputTokens": 574,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "costUsd": 0.017665
+          }
+        ],
+        "phase": "generation-and-repair",
+        "costUsd": 0.017665
+      }
+    ],
+    "callCount": 4,
+    "totalInputTokens": 7544,
+    "totalOutputTokens": 3659,
+    "totalCacheReadInputTokens": 0,
+    "totalCacheCreationInputTokens": 0,
+    "totalLatencyMs": 34292,
+    "totalRetries": 0,
+    "totalCostUsd": 0.06611900000000001,
+    "observedCostUsd": 0.06611900000000001,
+    "outstandingReservedCostUsd": 0,
+    "committedCostUsd": 0.06611900000000001,
+    "reservations": [
+      {
+        "id": "eval-request-1",
+        "estimatedMaxCostUsd": 0.296086,
+        "status": "settled",
+        "observedCostUsd": 0.005084
+      },
+      {
+        "id": "eval-request-2",
+        "estimatedMaxCostUsd": 0.740215,
+        "status": "settled",
+        "observedCostUsd": 0.00638
+      },
+      {
+        "id": "eval-request-3",
+        "estimatedMaxCostUsd": 0.746805,
+        "status": "settled",
+        "observedCostUsd": 0.03699
+      },
+      {
+        "id": "eval-request-4",
+        "estimatedMaxCostUsd": 0.7518125,
+        "status": "settled",
+        "observedCostUsd": 0.017665
+      }
+    ]
+  },
+  "scopeViolations": [],
+  "routes": {
+    "classification": {
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "high"
+    },
+    "planning": {
+      "model": "gpt-5.6-terra",
+      "reasoningEffort": "xhigh"
+    },
+    "generation": {
+      "model": "gpt-5.6-terra",
+      "reasoningEffort": "xhigh"
+    }
+  },
+  "classificationPasses": [
+    {
+      "route": {
+        "model": "gpt-5.6-luna",
+        "reasoningEffort": "high"
+      },
+      "classifiedFeedback": {
+        "id": "post-routing-moderate-safe-details-state",
+        "repoFullName": "mosaic-eval/post-routing-reliability",
+        "receivedAt": "2026-07-15T06:15:20.210Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "The response-details panel opens and closes visually, but assistive technology always hears that its button is collapsed. Keep the existing button's expanded state synchronized for both opening and closing, preserve the watch behavior, and add an independently runnable regression test using the fixture's existing unittest frontend harness.",
+        "senderIdentifier": "post-routing-eval@example.com",
+        "category": "bug_report",
+        "complexity": "moderate",
+        "summary": "Synchronize the response-details button’s expanded state with panel opening and closing while preserving watch behavior and add a standalone frontend regression test.",
+        "relevantFiles": [
+          "dashboard.js",
+          "tests/frontend_harness.py",
+          "tests/baseline/test_fixture_baseline.py"
+        ],
+        "confidence": 0.95,
+        "routingSignals": {
+          "scope": "coordinated",
+          "literalCorrection": false,
+          "runtimeBehavior": true,
+          "persistentData": false,
+          "securitySensitive": false,
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "route": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "xhigh"
+      },
+      "classifiedFeedback": {
+        "id": "post-routing-moderate-safe-details-state",
+        "repoFullName": "mosaic-eval/post-routing-reliability",
+        "receivedAt": "2026-07-15T06:15:20.210Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "The response-details panel opens and closes visually, but assistive technology always hears that its button is collapsed. Keep the existing button's expanded state synchronized for both opening and closing, preserve the watch behavior, and add an independently runnable regression test using the fixture's existing unittest frontend harness.",
+        "senderIdentifier": "post-routing-eval@example.com",
+        "category": "bug_report",
+        "complexity": "moderate",
+        "summary": "Synchronize the response-details button’s expanded accessibility state on both open and close while preserving watch behavior and adding a standalone frontend-harness regression test.",
+        "relevantFiles": [
+          "dashboard.js",
+          "tests/baseline/test_fixture_baseline.py",
+          "tests/frontend_harness.py",
+          "index.html"
+        ],
+        "confidence": 0.94,
+        "routingSignals": {
+          "scope": "multi-component",
+          "literalCorrection": false,
+          "runtimeBehavior": true,
+          "persistentData": false,
+          "securitySensitive": false,
+          "requiresHumanReview": false
+        }
+      }
+    }
+  ],
+  "safetyAssessment": {
+    "accepted": true,
+    "reasons": []
+  },
+  "routePassed": true,
+  "rawSolutionPassed": true,
+  "finalSolutionPassed": true,
+  "repairAssistedPassed": false,
+  "repairAttempts": {
+    "modelAttempts": 0,
+    "deterministicAttempts": 0,
+    "totalAttempts": 0,
+    "stages": []
+  }
+}

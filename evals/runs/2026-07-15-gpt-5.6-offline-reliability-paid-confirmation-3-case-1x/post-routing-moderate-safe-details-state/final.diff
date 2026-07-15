@@ -1,0 +1,74 @@
+--- a/dashboard.js
++++ b/dashboard.js
+@@ -1,23 +1,24 @@
+-/* global document */
+-
+-const watchButton = document.querySelector("#watchIncident");
+-const watchStatus = document.querySelector("#watchStatus");
+-
+-watchButton.addEventListener("click", () => {
+-  const watching = watchButton.dataset.watching !== "true";
+-  watchButton.dataset.watching = String(watching);
+-  watchStatus.textContent = watching ? "Watching incident" : "Not watching";
+-});
+-
+-function setDetailsOpen(open) {
+-  document.querySelector("#detailsPanel").hidden = !open;
+-}
+-
+-document.querySelector("#detailsToggle").addEventListener("click", () => {
+-  const panel = document.querySelector("#detailsPanel");
+-  setDetailsOpen(panel.hidden);
+-});
+-
+-document.querySelector("#detailsClose").addEventListener("click", () => {
+-  setDetailsOpen(false);
+-});
++/* global document */
++
++const watchButton = document.querySelector("#watchIncident");
++const watchStatus = document.querySelector("#watchStatus");
++
++watchButton.addEventListener("click", () => {
++  const watching = watchButton.dataset.watching !== "true";
++  watchButton.dataset.watching = String(watching);
++  watchStatus.textContent = watching ? "Watching incident" : "Not watching";
++});
++
++function setDetailsOpen(open) {
++  document.querySelector("#detailsPanel").hidden = !open;
++  document.querySelector("#detailsToggle").setAttribute("aria-expanded", String(open));
++}
++
++document.querySelector("#detailsToggle").addEventListener("click", () => {
++  const panel = document.querySelector("#detailsPanel");
++  setDetailsOpen(panel.hidden);
++});
++
++document.querySelector("#detailsClose").addEventListener("click", () => {
++  setDetailsOpen(false);
++});
+--- a/tests/generated/test_response_details_accessibility.py
++++ b/tests/generated/test_response_details_accessibility.py
+@@ -1,0 +1,21 @@
++import unittest
++
++from tests.frontend_harness import run_dashboard
++
++
++class ResponseDetailsAccessibilityTest(unittest.TestCase):
++    def test_details_toggle_reports_expanded_when_opened(self):
++        state = run_dashboard(["#detailsToggle"])
++
++        self.assertFalse(state["detailsHidden"])
++        self.assertEqual("true", state["detailsExpanded"])
++
++    def test_details_close_reports_collapsed_when_closed(self):
++        state = run_dashboard(["#detailsToggle", "#detailsClose"])
++
++        self.assertTrue(state["detailsHidden"])
++        self.assertEqual("false", state["detailsExpanded"])
++
++
++if __name__ == "__main__":
++    unittest.main()

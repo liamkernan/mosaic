@@ -1,0 +1,26 @@
+[
+  {
+    "path": "dashboard.js",
+    "reason": "Update the shared response-details open/close state function so it synchronizes the existing details toggle button's aria-expanded value with the panel visibility for both toggle-open and close-button actions, without changing watch behavior."
+  },
+  {
+    "path": "tests/baseline/test_fixture_baseline.py",
+    "reason": "Repository test reference for expected behavior and coverage pattern"
+  },
+  {
+    "path": "tests/frontend_harness.py",
+    "reason": "Repository test reference for expected behavior and coverage pattern"
+  },
+  {
+    "path": "index.html",
+    "reason": "Classifier ranked this file as #4 relevant"
+  },
+  {
+    "path": "README.md",
+    "reason": "Repository documentation reference for conventions and requirements"
+  },
+  {
+    "path": "tests/__init__.py",
+    "reason": "Repository test reference for expected behavior and coverage pattern"
+  }
+]

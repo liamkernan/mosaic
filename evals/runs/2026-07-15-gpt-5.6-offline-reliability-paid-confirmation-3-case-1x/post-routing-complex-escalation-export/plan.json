@@ -1,0 +1,65 @@
+{
+  "requiredFiles": [
+    {
+      "path": "incident/api.py",
+      "reason": "Make export requests reuse the incident's oldest open job while preserving status lookup and missing-incident handling."
+    },
+    {
+      "path": "incident/repository.py",
+      "reason": "Implement per-incident lookup of the oldest queued or processing job and retain creation ordering."
+    },
+    {
+      "path": "incident/worker.py",
+      "reason": "Resume the oldest queued or processing job and build a strictly allowlisted export bundle."
+    },
+    {
+      "path": "tests/generated/__init__.py",
+      "reason": "Make the generated test directory an independently importable test package."
+    },
+    {
+      "path": "tests/generated/test_escalation_export.py",
+      "reason": "Add standalone unittest coverage for deduplication, ordering, resumption, status lookup, and sanitization."
+    }
+  ],
+  "acceptanceCriteria": [
+    "Repeated export requests for one incident return that incident's oldest job whose status is queued or processing.",
+    "Completed jobs are not reused; a new job is created when an incident has no open job.",
+    "Different incidents receive different jobs.",
+    "Requesting an export for an unknown incident raises KeyError.",
+    "The worker processes the oldest job across both queued and processing statuses and returns None when no open job exists.",
+    "A processed job is saved with status completed.",
+    "The completed bundle contains exactly id, title, status, severity, owner, customer_summary, and timeline.",
+    "Every timeline entry contains exactly at and message.",
+    "The bundle never exports internal_notes, api_token, or internal actor identity fields.",
+    "Status lookup continues returning the current persisted job by job ID.",
+    "Clicking #watchIncident still sets watching to \"true\" and displays \"Watching incident\".",
+    "Incident save/get behavior and title formatting such as \"INC-7: Checkout latency\" remain unchanged.",
+    "index.html continues referencing dashboard.js and the detailsPanel element."
+  ],
+  "implementationChecklist": [
+    "Implement find_open_escalation_job to filter by incident ID and queued/processing status and return the first job in creation order.",
+    "Update request_escalation_export to return the existing oldest open job before creating a new one.",
+    "Keep get_escalation_status delegated to repository lookup.",
+    "Select the worker's oldest queued or processing job without prioritizing one open status over the other.",
+    "Persist queued work as processing before final completion so processing jobs are resumable.",
+    "Construct bundles with explicit top-level and timeline allowlists rather than copying the incident dictionary.",
+    "Save the sanitized bundle and completed status through the repository.",
+    "Add unittest cases with reset repository state and an executable unittest.main entry point."
+  ],
+  "verificationChecklist": [
+    "Verify duplicate requests reuse an older queued job and an older processing job.",
+    "Verify a completed older job is ignored and a new job is created when no open job remains.",
+    "Verify requests for two incident IDs remain distinct.",
+    "Verify the worker chooses an older processing job over a newer queued job and an older queued job over a newer processing job.",
+    "Verify completed jobs are skipped and no open work returns None.",
+    "Assert exact bundle key sets and exact timeline-entry key sets using incidents containing forbidden and unrelated fields.",
+    "Verify internal_notes, api_token, actor, actor_id, and other internal identity metadata do not appear in the bundle.",
+    "Verify API status lookup reflects queued and completed states and unknown job lookup remains non-breaking.",
+    "Run generated tests independently without network listeners or external calls.",
+    "Run the immutable baseline suite to catch existing dashboard, storage, formatting, and markup regressions."
+  ],
+  "verificationCommands": [
+    "python3 -m unittest tests.baseline.test_fixture_baseline",
+    "python3 -m unittest discover -s tests/generated -p 'test_*.py'"
+  ]
+}

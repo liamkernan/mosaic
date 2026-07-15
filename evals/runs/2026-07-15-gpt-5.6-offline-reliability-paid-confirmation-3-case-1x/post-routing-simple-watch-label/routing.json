@@ -1,0 +1,105 @@
+{
+  "classificationPasses": [
+    {
+      "route": {
+        "model": "gpt-5.6-luna",
+        "reasoningEffort": "high"
+      },
+      "classifiedFeedback": {
+        "id": "post-routing-simple-watch-label",
+        "repoFullName": "mosaic-eval/post-routing-reliability",
+        "receivedAt": "2026-07-15T06:14:57.227Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "The star button watches the incident, but my screen reader only calls it 'button'. Give that existing control the spoken name 'Watch incident' without changing what happens when I press it.",
+        "senderIdentifier": "post-routing-eval@example.com",
+        "category": "ui_tweak",
+        "complexity": "simple",
+        "summary": "Add the accessible name “Watch incident” to the existing star button without changing its behavior.",
+        "relevantFiles": [
+          "dashboard.js",
+          "index.html"
+        ],
+        "confidence": 0.95,
+        "routingSignals": {
+          "scope": "localized",
+          "literalCorrection": false,
+          "runtimeBehavior": false,
+          "persistentData": false,
+          "securitySensitive": false,
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "route": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "high"
+      },
+      "classifiedFeedback": {
+        "id": "post-routing-simple-watch-label",
+        "repoFullName": "mosaic-eval/post-routing-reliability",
+        "receivedAt": "2026-07-15T06:14:57.227Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "The star button watches the incident, but my screen reader only calls it 'button'. Give that existing control the spoken name 'Watch incident' without changing what happens when I press it.",
+        "senderIdentifier": "post-routing-eval@example.com",
+        "category": "ui_tweak",
+        "complexity": "simple",
+        "summary": "Add the accessible spoken name \"Watch incident\" to the existing star button without changing its behavior.",
+        "relevantFiles": [
+          "index.html",
+          "dashboard.js"
+        ],
+        "confidence": 0.98,
+        "routingSignals": {
+          "scope": "localized",
+          "literalCorrection": false,
+          "runtimeBehavior": false,
+          "persistentData": false,
+          "securitySensitive": false,
+          "requiresHumanReview": false
+        }
+      }
+    }
+  ],
+  "finalClassification": {
+    "id": "post-routing-simple-watch-label",
+    "repoFullName": "mosaic-eval/post-routing-reliability",
+    "receivedAt": "2026-07-15T06:14:57.227Z",
+    "metadata": {},
+    "source": "web_form",
+    "rawContent": "The star button watches the incident, but my screen reader only calls it 'button'. Give that existing control the spoken name 'Watch incident' without changing what happens when I press it.",
+    "senderIdentifier": "post-routing-eval@example.com",
+    "category": "ui_tweak",
+    "complexity": "simple",
+    "summary": "Add the accessible spoken name \"Watch incident\" to the existing star button without changing its behavior.",
+    "relevantFiles": [
+      "index.html",
+      "dashboard.js"
+    ],
+    "confidence": 0.98,
+    "routingSignals": {
+      "scope": "localized",
+      "literalCorrection": false,
+      "runtimeBehavior": false,
+      "persistentData": false,
+      "securitySensitive": false,
+      "requiresHumanReview": false
+    }
+  },
+  "routes": {
+    "classification": {
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "high"
+    },
+    "planning": {
+      "model": "gpt-5.6-terra",
+      "reasoningEffort": "high"
+    },
+    "generation": {
+      "model": "gpt-5.6-terra",
+      "reasoningEffort": "high"
+    }
+  }
+}

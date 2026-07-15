@@ -1,0 +1,20 @@
+[
+  {
+    "stage": "initial",
+    "selected": true,
+    "changes": [
+      {
+        "filePath": "dashboard.js",
+        "originalContent": "/* global document */\n\nconst watchButton = document.querySelector(\"#watchIncident\");\nconst watchStatus = document.querySelector(\"#watchStatus\");\n\nwatchButton.addEventListener(\"click\", () => {\n  const watching = watchButton.dataset.watching !== \"true\";\n  watchButton.dataset.watching = String(watching);\n  watchStatus.textContent = watching ? \"Watching incident\" : \"Not watching\";\n});\n\nfunction setDetailsOpen(open) {\n  document.querySelector(\"#detailsPanel\").hidden = !open;\n}\n\ndocument.querySelector(\"#detailsToggle\").addEventListener(\"click\", () => {\n  const panel = document.querySelector(\"#detailsPanel\");\n  setDetailsOpen(panel.hidden);\n});\n\ndocument.querySelector(\"#detailsClose\").addEventListener(\"click\", () => {\n  setDetailsOpen(false);\n});\n",
+        "modifiedContent": "/* global document */\n\nconst watchButton = document.querySelector(\"#watchIncident\");\nconst watchStatus = document.querySelector(\"#watchStatus\");\n\nwatchButton.addEventListener(\"click\", () => {\n  const watching = watchButton.dataset.watching !== \"true\";\n  watchButton.dataset.watching = String(watching);\n  watchStatus.textContent = watching ? \"Watching incident\" : \"Not watching\";\n});\n\nfunction setDetailsOpen(open) {\n  document.querySelector(\"#detailsPanel\").hidden = !open;\n  document.querySelector(\"#detailsToggle\").setAttribute(\"aria-expanded\", String(open));\n}\n\ndocument.querySelector(\"#detailsToggle\").addEventListener(\"click\", () => {\n  const panel = document.querySelector(\"#detailsPanel\");\n  setDetailsOpen(panel.hidden);\n});\n\ndocument.querySelector(\"#detailsClose\").addEventListener(\"click\", () => {\n  setDetailsOpen(false);\n});\n",
+        "explanation": "Synchronize the details toggle accessibility state whenever the shared open/close function updates panel visibility."
+      },
+      {
+        "filePath": "tests/generated/test_response_details_accessibility.py",
+        "originalContent": "",
+        "modifiedContent": "import unittest\n\nfrom tests.frontend_harness import run_dashboard\n\n\nclass ResponseDetailsAccessibilityTest(unittest.TestCase):\n    def test_details_toggle_reports_expanded_when_opened(self):\n        state = run_dashboard([\"#detailsToggle\"])\n\n        self.assertFalse(state[\"detailsHidden\"])\n        self.assertEqual(\"true\", state[\"detailsExpanded\"])\n\n    def test_details_close_reports_collapsed_when_closed(self):\n        state = run_dashboard([\"#detailsToggle\", \"#detailsClose\"])\n\n        self.assertTrue(state[\"detailsHidden\"])\n        self.assertEqual(\"false\", state[\"detailsExpanded\"])\n\n\nif __name__ == \"__main__\":\n    unittest.main()",
+        "explanation": "Add a standalone frontend harness regression covering response-details accessibility state after opening and closing."
+      }
+    ]
+  }
+]

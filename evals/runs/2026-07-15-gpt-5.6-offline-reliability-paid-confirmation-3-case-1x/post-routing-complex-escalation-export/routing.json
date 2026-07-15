@@ -1,0 +1,114 @@
+{
+  "classificationPasses": [
+    {
+      "route": {
+        "model": "gpt-5.6-luna",
+        "reasoningEffort": "high"
+      },
+      "classifiedFeedback": {
+        "id": "post-routing-complex-escalation-export",
+        "repoFullName": "mosaic-eval/post-routing-reliability",
+        "receivedAt": "2026-07-15T06:15:56.839Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "Finish the incident escalation-export workflow across the existing API, repository, and worker. Repeated requests for the same incident must reuse that incident's oldest open queued or processing job, while a different incident gets a different job. The worker must resume the oldest queued or processing job and save a completed bundle containing only incident id, title, status, severity, owner, customer_summary, plus timeline entries containing only at and message. Never export internal_notes, api_token, or internal actor identities. Keep status lookup working and add independently runnable unittest coverage under tests/generated/.",
+        "senderIdentifier": "post-routing-eval@example.com",
+        "category": "feature_request",
+        "complexity": "complex",
+        "summary": "Complete the incident escalation-export workflow with per-incident job reuse, resumable worker processing, sanitized completed bundles, working status lookup, and generated unittest coverage.",
+        "relevantFiles": [
+          "incident/api.py",
+          "incident/repository.py",
+          "incident/service.py",
+          "incident/worker.py",
+          "tests/generated/test_incident_escalation_export.py"
+        ],
+        "confidence": 0.98,
+        "routingSignals": {
+          "scope": "cross-layer",
+          "literalCorrection": false,
+          "runtimeBehavior": true,
+          "persistentData": true,
+          "securitySensitive": true,
+          "requiresHumanReview": true
+        }
+      }
+    },
+    {
+      "route": {
+        "model": "gpt-5.6-sol",
+        "reasoningEffort": "xhigh"
+      },
+      "classifiedFeedback": {
+        "id": "post-routing-complex-escalation-export",
+        "repoFullName": "mosaic-eval/post-routing-reliability",
+        "receivedAt": "2026-07-15T06:15:56.839Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "Finish the incident escalation-export workflow across the existing API, repository, and worker. Repeated requests for the same incident must reuse that incident's oldest open queued or processing job, while a different incident gets a different job. The worker must resume the oldest queued or processing job and save a completed bundle containing only incident id, title, status, severity, owner, customer_summary, plus timeline entries containing only at and message. Never export internal_notes, api_token, or internal actor identities. Keep status lookup working and add independently runnable unittest coverage under tests/generated/.",
+        "senderIdentifier": "post-routing-eval@example.com",
+        "category": "feature_request",
+        "complexity": "complex",
+        "summary": "Complete the incident export workflow with per-incident job reuse, resumable worker processing, sanitized bundles, status lookup, and standalone tests.",
+        "relevantFiles": [
+          "incident/api.py",
+          "incident/repository.py",
+          "incident/service.py",
+          "incident/worker.py",
+          "tests/generated/test_incident_export.py"
+        ],
+        "confidence": 0.99,
+        "routingSignals": {
+          "scope": "cross-layer",
+          "literalCorrection": false,
+          "runtimeBehavior": true,
+          "persistentData": true,
+          "securitySensitive": true,
+          "requiresHumanReview": true
+        }
+      }
+    }
+  ],
+  "finalClassification": {
+    "id": "post-routing-complex-escalation-export",
+    "repoFullName": "mosaic-eval/post-routing-reliability",
+    "receivedAt": "2026-07-15T06:15:56.839Z",
+    "metadata": {},
+    "source": "web_form",
+    "rawContent": "Finish the incident escalation-export workflow across the existing API, repository, and worker. Repeated requests for the same incident must reuse that incident's oldest open queued or processing job, while a different incident gets a different job. The worker must resume the oldest queued or processing job and save a completed bundle containing only incident id, title, status, severity, owner, customer_summary, plus timeline entries containing only at and message. Never export internal_notes, api_token, or internal actor identities. Keep status lookup working and add independently runnable unittest coverage under tests/generated/.",
+    "senderIdentifier": "post-routing-eval@example.com",
+    "category": "feature_request",
+    "complexity": "complex",
+    "summary": "Complete the incident export workflow with per-incident job reuse, resumable worker processing, sanitized bundles, status lookup, and standalone tests.",
+    "relevantFiles": [
+      "incident/api.py",
+      "incident/repository.py",
+      "incident/service.py",
+      "incident/worker.py",
+      "tests/generated/test_incident_export.py"
+    ],
+    "confidence": 0.99,
+    "routingSignals": {
+      "scope": "cross-layer",
+      "literalCorrection": false,
+      "runtimeBehavior": true,
+      "persistentData": true,
+      "securitySensitive": true,
+      "requiresHumanReview": true
+    }
+  },
+  "routes": {
+    "classification": {
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "high"
+    },
+    "planning": {
+      "model": "gpt-5.6-sol",
+      "reasoningEffort": "xhigh"
+    },
+    "generation": {
+      "model": "gpt-5.6-sol",
+      "reasoningEffort": "xhigh"
+    }
+  }
+}

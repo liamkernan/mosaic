@@ -1,0 +1,58 @@
+{
+  "codeCommit": "09c08e105ebde3cd17790e3fdff5dfc391cc2974",
+  "casesPath": "evals/gpt-5.6-post-routing-reliability-cases-2026-07-14.json",
+  "casesSha256": "85f38e339fff7c78df507680fd411d3cbbb5712149231d3ea745226ee328cb28",
+  "fixtureHashes": {
+    "evals/fixtures/post-routing-reliability": "3fc0fbdd89c57426535524675de93cb765327636aa7f84c36b99e234048d2f71"
+  },
+  "pricingPath": "/private/tmp/mosaic-offline-reliability-proof-2026-07-15/evals/openai-model-pricing-2026-07-09.json",
+  "pricingSha256": "a7c270cd470262a73f72f3fa9adddf463b6fc27f5a0662aa5f7f0d36bee7e193",
+  "selectedCaseIds": [
+    "post-routing-simple-watch-label",
+    "post-routing-moderate-safe-details-state",
+    "post-routing-complex-escalation-export"
+  ],
+  "frozenEvaluation": true,
+  "trials": 1,
+  "provider": "openai",
+  "preset": "quality",
+  "maxCostUsd": 3,
+  "caseTimeoutMs": 900000,
+  "command": [
+    "/opt/homebrew/Cellar/node/25.9.0_1/bin/node",
+    "/private/tmp/mosaic-offline-reliability-proof-2026-07-15/scripts/eval-local-fixes.ts",
+    "--",
+    "--frozen-evaluation",
+    "--generate",
+    "--classify",
+    "--cases",
+    "evals/gpt-5.6-post-routing-reliability-cases-2026-07-14.json",
+    "--case",
+    "post-routing-simple-watch-label",
+    "--case",
+    "post-routing-moderate-safe-details-state",
+    "--case",
+    "post-routing-complex-escalation-export",
+    "--provider",
+    "openai",
+    "--preset",
+    "quality",
+    "--trials",
+    "1",
+    "--case-timeout-ms",
+    "900000",
+    "--max-cost-usd",
+    "3",
+    "--pricing",
+    "evals/openai-model-pricing-2026-07-09.json",
+    "--output-dir",
+    "evals/runs/2026-07-15-gpt-5.6-offline-reliability-paid-confirmation-3-case-1x"
+  ],
+  "routeOverrides": {
+    "model": null,
+    "reasoningEffort": null
+  },
+  "openAIMinOutputTokens": 49152,
+  "openAIMinTimeoutMs": null,
+  "startedAt": 1784096095905
+}

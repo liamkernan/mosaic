@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "proofId": "gpt-5.6-offline-reliability-paid-confirmation-2026-07-15",
+  "status": "invalidated-evaluation-integrity",
+  "scored": false,
+  "denominator": 3,
+  "mechanicalMetricsNotValidAsConfirmation": {
+    "expectedRouteMatches": {
+      "count": 3,
+      "denominator": 3
+    },
+    "rawPassAt1": {
+      "count": 1,
+      "denominator": 3
+    },
+    "repairAssistedSuccess": {
+      "count": 0,
+      "denominator": 3
+    },
+    "finalSuccess": {
+      "count": 1,
+      "denominator": 3
+    },
+    "generatedTestsExecutedIndependently": {
+      "count": 2,
+      "denominator": 3
+    }
+  },
+  "cases": [
+    {
+      "id": "post-routing-simple-watch-label",
+      "status": "completed-failed",
+      "failureClass": "oracle",
+      "expectedRoute": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "high"
+      },
+      "actualRoute": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "high"
+      },
+      "routePassed": true,
+      "rawSolutionPassed": false,
+      "rawFailureSurface": "hidden-oracle",
+      "repairAssistedPassed": false,
+      "finalSolutionPassed": false,
+      "repairAttempts": 0,
+      "generatedTestProduced": true,
+      "generatedTestExecutedIndependently": true,
+      "failureDetail": "The candidate added the required accessible name and preserved behavior, but the hidden oracle required aria-label to precede data-watching in one literal HTML substring.",
+      "usage": {
+        "completedCalls": 4,
+        "inputTokens": 7370,
+        "outputTokens": 1881,
+        "latencyMs": 21132,
+        "retries": 0,
+        "observedCostUsd": 0.0438845,
+        "outstandingReservedCostUsd": 0,
+        "committedCostUsd": 0.0438845
+      }
+    },
+    {
+      "id": "post-routing-moderate-safe-details-state",
+      "status": "completed-passed-before-invalidation",
+      "failureClass": "evaluation-integrity",
+      "expectedRoute": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "xhigh"
+      },
+      "actualRoute": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "xhigh"
+      },
+      "routePassed": true,
+      "rawSolutionPassed": true,
+      "rawFailureSurface": null,
+      "repairAssistedPassed": false,
+      "finalSolutionPassed": true,
+      "repairAttempts": 0,
+      "generatedTestProduced": true,
+      "generatedTestExecutedIndependently": true,
+      "failureDetail": "The candidate passed all checks, but its model-authored plan exposed the hidden tests/oracle/ prefix to generation context, invalidating the proof.",
+      "usage": {
+        "completedCalls": 4,
+        "inputTokens": 7544,
+        "outputTokens": 3659,
+        "latencyMs": 34292,
+        "retries": 0,
+        "observedCostUsd": 0.066119,
+        "outstandingReservedCostUsd": 0,
+        "committedCostUsd": 0.066119
+      }
+    },
+    {
+      "id": "post-routing-complex-escalation-export",
+      "status": "interrupted-integrity-stop",
+      "failureClass": "evaluation-integrity",
+      "expectedRoute": {
+        "model": "gpt-5.6-sol",
+        "reasoningEffort": "xhigh"
+      },
+      "actualRoute": {
+        "model": "gpt-5.6-sol",
+        "reasoningEffort": "xhigh"
+      },
+      "routePassed": true,
+      "rawSolutionPassed": null,
+      "rawFailureSurface": null,
+      "repairAssistedPassed": false,
+      "finalSolutionPassed": null,
+      "repairAttempts": 0,
+      "generatedTestProduced": false,
+      "generatedTestExecutedIndependently": false,
+      "failureDetail": "The process was terminated during the generation authorization after the earlier case's integrity exposure was confirmed. No change, validation, verification, or result was produced.",
+      "usage": {
+        "completedCalls": 3,
+        "inputTokens": 4258,
+        "outputTokens": 4481,
+        "latencyMs": 79799,
+        "retries": 0,
+        "observedCostUsd": 0.139532,
+        "outstandingReservedCostUsd": 1.507075,
+        "committedCostUsd": 1.646607
+      }
+    }
+  ],
+  "aggregateUsage": {
+    "completedCalls": 11,
+    "inputTokens": 19172,
+    "outputTokens": 10021,
+    "latencyMs": 135223,
+    "retries": 0,
+    "observedCostUsd": 0.2495355,
+    "outstandingReservedCostUsd": 1.507075,
+    "committedCostUsd": 1.7566105,
+    "maxCostUsd": 3,
+    "unknownCanceledCallExposureUsdAtMost": 1.507075
+  },
+  "integrityCriteria": {
+    "automaticRoutesMatched": true,
+    "forbiddenFalseDiagnosticsObserved": false,
+    "hiddenOracleIsolationPassed": false,
+    "costCapPassed": true,
+    "rerunPerformed": false
+  }
+}

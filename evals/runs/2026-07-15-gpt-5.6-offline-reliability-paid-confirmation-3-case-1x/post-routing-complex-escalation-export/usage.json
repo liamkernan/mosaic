@@ -1,0 +1,118 @@
+{
+  "calls": [
+    {
+      "authorizationId": "eval-request-1",
+      "model": "gpt-5.6-luna",
+      "inputTokens": 801,
+      "outputTokens": 541,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 6357,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-luna",
+          "inputTokens": 801,
+          "outputTokens": 541,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.004047
+        }
+      ],
+      "phase": "classification",
+      "costUsd": 0.004047
+    },
+    {
+      "authorizationId": "eval-request-2",
+      "model": "gpt-5.6-sol",
+      "inputTokens": 801,
+      "outputTokens": 362,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 7910,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-sol",
+          "inputTokens": 801,
+          "outputTokens": 362,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.014865
+        }
+      ],
+      "phase": "classification",
+      "costUsd": 0.014865
+    },
+    {
+      "authorizationId": "eval-request-3",
+      "model": "gpt-5.6-sol",
+      "inputTokens": 2656,
+      "outputTokens": 3578,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 65532,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-sol",
+          "inputTokens": 2656,
+          "outputTokens": 3578,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.12062
+        }
+      ],
+      "phase": "planning",
+      "costUsd": 0.12062
+    }
+  ],
+  "callCount": 3,
+  "totalInputTokens": 4258,
+  "totalOutputTokens": 4481,
+  "totalCacheReadInputTokens": 0,
+  "totalCacheCreationInputTokens": 0,
+  "totalLatencyMs": 79799,
+  "totalRetries": 0,
+  "totalCostUsd": 0.139532,
+  "observedCostUsd": 0.139532,
+  "outstandingReservedCostUsd": 1.507075,
+  "committedCostUsd": 1.646607,
+  "reservations": [
+    {
+      "id": "eval-request-1",
+      "estimatedMaxCostUsd": 0.296186,
+      "status": "settled",
+      "observedCostUsd": 0.004047
+    },
+    {
+      "id": "eval-request-2",
+      "estimatedMaxCostUsd": 1.48093,
+      "status": "settled",
+      "observedCostUsd": 0.014865
+    },
+    {
+      "id": "eval-request-3",
+      "estimatedMaxCostUsd": 1.495175,
+      "status": "settled",
+      "observedCostUsd": 0.12062
+    },
+    {
+      "id": "eval-request-4",
+      "estimatedMaxCostUsd": 1.507075,
+      "status": "outstanding"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+[
+  {
+    "path": "incident/api.py",
+    "reason": "Make export requests reuse the incident's oldest open job while preserving status lookup and missing-incident handling."
+  },
+  {
+    "path": "incident/repository.py",
+    "reason": "Implement per-incident lookup of the oldest queued or processing job and retain creation ordering."
+  },
+  {
+    "path": "incident/service.py",
+    "reason": "Classifier ranked this file as #3 relevant"
+  },
+  {
+    "path": "incident/worker.py",
+    "reason": "Resume the oldest queued or processing job and build a strictly allowlisted export bundle."
+  },
+  {
+    "path": "README.md",
+    "reason": "Repository documentation reference for conventions and requirements"
+  },
+  {
+    "path": "tests/__init__.py",
+    "reason": "Repository test reference for expected behavior and coverage pattern"
+  },
+  {
+    "path": "tests/baseline/test_fixture_baseline.py",
+    "reason": "Repository test reference for expected behavior and coverage pattern"
+  },
+  {
+    "path": "tests/frontend_harness.py",
+    "reason": "Repository test reference for expected behavior and coverage pattern"
+  }
+]

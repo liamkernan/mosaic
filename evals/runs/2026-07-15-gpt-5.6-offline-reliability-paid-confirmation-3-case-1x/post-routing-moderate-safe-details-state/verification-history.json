@@ -1,0 +1,18 @@
+[
+  {
+    "stage": "initial",
+    "errors": []
+  },
+  {
+    "stage": "raw-deterministic-checks",
+    "errors": []
+  },
+  {
+    "stage": "raw-hidden-oracle",
+    "errors": []
+  },
+  {
+    "stage": "hidden-oracle",
+    "errors": []
+  }
+]

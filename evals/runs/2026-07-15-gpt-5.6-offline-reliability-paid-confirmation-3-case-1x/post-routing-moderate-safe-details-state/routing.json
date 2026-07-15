@@ -1,0 +1,110 @@
+{
+  "classificationPasses": [
+    {
+      "route": {
+        "model": "gpt-5.6-luna",
+        "reasoningEffort": "high"
+      },
+      "classifiedFeedback": {
+        "id": "post-routing-moderate-safe-details-state",
+        "repoFullName": "mosaic-eval/post-routing-reliability",
+        "receivedAt": "2026-07-15T06:15:20.210Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "The response-details panel opens and closes visually, but assistive technology always hears that its button is collapsed. Keep the existing button's expanded state synchronized for both opening and closing, preserve the watch behavior, and add an independently runnable regression test using the fixture's existing unittest frontend harness.",
+        "senderIdentifier": "post-routing-eval@example.com",
+        "category": "bug_report",
+        "complexity": "moderate",
+        "summary": "Synchronize the response-details button’s expanded state with panel opening and closing while preserving watch behavior and add a standalone frontend regression test.",
+        "relevantFiles": [
+          "dashboard.js",
+          "tests/frontend_harness.py",
+          "tests/baseline/test_fixture_baseline.py"
+        ],
+        "confidence": 0.95,
+        "routingSignals": {
+          "scope": "coordinated",
+          "literalCorrection": false,
+          "runtimeBehavior": true,
+          "persistentData": false,
+          "securitySensitive": false,
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "route": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "xhigh"
+      },
+      "classifiedFeedback": {
+        "id": "post-routing-moderate-safe-details-state",
+        "repoFullName": "mosaic-eval/post-routing-reliability",
+        "receivedAt": "2026-07-15T06:15:20.210Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "The response-details panel opens and closes visually, but assistive technology always hears that its button is collapsed. Keep the existing button's expanded state synchronized for both opening and closing, preserve the watch behavior, and add an independently runnable regression test using the fixture's existing unittest frontend harness.",
+        "senderIdentifier": "post-routing-eval@example.com",
+        "category": "bug_report",
+        "complexity": "moderate",
+        "summary": "Synchronize the response-details button’s expanded accessibility state on both open and close while preserving watch behavior and adding a standalone frontend-harness regression test.",
+        "relevantFiles": [
+          "dashboard.js",
+          "tests/baseline/test_fixture_baseline.py",
+          "tests/frontend_harness.py",
+          "index.html"
+        ],
+        "confidence": 0.94,
+        "routingSignals": {
+          "scope": "multi-component",
+          "literalCorrection": false,
+          "runtimeBehavior": true,
+          "persistentData": false,
+          "securitySensitive": false,
+          "requiresHumanReview": false
+        }
+      }
+    }
+  ],
+  "finalClassification": {
+    "id": "post-routing-moderate-safe-details-state",
+    "repoFullName": "mosaic-eval/post-routing-reliability",
+    "receivedAt": "2026-07-15T06:15:20.210Z",
+    "metadata": {},
+    "source": "web_form",
+    "rawContent": "The response-details panel opens and closes visually, but assistive technology always hears that its button is collapsed. Keep the existing button's expanded state synchronized for both opening and closing, preserve the watch behavior, and add an independently runnable regression test using the fixture's existing unittest frontend harness.",
+    "senderIdentifier": "post-routing-eval@example.com",
+    "category": "bug_report",
+    "complexity": "moderate",
+    "summary": "Synchronize the response-details button’s expanded accessibility state on both open and close while preserving watch behavior and adding a standalone frontend-harness regression test.",
+    "relevantFiles": [
+      "dashboard.js",
+      "tests/baseline/test_fixture_baseline.py",
+      "tests/frontend_harness.py",
+      "index.html"
+    ],
+    "confidence": 0.94,
+    "routingSignals": {
+      "scope": "multi-component",
+      "literalCorrection": false,
+      "runtimeBehavior": true,
+      "persistentData": false,
+      "securitySensitive": false,
+      "requiresHumanReview": false
+    }
+  },
+  "routes": {
+    "classification": {
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "high"
+    },
+    "planning": {
+      "model": "gpt-5.6-terra",
+      "reasoningEffort": "xhigh"
+    },
+    "generation": {
+      "model": "gpt-5.6-terra",
+      "reasoningEffort": "xhigh"
+    }
+  }
+}

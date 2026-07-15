@@ -1,0 +1,101 @@
+--- a/index.html
++++ b/index.html
+@@ -1,30 +1,30 @@
+-<!doctype html>
+-<html lang="en">
+-  <head>
+-    <meta charset="utf-8" />
+-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+-    <title>Incident response console</title>
+-    <link rel="stylesheet" href="styles.css" />
+-  </head>
+-  <body>
+-    <main>
+-      <h1>Incidnet response center</h1>
+-      <article class="incident-card" aria-labelledby="incidentTitle">
+-        <h2 id="incidentTitle">Checkout latency</h2>
+-        <p>Investigating elevated request latency in checkout.</p>
+-        <button id="watchIncident" type="button" data-watching="false">★</button>
+-        <span id="watchStatus" aria-live="polite">Not watching</span>
+-
+-        <button id="detailsToggle" type="button" aria-controls="detailsPanel" aria-expanded="false">
+-          Show response details
+-        </button>
+-        <section id="detailsPanel" class="response-details" aria-labelledby="detailsTitle" hidden>
+-          <h3 id="detailsTitle">Response details</h3>
+-          <p>Owner: Operations</p>
+-          <button id="detailsClose" type="button">Close response details</button>
+-        </section>
+-      </article>
+-    </main>
+-    <script src="dashboard.js"></script>
+-  </body>
+-</html>
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1" />
++    <title>Incident response console</title>
++    <link rel="stylesheet" href="styles.css" />
++  </head>
++  <body>
++    <main>
++      <h1>Incidnet response center</h1>
++      <article class="incident-card" aria-labelledby="incidentTitle">
++        <h2 id="incidentTitle">Checkout latency</h2>
++        <p>Investigating elevated request latency in checkout.</p>
++        <button id="watchIncident" type="button" data-watching="false" aria-label="Watch incident">★</button>
++        <span id="watchStatus" aria-live="polite">Not watching</span>
++
++        <button id="detailsToggle" type="button" aria-controls="detailsPanel" aria-expanded="false">
++          Show response details
++        </button>
++        <section id="detailsPanel" class="response-details" aria-labelledby="detailsTitle" hidden>
++          <h3 id="detailsTitle">Response details</h3>
++          <p>Owner: Operations</p>
++          <button id="detailsClose" type="button">Close response details</button>
++        </section>
++      </article>
++    </main>
++    <script src="dashboard.js"></script>
++  </body>
++</html>
+--- a/tests/generated/test_watch_incident_accessibility.py
++++ b/tests/generated/test_watch_incident_accessibility.py
+@@ -1,0 +1,35 @@
++from html.parser import HTMLParser
++from pathlib import Path
++import unittest
++
++from tests.frontend_harness import run_dashboard
++
++
++ROOT = Path(__file__).resolve().parents[2]
++
++
++class WatchButtonParser(HTMLParser):
++    def __init__(self):
++        super().__init__()
++        self.attributes = None
++
++    def handle_starttag(self, tag, attrs):
++        if tag == "button" and dict(attrs).get("id") == "watchIncident":
++            self.attributes = dict(attrs)
++
++
++class WatchIncidentAccessibilityTest(unittest.TestCase):
++    def test_watch_button_has_accessible_name_and_preserves_behavior(self):
++        parser = WatchButtonParser()
++        parser.feed((ROOT / "index.html").read_text())
++
++        self.assertIsNotNone(parser.attributes)
++        self.assertEqual("Watch incident", parser.attributes["aria-label"])
++
++        state = run_dashboard(["#watchIncident"])
++        self.assertEqual("true", state["watching"])
++        self.assertEqual("Watching incident", state["watchStatus"])
++
++
++if __name__ == "__main__":
++    unittest.main()

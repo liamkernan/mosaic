@@ -1,0 +1,273 @@
+{
+  "id": "post-routing-simple-watch-label",
+  "caseId": "post-routing-simple-watch-label",
+  "trial": 1,
+  "passed": false,
+  "tempPath": "/var/folders/fg/cvqdvtjx1g98hw6k7ybsn48h0000gn/T/mosaic-eval-vTijys/repo",
+  "generated": true,
+  "references": [
+    "README.md",
+    "tests/oracle/test_incident_revision.py",
+    "tests/oracle/test_watch_label.py",
+    "tests/__init__.py",
+    "tests/baseline/test_fixture_baseline.py",
+    "tests/frontend_harness.py",
+    "tests/oracle/test_details_state.py",
+    "tests/oracle/test_escalation_export.py"
+  ],
+  "loadedFiles": [
+    "index.html",
+    "dashboard.js",
+    "README.md",
+    "tests/__init__.py",
+    "tests/baseline/test_fixture_baseline.py",
+    "tests/frontend_harness.py"
+  ],
+  "changedFiles": [
+    "index.html",
+    "tests/generated/test_watch_incident_accessibility.py"
+  ],
+  "errors": [
+    "Verification command failed (python3 -m unittest tests.oracle.test_watch_label): Command failed: python3 -m unittest tests.oracle.test_watch_label\nF\n======================================================================\nFAIL: test_watch_button_is_named_without_changing_behavior (tests.oracle.test_watch_label.WatchLabelOracleTest.test_watch_button_is_named_without_changing_behavior)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/private/var/folders/fg/cvqdvtjx1g98hw6k7ybsn48h0000gn/T/mosaic-eval-vTijys/repo/tests/oracle/test_watch_label.py\", line 13, in test_watch_button_is_named_without_changing_behavior\n    self.assertIn('id=\"watchIncident\" type=\"button\" aria-label=\"Watch incident\"', html)\n    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'id=\"watchIncident\" type=\"button\" aria-label=\"Watch incident\"' not found in '<!doctype html>\\n<html lang=\"en\">\\n  <head>\\n    <meta charset=\"utf-8\" />\\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\\n    <title>Incident response console</title>\\n    <link rel=\"stylesheet\" href=\"styles.css\" />\\n  </head>\\n  <body>\\n    <main>\\n      <h1>Incidnet response center</h1>\\n      <article class=\"incident-card\" aria-labelledby=\"incidentTitle\">\\n        <h2 id=\"incidentTitle\">Checkout latency</h2>\\n        <p>Investigating elevated request latency in checkout.</p>\\n        <button id=\"watchIncident\" type=\"button\" data-watching=\"false\" aria-label=\"Watch incident\">★</button>\\n        <span id=\"watchStatus\" aria-live=\"polite\">Not watching</span>\\n\\n        <button id=\"detailsToggle\" type=\"button\" aria-controls=\"detailsPanel\" aria-expanded=\"false\">\\n          Show response details\\n        </button>\\n        <section id=\"detailsPanel\" class=\"response-details\" aria-labelledby=\"detailsTitle\" hidden>\\n          <h3 id=\"detailsTitle\">Response details</h3>\\n          <p>Owner: Operations</p>\\n          <button id=\"detailsClose\" type=\"button\">Close response details</button>\\n        </section>\\n      </article>\\n    </main>\\n    <script src=\"dashboard.js\"></script>\\n  </body>\\n</html>\\n'\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (failures=1)\n"
+  ],
+  "artifactPath": "/private/tmp/mosaic-offline-reliability-proof-2026-07-15/evals/runs/2026-07-15-gpt-5.6-offline-reliability-paid-confirmation-3-case-1x/post-routing-simple-watch-label",
+  "usage": {
+    "calls": [
+      {
+        "authorizationId": "eval-request-1",
+        "model": "gpt-5.6-luna",
+        "inputTokens": 727,
+        "outputTokens": 185,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "latencyMs": 4160,
+        "retries": 0,
+        "advisorOffered": false,
+        "advisorUsed": false,
+        "advisorUnavailable": false,
+        "iterations": [
+          {
+            "type": "message",
+            "model": "gpt-5.6-luna",
+            "inputTokens": 727,
+            "outputTokens": 185,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "costUsd": 0.001837
+          }
+        ],
+        "phase": "classification",
+        "costUsd": 0.001837
+      },
+      {
+        "authorizationId": "eval-request-2",
+        "model": "gpt-5.6-terra",
+        "inputTokens": 727,
+        "outputTokens": 87,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "latencyMs": 1517,
+        "retries": 0,
+        "advisorOffered": false,
+        "advisorUsed": false,
+        "advisorUnavailable": false,
+        "iterations": [
+          {
+            "type": "message",
+            "model": "gpt-5.6-terra",
+            "inputTokens": 727,
+            "outputTokens": 87,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "costUsd": 0.0031225
+          }
+        ],
+        "phase": "classification",
+        "costUsd": 0.0031225
+      },
+      {
+        "authorizationId": "eval-request-3",
+        "model": "gpt-5.6-terra",
+        "inputTokens": 2402,
+        "outputTokens": 923,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "latencyMs": 8882,
+        "retries": 0,
+        "advisorOffered": false,
+        "advisorUsed": false,
+        "advisorUnavailable": false,
+        "iterations": [
+          {
+            "type": "message",
+            "model": "gpt-5.6-terra",
+            "inputTokens": 2402,
+            "outputTokens": 923,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "costUsd": 0.01985
+          }
+        ],
+        "phase": "planning",
+        "costUsd": 0.01985
+      },
+      {
+        "authorizationId": "eval-request-4",
+        "model": "gpt-5.6-terra",
+        "inputTokens": 3514,
+        "outputTokens": 686,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "latencyMs": 6573,
+        "retries": 0,
+        "advisorOffered": false,
+        "advisorUsed": false,
+        "advisorUnavailable": false,
+        "iterations": [
+          {
+            "type": "message",
+            "model": "gpt-5.6-terra",
+            "inputTokens": 3514,
+            "outputTokens": 686,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "costUsd": 0.019075
+          }
+        ],
+        "phase": "generation-and-repair",
+        "costUsd": 0.019075
+      }
+    ],
+    "callCount": 4,
+    "totalInputTokens": 7370,
+    "totalOutputTokens": 1881,
+    "totalCacheReadInputTokens": 0,
+    "totalCacheCreationInputTokens": 0,
+    "totalLatencyMs": 21132,
+    "totalRetries": 0,
+    "totalCostUsd": 0.0438845,
+    "observedCostUsd": 0.0438845,
+    "outstandingReservedCostUsd": 0,
+    "committedCostUsd": 0.0438845,
+    "reservations": [
+      {
+        "id": "eval-request-1",
+        "estimatedMaxCostUsd": 0.296036,
+        "status": "settled",
+        "observedCostUsd": 0.001837
+      },
+      {
+        "id": "eval-request-2",
+        "estimatedMaxCostUsd": 0.74009,
+        "status": "settled",
+        "observedCostUsd": 0.0031225
+      },
+      {
+        "id": "eval-request-3",
+        "estimatedMaxCostUsd": 0.74661,
+        "status": "settled",
+        "observedCostUsd": 0.01985
+      },
+      {
+        "id": "eval-request-4",
+        "estimatedMaxCostUsd": 0.7512625,
+        "status": "settled",
+        "observedCostUsd": 0.019075
+      }
+    ]
+  },
+  "scopeViolations": [],
+  "routes": {
+    "classification": {
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "high"
+    },
+    "planning": {
+      "model": "gpt-5.6-terra",
+      "reasoningEffort": "high"
+    },
+    "generation": {
+      "model": "gpt-5.6-terra",
+      "reasoningEffort": "high"
+    }
+  },
+  "classificationPasses": [
+    {
+      "route": {
+        "model": "gpt-5.6-luna",
+        "reasoningEffort": "high"
+      },
+      "classifiedFeedback": {
+        "id": "post-routing-simple-watch-label",
+        "repoFullName": "mosaic-eval/post-routing-reliability",
+        "receivedAt": "2026-07-15T06:14:57.227Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "The star button watches the incident, but my screen reader only calls it 'button'. Give that existing control the spoken name 'Watch incident' without changing what happens when I press it.",
+        "senderIdentifier": "post-routing-eval@example.com",
+        "category": "ui_tweak",
+        "complexity": "simple",
+        "summary": "Add the accessible name “Watch incident” to the existing star button without changing its behavior.",
+        "relevantFiles": [
+          "dashboard.js",
+          "index.html"
+        ],
+        "confidence": 0.95,
+        "routingSignals": {
+          "scope": "localized",
+          "literalCorrection": false,
+          "runtimeBehavior": false,
+          "persistentData": false,
+          "securitySensitive": false,
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "route": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "high"
+      },
+      "classifiedFeedback": {
+        "id": "post-routing-simple-watch-label",
+        "repoFullName": "mosaic-eval/post-routing-reliability",
+        "receivedAt": "2026-07-15T06:14:57.227Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "The star button watches the incident, but my screen reader only calls it 'button'. Give that existing control the spoken name 'Watch incident' without changing what happens when I press it.",
+        "senderIdentifier": "post-routing-eval@example.com",
+        "category": "ui_tweak",
+        "complexity": "simple",
+        "summary": "Add the accessible spoken name \"Watch incident\" to the existing star button without changing its behavior.",
+        "relevantFiles": [
+          "index.html",
+          "dashboard.js"
+        ],
+        "confidence": 0.98,
+        "routingSignals": {
+          "scope": "localized",
+          "literalCorrection": false,
+          "runtimeBehavior": false,
+          "persistentData": false,
+          "securitySensitive": false,
+          "requiresHumanReview": false
+        }
+      }
+    }
+  ],
+  "safetyAssessment": {
+    "accepted": true,
+    "reasons": []
+  },
+  "routePassed": true,
+  "rawSolutionPassed": false,
+  "finalSolutionPassed": false,
+  "repairAssistedPassed": false,
+  "rawFailureSurface": "hidden-oracle",
+  "repairAttempts": {
+    "modelAttempts": 0,
+    "deterministicAttempts": 0,
+    "totalAttempts": 0,
+    "stages": []
+  }
+}

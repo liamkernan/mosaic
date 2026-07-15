@@ -1,0 +1,26 @@
+[
+  {
+    "path": "index.html",
+    "reason": "Add the accessible spoken name to the existing #watchIncident star button without changing its markup-dependent behavior."
+  },
+  {
+    "path": "dashboard.js",
+    "reason": "Classifier ranked this file as #2 relevant"
+  },
+  {
+    "path": "README.md",
+    "reason": "Repository documentation reference for conventions and requirements"
+  },
+  {
+    "path": "tests/__init__.py",
+    "reason": "Repository test reference for expected behavior and coverage pattern"
+  },
+  {
+    "path": "tests/baseline/test_fixture_baseline.py",
+    "reason": "Repository test reference for expected behavior and coverage pattern"
+  },
+  {
+    "path": "tests/frontend_harness.py",
+    "reason": "Repository test reference for expected behavior and coverage pattern"
+  }
+]

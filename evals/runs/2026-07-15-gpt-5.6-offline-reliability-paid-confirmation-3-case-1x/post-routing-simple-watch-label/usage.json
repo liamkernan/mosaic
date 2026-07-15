@@ -1,0 +1,145 @@
+{
+  "calls": [
+    {
+      "authorizationId": "eval-request-1",
+      "model": "gpt-5.6-luna",
+      "inputTokens": 727,
+      "outputTokens": 185,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 4160,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-luna",
+          "inputTokens": 727,
+          "outputTokens": 185,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.001837
+        }
+      ],
+      "phase": "classification",
+      "costUsd": 0.001837
+    },
+    {
+      "authorizationId": "eval-request-2",
+      "model": "gpt-5.6-terra",
+      "inputTokens": 727,
+      "outputTokens": 87,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 1517,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-terra",
+          "inputTokens": 727,
+          "outputTokens": 87,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.0031225
+        }
+      ],
+      "phase": "classification",
+      "costUsd": 0.0031225
+    },
+    {
+      "authorizationId": "eval-request-3",
+      "model": "gpt-5.6-terra",
+      "inputTokens": 2402,
+      "outputTokens": 923,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 8882,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-terra",
+          "inputTokens": 2402,
+          "outputTokens": 923,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.01985
+        }
+      ],
+      "phase": "planning",
+      "costUsd": 0.01985
+    },
+    {
+      "authorizationId": "eval-request-4",
+      "model": "gpt-5.6-terra",
+      "inputTokens": 3514,
+      "outputTokens": 686,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 6573,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-terra",
+          "inputTokens": 3514,
+          "outputTokens": 686,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.019075
+        }
+      ],
+      "phase": "generation-and-repair",
+      "costUsd": 0.019075
+    }
+  ],
+  "callCount": 4,
+  "totalInputTokens": 7370,
+  "totalOutputTokens": 1881,
+  "totalCacheReadInputTokens": 0,
+  "totalCacheCreationInputTokens": 0,
+  "totalLatencyMs": 21132,
+  "totalRetries": 0,
+  "totalCostUsd": 0.0438845,
+  "observedCostUsd": 0.0438845,
+  "outstandingReservedCostUsd": 0,
+  "committedCostUsd": 0.0438845,
+  "reservations": [
+    {
+      "id": "eval-request-1",
+      "estimatedMaxCostUsd": 0.296036,
+      "status": "settled",
+      "observedCostUsd": 0.001837
+    },
+    {
+      "id": "eval-request-2",
+      "estimatedMaxCostUsd": 0.74009,
+      "status": "settled",
+      "observedCostUsd": 0.0031225
+    },
+    {
+      "id": "eval-request-3",
+      "estimatedMaxCostUsd": 0.74661,
+      "status": "settled",
+      "observedCostUsd": 0.01985
+    },
+    {
+      "id": "eval-request-4",
+      "estimatedMaxCostUsd": 0.7512625,
+      "status": "settled",
+      "observedCostUsd": 0.019075
+    }
+  ]
+}

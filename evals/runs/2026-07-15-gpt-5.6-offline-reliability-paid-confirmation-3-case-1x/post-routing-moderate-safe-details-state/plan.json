@@ -1,0 +1,36 @@
+{
+  "requiredFiles": [
+    {
+      "path": "dashboard.js",
+      "reason": "Update the shared response-details open/close state function so it synchronizes the existing details toggle button's aria-expanded value with the panel visibility for both toggle-open and close-button actions, without changing watch behavior."
+    },
+    {
+      "path": "tests/generated/test_response_details_accessibility.py",
+      "reason": "Add an independently runnable unittest regression using tests.frontend_harness.run_dashboard to verify response-details visibility and aria-expanded state after opening and closing."
+    }
+  ],
+  "acceptanceCriteria": [
+    "When response details are opened, the details panel is visible and the existing #detailsToggle button reports aria-expanded=\"true\".",
+    "When response details are closed through #detailsClose, the details panel is hidden and #detailsToggle reports aria-expanded=\"false\".",
+    "The details toggle continues to derive opening behavior from the panel's current hidden state.",
+    "Existing watch behavior is preserved: clicking #watchIncident changes its watching dataset value to \"true\" and sets #watchStatus to \"Watching incident\".",
+    "A frontend regression test is added under tests/generated/ and uses tests.frontend_harness.run_dashboard."
+  ],
+  "implementationChecklist": [
+    "Modify setDetailsOpen(open) to set both #detailsPanel.hidden to !open and #detailsToggle aria-expanded to String(open).",
+    "Keep both the #detailsToggle and #detailsClose click handlers routed through setDetailsOpen so both interaction paths update accessibility state.",
+    "Do not alter the watch button listener or its dataset/status text behavior.",
+    "Add a unittest that separately verifies the opened state after [\"#detailsToggle\"] and the closed state after [\"#detailsToggle\", \"#detailsClose\"], asserting both detailsHidden and detailsExpanded harness fields.",
+    "Do not modify tests/baseline/ or tests/oracle/."
+  ],
+  "verificationChecklist": [
+    "Harness execution with [\"#detailsToggle\"] returns detailsHidden as false and detailsExpanded as \"true\".",
+    "Harness execution with [\"#detailsToggle\", \"#detailsClose\"] returns detailsHidden as true and detailsExpanded as \"false\".",
+    "Existing baseline watch test still returns watching as \"true\" and watchStatus as \"Watching incident\" after a watch-button click.",
+    "The generated regression test runs through the existing Node-backed frontend harness without browser or network dependencies."
+  ],
+  "verificationCommands": [
+    "python3 -m unittest tests.baseline.test_fixture_baseline",
+    "python3 -m unittest discover -s tests/generated -p 'test_*.py'"
+  ]
+}
