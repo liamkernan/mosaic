@@ -316,13 +316,21 @@ describe("local fix evaluation harness", () => {
     expect(partitionVerificationCommands(
       [
         "python3 -m pytest tests/generated/test_panel.py",
-        "python3 -m pytest tests/baseline tests/oracle/test_panel.py"
+        "python3 -m pytest tests/baseline tests/oracle/test_panel.py",
+        "python3 -m unittest tests.oracle.test_panel.PanelOracleTest.test_open",
+        "python3 -m unittest tests.generated.test_panel"
       ],
       [],
       ["tests/baseline/", "tests/oracle/"]
     )).toEqual({
-      visible: ["python3 -m pytest tests/generated/test_panel.py"],
-      oracles: ["python3 -m pytest tests/baseline tests/oracle/test_panel.py"]
+      visible: [
+        "python3 -m pytest tests/generated/test_panel.py",
+        "python3 -m unittest tests.generated.test_panel"
+      ],
+      oracles: [
+        "python3 -m pytest tests/baseline tests/oracle/test_panel.py",
+        "python3 -m unittest tests.oracle.test_panel.PanelOracleTest.test_open"
+      ]
     });
   });
 

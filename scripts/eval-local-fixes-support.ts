@@ -403,8 +403,14 @@ export function partitionVerificationCommands(
     ) ?? [];
     const targetsOracle = patterns.some((pattern) => {
       const normalizedPattern = pattern.replace(/\/$/, "");
+      const normalizedModule = normalizedPattern
+        .replace(/\.py$/, "")
+        .replaceAll("/", ".");
       return tokens.some((token) =>
-        token === normalizedPattern || token.startsWith(`${normalizedPattern}/`)
+        token === normalizedPattern ||
+        token.startsWith(`${normalizedPattern}/`) ||
+        token === normalizedModule ||
+        token.startsWith(`${normalizedModule}.`)
       );
     });
     (targetsOracle ? oracles : visible).push(command);
