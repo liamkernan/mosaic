@@ -175,6 +175,24 @@ export interface EvalRepairSummary {
   stages: string[];
 }
 
+export type RawSolutionFailureSurface = "validation" | "verification" | "deterministic-check" | "hidden-oracle";
+
+export function assessRawSolutionOutcome(errors: {
+  validation: string[];
+  verification: string[];
+  deterministicChecks: string[];
+  hiddenOracle: string[];
+}): { passed: boolean; failureSurface?: RawSolutionFailureSurface } {
+  const orderedSurfaces: Array<[RawSolutionFailureSurface, string[]]> = [
+    ["validation", errors.validation],
+    ["verification", errors.verification],
+    ["deterministic-check", errors.deterministicChecks],
+    ["hidden-oracle", errors.hiddenOracle]
+  ];
+  const failureSurface = orderedSurfaces.find(([, surfaceErrors]) => surfaceErrors.length > 0)?.[0];
+  return failureSurface ? { passed: false, failureSurface } : { passed: true };
+}
+
 export function pathMatchesAnyPattern(path: string, patterns: Array<string | string[]>): boolean {
   return patterns.some((pattern) => {
     const alternatives = Array.isArray(pattern) ? pattern : [pattern];

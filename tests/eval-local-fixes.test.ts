@@ -8,6 +8,7 @@ import {
   EvalBudget,
   EvalCaseExecutionError,
   DEFAULT_EVAL_CASE_TIMEOUT_MS,
+  assessRawSolutionOutcome,
   assertGeneratedPathsAllowed,
   buildChangedPythonTestCommand,
   calculateUsageCostUsd,
@@ -194,6 +195,60 @@ describe("local fix evaluation harness", () => {
     });
   });
 
+  it("records the first raw solution failure surface before repair", () => {
+    expect(assessRawSolutionOutcome({
+      validation: [],
+      verification: [],
+      deterministicChecks: [],
+      hiddenOracle: []
+    })).toEqual({ passed: true });
+    expect(assessRawSolutionOutcome({
+      validation: ["invalid syntax"],
+      verification: ["generated test failed"],
+      deterministicChecks: ["frontend failed"],
+      hiddenOracle: ["oracle failed"]
+    })).toEqual({ passed: false, failureSurface: "validation" });
+    expect(assessRawSolutionOutcome({
+      validation: [],
+      verification: ["generated test failed"],
+      deterministicChecks: ["frontend failed"],
+      hiddenOracle: []
+    })).toEqual({ passed: false, failureSurface: "verification" });
+    expect(assessRawSolutionOutcome({
+      validation: [],
+      verification: [],
+      deterministicChecks: ["frontend failed"],
+      hiddenOracle: []
+    })).toEqual({ passed: false, failureSurface: "deterministic-check" });
+    expect(assessRawSolutionOutcome({
+      validation: [],
+      verification: [],
+      deterministicChecks: [],
+      hiddenOracle: ["oracle failed"]
+    })).toEqual({ passed: false, failureSurface: "hidden-oracle" });
+  });
+
+  it("fails closed for frozen output reuse, route overrides, and unknown case ids", async () => {
+    const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
+
+    expect(source).toContain('arg === "--frozen-evaluation"');
+    expect(source).toContain("Output directory already exists");
+    expect(source).toContain("Unpinned OpenAI evaluation refuses --model");
+    expect(source).toContain("Unknown eval case id(s)");
+    expect(source).toContain("Frozen evaluation requires a clean tracked worktree and index");
+    expect(source).toContain('"run-metadata.json"');
+  });
+
+  it("persists explicit zero usage for deterministic unsafe cases", async () => {
+    const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
+    const unsafeStart = source.indexOf('if (evalCase.expectedSafetyOutcome === "rejected")');
+    const unsafeEnd = source.indexOf('if (evalCase.expectedSafetyOutcome === "accepted"', unsafeStart);
+    const unsafePath = source.slice(unsafeStart, unsafeEnd);
+
+    expect(unsafePath).toContain('"usage.json"');
+    expect(unsafePath).toContain("emptyEvalUsageSummary()");
+  });
+
   it("rejects oracle edits while allowing approved generated-test paths", () => {
     expect(() => assertGeneratedPathsAllowed(
       ["src/service.py", "tests/oracles/test_sla.py"],
@@ -280,7 +335,7 @@ describe("local fix evaluation harness", () => {
     expect(verification).toContain("inferChangedPythonTestRunner(changes, verificationCommands)");
     expect(verification).toContain("Generated test failed independently");
     expect(source).toContain('scope: "oracle"');
-    expect(source.indexOf('scope: "oracle"')).toBeGreaterThan(source.indexOf('stage: "check-repair-no-candidate"'));
+    expect(source.lastIndexOf('scope: "oracle"')).toBeGreaterThan(source.indexOf('stage: "check-repair-no-candidate"'));
   });
 
   it("reports model and deterministic repair attempts separately", () => {

@@ -1,7 +1,8 @@
-import { exec as execCallback, spawn } from "node:child_process";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { exec as execCallback, execFile as execFileCallback, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { access, cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { JSDOM, VirtualConsole } from "jsdom";
 
@@ -43,6 +44,7 @@ import {
   EvalBudget,
   EvalCaseExecutionError,
   DEFAULT_EVAL_CASE_TIMEOUT_MS,
+  assessRawSolutionOutcome,
   assertGeneratedPathsAllowed,
   buildChangedPythonTestCommand,
   calculateUsageCostUsd,
@@ -70,11 +72,13 @@ import {
   type EvalRepairSummary,
   type FrontendRepairRequirement,
   type ModelPricing,
+  type RawSolutionFailureSurface,
   validateUnchangedSymbols,
   validateUnchangedSymbolsWithAllowedLines
 } from "./eval-local-fixes-support.js";
 
 const exec = promisify(execCallback);
+const execFile = promisify(execFileCallback);
 const ignoredNames = new Set(["node_modules", ".git", "dist", "build", "__pycache__", ".next", "vendor"]);
 const validationRecoveryAttempts = 3;
 const oversizedPatchPattern = /too large|exceeds limit|total new code added/i;
@@ -159,6 +163,11 @@ interface EvalResult {
   safetyAssessment?: AbuseAssessment;
   repairAttempts?: EvalRepairSummary;
   classificationPasses?: OpenAIClassificationPass[];
+  routePassed?: boolean;
+  rawSolutionPassed?: boolean;
+  finalSolutionPassed?: boolean;
+  repairAssistedPassed?: boolean;
+  rawFailureSurface?: RawSolutionFailureSurface;
 }
 
 interface EvalUsageCall extends Omit<LLMUsageObservation, "iterations"> {
@@ -169,11 +178,28 @@ interface EvalUsageCall extends Omit<LLMUsageObservation, "iterations"> {
 
 interface EvalUsageSummary {
   calls: EvalUsageCall[];
+  callCount: number;
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCacheReadInputTokens: number;
   totalCacheCreationInputTokens: number;
+  totalLatencyMs: number;
+  totalRetries: number;
   totalCostUsd: number;
+}
+
+function emptyEvalUsageSummary(): EvalUsageSummary {
+  return {
+    calls: [],
+    callCount: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCacheReadInputTokens: 0,
+    totalCacheCreationInputTokens: 0,
+    totalLatencyMs: 0,
+    totalRetries: 0,
+    totalCostUsd: 0
+  };
 }
 
 type PricingTable = Record<string, ModelPricing>;
@@ -188,11 +214,13 @@ function parseArgs(argv: string[]): {
   caseIds: string[];
   generate: boolean;
   classify: boolean;
+  frozenEvaluation: boolean;
   keep: boolean;
   repoRoot: string;
   casesPath: string;
   provider: LLMProvider;
   model: EvalModelKey;
+  modelOverrideProvided: boolean;
   caseTimeoutMs: number;
   outputDir: string;
   internalCase?: string;
@@ -209,11 +237,13 @@ function parseArgs(argv: string[]): {
     caseIds: [] as string[],
     generate: false,
     classify: false,
+    frozenEvaluation: false,
     keep: false,
     repoRoot: process.env.MOSAIC_EVAL_REPO_ROOT ?? resolve(process.env.HOME ?? ".", "Documents"),
     casesPath: "evals/local-fix-cases.json",
     provider: "anthropic" as LLMProvider,
     model: undefined as EvalModelKey | undefined,
+    modelOverrideProvided: false,
     caseTimeoutMs: Number(process.env.MOSAIC_EVAL_CASE_TIMEOUT_MS ?? DEFAULT_EVAL_CASE_TIMEOUT_MS),
     outputDir: resolve(process.env.MOSAIC_EVAL_OUTPUT_DIR ?? join("evals", "runs", runTimestamp)),
     internalCase: undefined as string | undefined,
@@ -232,6 +262,8 @@ function parseArgs(argv: string[]): {
       args.generate = true;
     } else if (arg === "--classify") {
       args.classify = true;
+    } else if (arg === "--frozen-evaluation") {
+      args.frozenEvaluation = true;
     } else if (arg === "--keep") {
       args.keep = true;
     } else if (arg === "--case") {
@@ -248,6 +280,7 @@ function parseArgs(argv: string[]): {
       args.provider = provider;
     } else if (arg === "--model") {
       args.model = argv[++index] as EvalModelKey;
+      args.modelOverrideProvided = true;
     } else if (arg === "--case-timeout-ms") {
       args.caseTimeoutMs = Number(argv[++index]);
       if (!Number.isFinite(args.caseTimeoutMs) || args.caseTimeoutMs <= 0) {
@@ -414,19 +447,15 @@ async function createEvalTelemetry(
 
   const snapshot = (): EvalUsageSummary => calls.reduce<EvalUsageSummary>((summary, call) => ({
     calls,
+    callCount: summary.callCount + 1,
     totalInputTokens: summary.totalInputTokens + call.iterations.reduce((total, iteration) => total + iteration.inputTokens, 0),
     totalOutputTokens: summary.totalOutputTokens + call.iterations.reduce((total, iteration) => total + iteration.outputTokens, 0),
     totalCacheReadInputTokens: summary.totalCacheReadInputTokens + call.iterations.reduce((total, iteration) => total + iteration.cacheReadInputTokens, 0),
     totalCacheCreationInputTokens: summary.totalCacheCreationInputTokens + call.iterations.reduce((total, iteration) => total + iteration.cacheCreationInputTokens, 0),
+    totalLatencyMs: summary.totalLatencyMs + call.latencyMs,
+    totalRetries: summary.totalRetries + call.retries,
     totalCostUsd: summary.totalCostUsd + call.costUsd
-  }), {
-    calls,
-    totalInputTokens: 0,
-    totalOutputTokens: 0,
-    totalCacheReadInputTokens: 0,
-    totalCacheCreationInputTokens: 0,
-    totalCostUsd: 0
-  });
+  }), emptyEvalUsageSummary());
 
   return {
     authorize: (request) => {
@@ -1046,6 +1075,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   if (evalCase.expectedSafetyOutcome === "rejected") {
     await mkdir(artifactPath, { recursive: true });
     await writeFile(join(artifactPath, "safety.json"), `${JSON.stringify(safetyAssessment, null, 2)}\n`, "utf8");
+    await writeFile(join(artifactPath, "usage.json"), `${JSON.stringify(emptyEvalUsageSummary(), null, 2)}\n`, "utf8");
     const passed = !safetyAssessment.accepted;
     return {
       id: runId,
@@ -1059,6 +1089,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
       changedFiles: [],
       errors: passed ? [] : ["Unsafe benchmark feedback was unexpectedly accepted"],
       artifactPath,
+      usage: emptyEvalUsageSummary(),
       scopeViolations: [],
       safetyAssessment,
       repairAttempts: { modelAttempts: 0, deterministicAttempts: 0, totalAttempts: 0, stages: [] }
@@ -1169,6 +1200,8 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
 
   let changes: GeneratedChange[] = [];
   let generated = false;
+  let rawSolutionPassed: boolean | undefined;
+  let rawFailureSurface: EvalResult["rawFailureSurface"];
   const errors: string[] = [...routingErrors];
   let implementationPlan: ImplementationPlan | undefined;
   const validationHistory: Array<{ stage: string; errors: string[] }> = [];
@@ -1244,6 +1277,35 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     repoContext.fileTree = await buildFileTree(repoPath);
     let verificationErrors = await runVerification(evalCase, repoPath, changes);
     verificationHistory.push({ stage: "initial", errors: verificationErrors });
+    const initialValidationErrors = validationHistory.find(({ stage }) => stage === "initial")?.errors ?? [];
+    let rawCheckErrors: string[] = [];
+    let rawHiddenOracleErrors: string[] = [];
+    if (initialValidationErrors.length === 0 && verificationErrors.length === 0) {
+      rawCheckErrors = await evaluateChecks(
+        evalCase,
+        repoPath,
+        referenceFiles.map((file) => file.path),
+        relevantFiles.map((file) => file.path),
+        changes,
+        generated
+      );
+      verificationHistory.push({ stage: "raw-deterministic-checks", errors: rawCheckErrors });
+      if (rawCheckErrors.length === 0) {
+        rawHiddenOracleErrors = await runVerification(evalCase, repoPath, changes, {
+          scope: "oracle",
+          runChangedTests: false
+        });
+        verificationHistory.push({ stage: "raw-hidden-oracle", errors: rawHiddenOracleErrors });
+      }
+    }
+    const rawOutcome = assessRawSolutionOutcome({
+      validation: initialValidationErrors,
+      verification: verificationErrors,
+      deterministicChecks: rawCheckErrors,
+      hiddenOracle: rawHiddenOracleErrors
+    });
+    rawSolutionPassed = rawOutcome.passed;
+    rawFailureSurface = rawOutcome.failureSurface;
     await persistArtifacts();
     if (verificationErrors.length > 0) {
       const completedChanges = applyVerificationFallbacks(changes, verificationErrors);
@@ -1489,11 +1551,13 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   await persistArtifacts();
 
   const usage = telemetry?.snapshot();
+  const routePassed = routingErrors.length === 0;
+  const finalSolutionPassed = errors.length === routingErrors.length;
   return {
     id: runId,
     caseId: evalCase.id,
     trial: options.trial,
-    passed: errors.length === 0,
+    passed: routePassed && finalSolutionPassed,
     tempPath: repoPath,
     generated,
     references: referenceFiles.map((file) => file.path),
@@ -1506,6 +1570,11 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     routes,
     classificationPasses,
     safetyAssessment,
+    routePassed,
+    rawSolutionPassed,
+    finalSolutionPassed,
+    repairAssistedPassed: rawSolutionPassed === false && finalSolutionPassed,
+    rawFailureSurface,
     repairAttempts: summarizeRepairAttempts(
       usage?.calls ?? [],
       validationHistory.map(({ stage }) => stage),
@@ -1759,6 +1828,7 @@ function childArguments(
     ...(options.pricingPath ? ["--pricing", options.pricingPath] : []),
     ...(options.generate ? ["--generate"] : []),
     ...(options.classify ? ["--classify"] : []),
+    ...(options.frozenEvaluation ? ["--frozen-evaluation"] : []),
     ...(options.keep ? ["--keep"] : [])
   ];
 }
@@ -1867,6 +1937,9 @@ function failedResult(evalCase: EvalCase, options: ReturnType<typeof parseArgs>,
     changedFiles: [],
     errors: [error instanceof Error ? error.message : String(error)],
     artifactPath: join(options.outputDir, runId),
+    rawSolutionPassed: false,
+    finalSolutionPassed: false,
+    repairAssistedPassed: false,
     scopeViolations: [],
     repairAttempts: { modelAttempts: 0, deterministicAttempts: 0, totalAttempts: 0, stages: [] }
   };
@@ -1900,6 +1973,106 @@ async function runInternalCase(
   await writeFile(options.resultPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
 }
 
+async function ensureNewOutputDir(outputDir: string): Promise<void> {
+  try {
+    await access(outputDir);
+    throw new Error(`Output directory already exists: ${outputDir}`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+  await mkdir(outputDir, { recursive: true });
+}
+
+async function gitRevision(): Promise<string> {
+  const { stdout } = await execFile("git", ["rev-parse", "HEAD"], { cwd: process.cwd() });
+  return stdout.trim();
+}
+
+async function assertTrackedWorktreeClean(): Promise<void> {
+  try {
+    await execFile("git", ["diff", "--quiet"], { cwd: process.cwd() });
+    await execFile("git", ["diff", "--cached", "--quiet"], { cwd: process.cwd() });
+  } catch {
+    throw new Error("Frozen evaluation requires a clean tracked worktree and index");
+  }
+}
+
+async function assertPathTracked(path: string): Promise<void> {
+  const repoRelativePath = relative(process.cwd(), resolve(path));
+  const { stdout } = await execFile("git", ["ls-files", "--", repoRelativePath], { cwd: process.cwd() });
+  if (stdout.trim().length === 0) {
+    throw new Error(`Evaluation input must be tracked before execution: ${repoRelativePath}`);
+  }
+}
+
+async function sha256File(path: string): Promise<string> {
+  return createHash("sha256").update(await readFile(path)).digest("hex");
+}
+
+async function sha256Path(path: string): Promise<string> {
+  const root = resolve(path);
+  const hash = createHash("sha256");
+  const visit = async (currentPath: string): Promise<void> => {
+    const currentStat = await stat(currentPath);
+    const pathLabel = relative(root, currentPath) || ".";
+    hash.update(`${currentStat.isDirectory() ? "dir" : "file"}\0${pathLabel}\0`);
+    if (currentStat.isDirectory()) {
+      const entries = (await readdir(currentPath)).sort();
+      for (const entry of entries) {
+        await visit(join(currentPath, entry));
+      }
+    } else {
+      hash.update(await readFile(currentPath));
+    }
+  };
+  await visit(root);
+  return hash.digest("hex");
+}
+
+async function writeRunMetadata(
+  options: ReturnType<typeof parseArgs>,
+  selectedCases: EvalCase[],
+  startedAt: number
+): Promise<void> {
+  const env = getEnv();
+  const fixturePaths = [...new Set(selectedCases
+    .map((evalCase) => evalCase.fixturePath)
+    .filter((path): path is string => Boolean(path)))];
+  const trackedInputs = [options.casesPath, ...(options.pricingPath ? [options.pricingPath] : []), ...fixturePaths];
+  if (options.frozenEvaluation) {
+    await Promise.all(trackedInputs.map(assertPathTracked));
+  }
+  const fixtureHashes = Object.fromEntries(await Promise.all(fixturePaths.map(async (path) => [
+    path,
+    await sha256Path(path)
+  ])));
+  await writeFile(join(options.outputDir, "run-metadata.json"), `${JSON.stringify({
+    codeCommit: await gitRevision(),
+    casesPath: options.casesPath,
+    casesSha256: await sha256File(options.casesPath),
+    fixtureHashes,
+    pricingPath: options.pricingPath ?? null,
+    pricingSha256: options.pricingPath ? await sha256File(options.pricingPath) : null,
+    selectedCaseIds: selectedCases.map((evalCase) => evalCase.id),
+    frozenEvaluation: options.frozenEvaluation,
+    trials: options.trials,
+    provider: options.provider,
+    preset: options.preset,
+    maxCostUsd: options.maxCostUsd ?? null,
+    caseTimeoutMs: options.caseTimeoutMs,
+    command: process.argv,
+    routeOverrides: {
+      model: options.modelOverrideProvided ? options.model : env.MOSAIC_OPENAI_MODEL ?? null,
+      reasoningEffort: env.MOSAIC_OPENAI_REASONING_EFFORT ?? null
+    },
+    openAIMinOutputTokens: env.MOSAIC_OPENAI_MIN_OUTPUT_TOKENS ?? null,
+    openAIMinTimeoutMs: env.MOSAIC_OPENAI_MIN_TIMEOUT_MS ?? null,
+    startedAt
+  }, null, 2)}\n`, "utf8");
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   if ((options.generate || options.classify) && (options.maxCostUsd === undefined || !options.pricingPath)) {
@@ -1915,6 +2088,25 @@ async function main(): Promise<void> {
     return;
   }
 
+  const env = getEnv();
+  const unpinnedOpenAIEvaluation = options.provider === "openai" &&
+    options.preset === "quality" &&
+    (options.generate || options.classify);
+  if (options.frozenEvaluation && unpinnedOpenAIEvaluation && (
+    options.modelOverrideProvided ||
+    env.MOSAIC_OPENAI_MODEL ||
+    env.MOSAIC_OPENAI_REASONING_EFFORT
+  )) {
+    throw new Error(
+      "Unpinned OpenAI evaluation refuses --model, MOSAIC_OPENAI_MODEL, or MOSAIC_OPENAI_REASONING_EFFORT overrides"
+    );
+  }
+
+  const unknownCaseIds = options.caseIds.filter((id) => !cases.some((evalCase) => evalCase.id === id));
+  if (unknownCaseIds.length > 0) {
+    throw new Error(`Unknown eval case id(s): ${unknownCaseIds.join(", ")}`);
+  }
+
   const selectedCases = options.caseIds.length > 0
     ? cases.filter((evalCase) => options.caseIds.includes(evalCase.id))
     : cases;
@@ -1923,13 +2115,19 @@ async function main(): Promise<void> {
     throw new Error("No eval cases selected");
   }
 
+  if (options.frozenEvaluation) {
+    await assertTrackedWorktreeClean();
+  }
+  await ensureNewOutputDir(options.outputDir);
+  const startedAt = Date.now();
+  await writeRunMetadata(options, selectedCases, startedAt);
+
   const caseById = new Map(selectedCases.map((evalCase) => [evalCase.id, evalCase]));
   const trialRuns = createEvalTrialRuns(selectedCases.map((evalCase) => evalCase.id), options.trials);
   const workItems = trialRuns.map((trialRun) => ({
     trialRun,
     evalCase: caseById.get(trialRun.caseId) as EvalCase
   }));
-  const startedAt = Date.now();
   let remainingBudgetUsd = options.maxCostUsd;
   const batchResults = await runEvalCaseBatch(workItems, {
     timeoutMs: options.caseTimeoutMs,
