@@ -664,6 +664,180 @@ describe("validatePlanCompletion", () => {
     expect(errors.some((error) => /backing server|full-stack UI/.test(error))).toBe(false);
   });
 
+  it("accepts the retained HTML plus generated-test plan without inventing backend work", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "index.html",
+          originalContent: '<button id="watchIncident">★</button>\n',
+          modifiedContent: '<button id="watchIncident" aria-label="Watch incident">★</button>\n',
+          explanation: "give the existing watch control an accessible name"
+        },
+        {
+          filePath: "tests/generated/test_watch_button_accessibility.py",
+          originalContent: "",
+          modifiedContent: "import unittest\n\nclass WatchButtonTest(unittest.TestCase):\n    pass\n",
+          explanation: "cover the visible accessibility contract and existing toggle behavior"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "index.html", reason: "Add the accessible name while preserving the current star label and behavior." },
+          {
+            path: "tests/generated/test_watch_button_accessibility.py",
+            reason: "Add an independent generated regression test confirming the exact accessible name and existing watch-toggle behavior."
+          }
+        ],
+        acceptanceCriteria: [
+          'The existing star/watch button is given the spoken accessible name "Watch incident".',
+          'Pressing the watch button continues to toggle data-watching from "false" to "true" and updates the live status.'
+        ],
+        implementationChecklist: [
+          "Add the accessible name to #watchIncident.",
+          "Do not change the button id, type, star content, data-watching initialization, click handler, or watch-status update behavior.",
+          "Create a generated unittest that verifies the existing button and watch behavior."
+        ],
+        verificationChecklist: [
+          "Inspect the rendered watch control with a screen reader and confirm the name.",
+          "Run the baseline suite to confirm existing fixture behavior remains unchanged."
+        ]
+      },
+      "The star button watches the incident, but my screen reader only calls it 'button'. Give that existing control the spoken name 'Watch incident' without changing what happens when I press it."
+    );
+
+    expect(errors).toEqual([]);
+  });
+
+  it("accepts the retained dashboard JavaScript plus generated-test plan as client-only work", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "dashboard.js",
+          originalContent: "function setDetailsOpen(open) { detailsPanel.hidden = !open; }\n",
+          modifiedContent: "function setDetailsOpen(open) { detailsPanel.hidden = !open; detailsToggle.setAttribute('aria-expanded', String(open)); }\n",
+          explanation: "synchronize the visible and accessible details state"
+        },
+        {
+          filePath: "tests/generated/test_response_details_accessibility.py",
+          originalContent: "",
+          modifiedContent: "import unittest\n\nclass DetailsStateTest(unittest.TestCase):\n    pass\n",
+          explanation: "cover the visible details-state contract"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "dashboard.js", reason: "Update the shared response-details state setter for both open and close actions." },
+          {
+            path: "tests/generated/test_response_details_accessibility.py",
+            reason: "Add an independently runnable unittest regression through the existing frontend fixture."
+          }
+        ],
+        acceptanceCriteria: [
+          "Opening response details makes the panel visible and sets aria-expanded to true.",
+          "Closing response details hides the panel and sets aria-expanded to false."
+        ],
+        implementationChecklist: [
+          "Extend setDetailsOpen(open) to synchronize the panel and toggle.",
+          "Create a generated unittest using the fixture rather than a browser, server, or external network call."
+        ],
+        verificationChecklist: [
+          "Run the generated frontend regression by itself.",
+          "Run the immutable baseline suite."
+        ]
+      },
+      "The response-details panel opens and closes visually, but assistive technology always hears that its button is collapsed. Keep the existing button's expanded state synchronized for both opening and closing, preserve the watch behavior, and add an independently runnable regression test using the fixture's existing unittest frontend harness."
+    );
+
+    expect(errors).toEqual([]);
+  });
+
+  it("does not let a generated test stand in for a missing frontend production surface", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "src/settings-service.ts",
+          originalContent: "export function saveSettings() {}\n",
+          modifiedContent: "export function saveSettings(value: string) { return repository.save(value); }\n",
+          explanation: "persist submitted settings"
+        },
+        {
+          filePath: "tests/generated/settings-form.test.tsx",
+          originalContent: "",
+          modifiedContent: "it('submits settings through the UI', () => expect(true).toBe(true));\n",
+          explanation: "cover frontend submission and backend persistence"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "src/settings-service.ts", reason: "persist settings in the backing server service" },
+          { path: "tests/generated/settings-form.test.tsx", reason: "test the frontend form and backing service" }
+        ]
+      },
+      "Add a settings form that persists preferences through the server-side service."
+    );
+
+    expect(errors).toContain(
+      "Implementation plan requires runtime/source changes for a full-stack UI request, but it names no frontend view/interaction file"
+    );
+  });
+
+  it("does not let a vague request suppress an explicit full-stack acceptance contract", () => {
+    const errors = validatePlanCompletion(
+      [{
+        filePath: "src/settings-form.tsx",
+        originalContent: "export function SettingsForm() { return null; }\n",
+        modifiedContent: "export function SettingsForm() { return <button>Save</button>; }\n",
+        explanation: "add the save interaction"
+      }],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "src/settings-form.tsx", reason: "add the settings form UI and submit action" },
+          { path: "src/settings-service.ts", reason: "persist settings in the backing server service" }
+        ],
+        acceptanceCriteria: ["The settings form persists preferences through the server-side service."]
+      },
+      "Implement the approved settings experience."
+    );
+
+    expect(errors).toContain(
+      "Implementation plan requires runtime/source changes for the backing server/handler/service surface of this full-stack UI request: src/settings-service.ts"
+    );
+  });
+
+  it("does not count a generated JavaScript test as a required production JavaScript layer", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "index.html",
+          originalContent: "<main></main>\n",
+          modifiedContent: "<main><section id='settings'></section></main>\n",
+          explanation: "add the settings view"
+        },
+        {
+          filePath: "tests/generated/settings.test.js",
+          originalContent: "",
+          modifiedContent: "it('renders settings', () => expect(true).toBe(true));\n",
+          explanation: "cover settings rendering"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "index.html", reason: "add the settings view" },
+          { path: "tests/generated/settings.test.js", reason: "add generated regression coverage" }
+        ],
+        acceptanceCriteria: ["JavaScript must render the saved settings through DOM APIs."]
+      },
+      "Render the saved settings in the existing page with JavaScript."
+    );
+
+    expect(errors.join("\n")).toContain("[missing-frontend-layer:javascript]");
+  });
+
   it("does not combine unrelated UI and API requirements into a full-stack contract", () => {
     const errors = validatePlanCompletion(
       [{

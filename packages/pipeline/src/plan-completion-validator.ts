@@ -4,6 +4,7 @@ import type { ImplementationPlan } from "./implementation-planner.js";
 
 const behavioralKeywords = /\b(?:sort|order|ordering|rank|ranking|filter|tie-?breaker|fallback|dedupe|idempotent|permission|validation|api|endpoint|status|state)\b/i;
 const testPathPattern = /(?:^|\/)(?:test|tests|spec|specs|__tests__|reported)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/i;
+const testChangeIntentPattern = /\b(?:add|update|create|write|extend|modify)\b.{0,80}\b(?:tests?|coverage|unittest|pytest|jest|vitest|spec(?:ification)?\s+(?:file|test|coverage))\b/i;
 const documentationPathPattern = /(?:^|\/)(?:readme|changelog|docs?|documentation)(?:\/|\.|$)|\.(?:md|mdx|rst|txt)$/i;
 const sourcePathPattern = /\.(?:[cm]?[jt]sx?|tsx?|py|rb|go|rs|java|kt|php|cs|swift|vue|svelte)$/i;
 const staticAssetPathPattern = /\.(?:html?|css|[cm]?js)$/i;
@@ -120,6 +121,12 @@ function planText(plan: ImplementationPlan, sourceText = ""): string {
     ...plan.implementationChecklist,
     ...plan.verificationChecklist
   ].join("\n");
+}
+
+function requestedBehaviorText(plan: ImplementationPlan, sourceText: string): string {
+  return [sourceText.trim(), ...plan.acceptanceCriteria]
+    .filter((text) => text.length > 0)
+    .join("\n");
 }
 
 function changedTestFiles(changes: GeneratedChange[]): GeneratedChange[] {
@@ -490,14 +497,13 @@ function generatedTestListFieldErrors(changes: GeneratedChange[]): string[] {
 }
 
 function planRequiresBehavioralTests(plan: ImplementationPlan, text: string): boolean {
-  const testChangePattern = /\b(?:add|update|create|write|extend|modify)\b.{0,80}\b(?:tests?|coverage|unittest|pytest|jest|vitest|spec(?:ification)?\s+(?:file|test|coverage))\b/i;
   const checklistRequestsTestChanges = [
     ...plan.implementationChecklist,
     ...plan.verificationChecklist
-  ].some((item) => testChangePattern.test(item));
+  ].some((item) => testChangeIntentPattern.test(item));
   const requiredTestFileChange = plan.requiredFiles.some((file) =>
     (testPathPattern.test(file.path) || /\b(?:test|tests|spec|coverage)\b/i.test(file.reason)) &&
-    testChangePattern.test(file.reason)
+    testChangeIntentPattern.test(file.reason)
   );
 
   return behavioralKeywords.test(text) && (checklistRequestsTestChanges || requiredTestFileChange);
@@ -547,23 +553,27 @@ function fullStackSurfaceErrors(
 
 function missingRequiredFrontendLayerErrors(
   changes: GeneratedChange[],
-  plan: ImplementationPlan
+  plan: ImplementationPlan,
+  sourceText: string
 ): string[] {
+  const runtimeRequiredFiles = implementationRequiredFiles(plan).filter((file) =>
+    !testPathPattern.test(file.path) && !documentationPathPattern.test(file.path)
+  );
   const plannedPathsByLayer = new Map<FrontendLayer, string[]>();
   for (const layer of Object.keys(frontendLayerPatterns) as FrontendLayer[]) {
     const pattern = frontendLayerPatterns[layer];
     plannedPathsByLayer.set(
       layer,
-      implementationRequiredFiles(plan)
+      runtimeRequiredFiles
         .map((file) => normalizeRepoPath(file.path))
         .filter((path) => pattern.test(path))
     );
   }
 
   const planBehaviorText = [
-    ...implementationRequiredFiles(plan).map((file) => file.reason),
-    ...plan.acceptanceCriteria,
-    ...implementationActionChecklist(plan)
+    requestedBehaviorText(plan, sourceText),
+    ...runtimeRequiredFiles.map((file) => file.reason),
+    ...implementationActionChecklist(plan).filter((item) => !testChangeIntentPattern.test(item))
   ].join("\n");
   const requiresInferredJavaScript = /\b(?:javascript|dom api|read (?:the )?.{0,30}(?:url|query|slug)|render (?:the )?.{0,30}(?:record|data|matching)|event listener|keyboard behavior)\b/i.test(planBehaviorText);
   const requiredLayers = new Set<FrontendLayer>();
@@ -580,7 +590,7 @@ function missingRequiredFrontendLayerErrors(
     return [];
   }
 
-  const changedPaths = changes.map((change) => normalizeRepoPath(change.filePath));
+  const changedPaths = changedRuntimeFiles(changes).map((change) => normalizeRepoPath(change.filePath));
   const errors: string[] = [];
   for (const [layer, pattern] of Object.entries(frontendLayerPatterns) as Array<[FrontendLayer, RegExp]>) {
     if (requiredLayers.has(layer) && !changedPaths.some((path) => pattern.test(path))) {
@@ -735,8 +745,8 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
   const errors: string[] = [];
   errors.push(...generatedTestListFieldErrors(changes));
   errors.push(...validatePlannedChangeScope(changes, plan, sourceText));
-  errors.push(...missingRequiredFrontendLayerErrors(changes, plan));
-  errors.push(...fullStackSurfaceErrors(changes, plan, text));
+  errors.push(...missingRequiredFrontendLayerErrors(changes, plan, sourceText));
+  errors.push(...fullStackSurfaceErrors(changes, plan, requestedBehaviorText(plan, sourceText)));
 
   const { testChanges, runtimeChanges, runtimeChangeFacts } = collectCompletionChangeGroups(changes);
   const requiredRuntimePaths = plannedRuntimePaths(plan);
