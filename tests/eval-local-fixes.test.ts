@@ -325,6 +325,13 @@ describe("local fix evaluation harness", () => {
     const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
 
     expect(source).toContain('arg === "--frozen-evaluation"');
+    expect(source).toContain('arg === "--frozen-openai-min-output-tokens"');
+    expect(source).toContain('arg === "--frozen-openai-min-timeout-ms"');
+    expect(source).toContain("effectiveEvalOpenAIConfiguration(options)");
+    expect(source).toContain("getConfigEnvironmentSource(\"MOSAIC_OPENAI_MIN_TIMEOUT_MS\")");
+    expect(source).toContain("effectiveConfiguration");
+    expect(source).toContain("openAIConfiguration.minTimeoutMs.value ?? undefined");
+    expect(source).not.toContain("openAIMinTimeoutMs: isOpenAI ? env.MOSAIC_OPENAI_MIN_TIMEOUT_MS");
     expect(source).toContain("Output directory already exists");
     expect(source).toContain("Unpinned OpenAI evaluation refuses --model");
     expect(source).toContain("Unknown eval case id(s)");

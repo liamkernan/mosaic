@@ -11,7 +11,22 @@ import type { ComplexityLevel, FeedbackCategory, FeedbackSource, LLMModelPreset,
 const packageDir = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = resolve(packageDir, "../../..");
 
-dotenv.config({ path: resolve(workspaceRoot, ".env") });
+const explicitProcessEnvironmentKeys = new Set(Object.keys(process.env));
+const dotenvResult = dotenv.config({ path: resolve(workspaceRoot, ".env") });
+const dotenvDefaultKeys = new Set(Object.keys(dotenvResult.parsed ?? {})
+  .filter((key) => !explicitProcessEnvironmentKeys.has(key)));
+
+export type ConfigEnvironmentSource = "process-environment" | "dotenv-default" | "unset";
+
+export function getConfigEnvironmentSource(key: string): ConfigEnvironmentSource {
+  if (explicitProcessEnvironmentKeys.has(key)) {
+    return "process-environment";
+  }
+  if (dotenvDefaultKeys.has(key)) {
+    return "dotenv-default";
+  }
+  return "unset";
+}
 
 function optionalNonEmptyString() {
   return z.preprocess(

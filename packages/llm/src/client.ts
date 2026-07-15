@@ -19,8 +19,10 @@ export const OPENAI_MODEL_IDS = {
   luna: "gpt-5.6-luna"
 } as const;
 
-const OPENAI_SOL_HIGH_TIMEOUT_FLOOR_MS = 300_000;
-const OPENAI_SOL_XHIGH_TIMEOUT_FLOOR_MS = 480_000;
+export const OPENAI_AUTOMATIC_TIMEOUT_FLOORS_MS = {
+  [`${OPENAI_MODEL_IDS.sol}/high`]: 300_000,
+  [`${OPENAI_MODEL_IDS.sol}/xhigh`]: 480_000
+} as const;
 
 export type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -324,12 +326,10 @@ export function resolveOpenAIRequestTimeoutMs(
   requestTimeoutMs: number | undefined,
   configuredMinTimeoutMs: number | undefined
 ): number | undefined {
-  const routeFloorMs = model === OPENAI_MODEL_IDS.sol
-    ? reasoningEffort === "xhigh"
-      ? OPENAI_SOL_XHIGH_TIMEOUT_FLOOR_MS
-      : reasoningEffort === "high"
-        ? OPENAI_SOL_HIGH_TIMEOUT_FLOOR_MS
-        : undefined
+  const routeFloorMs = reasoningEffort
+    ? OPENAI_AUTOMATIC_TIMEOUT_FLOORS_MS[
+        `${model}/${reasoningEffort}` as keyof typeof OPENAI_AUTOMATIC_TIMEOUT_FLOORS_MS
+      ]
     : undefined;
   const candidates = [requestTimeoutMs, configuredMinTimeoutMs, routeFloorMs]
     .filter((value): value is number => value !== undefined);

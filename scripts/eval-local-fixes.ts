@@ -25,7 +25,7 @@ import { assessRepairProgress, findUnplannedAddedFiles } from "../packages/pipel
 import { RepoIndexer } from "../packages/pipeline/src/repo-indexer.js";
 import { validate } from "../packages/pipeline/src/validator.js";
 import { applyValidationFallbacks, applyVerificationFallbacks } from "../packages/pipeline/src/validation-repair.js";
-import { getEnv } from "../packages/core/src/config.js";
+import { getConfigEnvironmentSource, getEnv } from "../packages/core/src/config.js";
 import { LLMError } from "../packages/core/src/errors.js";
 import type { ClassifiedFeedback, ComplexityLevel, FeedbackCategory, FeedbackSource, FileNode, GeneratedChange, LLMProvider, RepoContext } from "../packages/core/src/types.js";
 import { assessFeedbackContent, type AbuseAssessment } from "../packages/intake/src/abuse-protection.js";
@@ -48,6 +48,10 @@ import {
   type EvalModelKey,
   type ExpectedOpenAIRoute
 } from "./eval-llm-routing.js";
+import {
+  resolveEvalOpenAIConfiguration,
+  type ResolvedEvalOpenAIConfiguration
+} from "./eval-configuration.js";
 import {
   EvalBudget,
   EvalCaseExecutionError,
@@ -262,6 +266,8 @@ function parseArgs(argv: string[]): {
   generate: boolean;
   classify: boolean;
   frozenEvaluation: boolean;
+  frozenOpenAIMinOutputTokens?: number | null;
+  frozenOpenAIMinTimeoutMs?: number | null;
   keep: boolean;
   repoRoot: string;
   casesPath: string;
@@ -285,6 +291,8 @@ function parseArgs(argv: string[]): {
     generate: false,
     classify: false,
     frozenEvaluation: false,
+    frozenOpenAIMinOutputTokens: undefined as number | null | undefined,
+    frozenOpenAIMinTimeoutMs: undefined as number | null | undefined,
     keep: false,
     repoRoot: process.env.MOSAIC_EVAL_REPO_ROOT ?? resolve(process.env.HOME ?? ".", "Documents"),
     casesPath: "evals/local-fix-cases.json",
@@ -311,6 +319,20 @@ function parseArgs(argv: string[]): {
       args.classify = true;
     } else if (arg === "--frozen-evaluation") {
       args.frozenEvaluation = true;
+    } else if (arg === "--frozen-openai-min-output-tokens") {
+      const value = argv[++index];
+      args.frozenOpenAIMinOutputTokens = value === "disabled" ? null : Number(value);
+      if (args.frozenOpenAIMinOutputTokens !== null &&
+          (!Number.isSafeInteger(args.frozenOpenAIMinOutputTokens) || args.frozenOpenAIMinOutputTokens <= 0)) {
+        throw new Error("--frozen-openai-min-output-tokens must be a positive integer or disabled");
+      }
+    } else if (arg === "--frozen-openai-min-timeout-ms") {
+      const value = argv[++index];
+      args.frozenOpenAIMinTimeoutMs = value === "automatic" ? null : Number(value);
+      if (args.frozenOpenAIMinTimeoutMs !== null &&
+          (!Number.isSafeInteger(args.frozenOpenAIMinTimeoutMs) || args.frozenOpenAIMinTimeoutMs <= 0)) {
+        throw new Error("--frozen-openai-min-timeout-ms must be a positive integer or automatic");
+      }
     } else if (arg === "--keep") {
       args.keep = true;
     } else if (arg === "--case") {
@@ -374,12 +396,38 @@ function parseArgs(argv: string[]): {
     }
   }
 
+  if (!args.frozenEvaluation && (
+    args.frozenOpenAIMinOutputTokens !== undefined ||
+    args.frozenOpenAIMinTimeoutMs !== undefined
+  )) {
+    throw new Error("Frozen OpenAI configuration requires --frozen-evaluation");
+  }
+
   const model = args.model ?? defaultEvalModelKey(args.provider);
   if (!isEvalModelKey(args.provider, model)) {
     throw new Error(`Unknown ${args.provider} model tier: ${model}`);
   }
 
   return { ...args, model };
+}
+
+function effectiveEvalOpenAIConfiguration(
+  options: ReturnType<typeof parseArgs>
+): ResolvedEvalOpenAIConfiguration {
+  const env = getEnv();
+  return resolveEvalOpenAIConfiguration({
+    frozenEvaluation: options.frozenEvaluation,
+    frozenProofMinOutputTokens: options.frozenOpenAIMinOutputTokens,
+    frozenProofMinTimeoutMs: options.frozenOpenAIMinTimeoutMs,
+    environmentMinOutputTokens: {
+      value: env.MOSAIC_OPENAI_MIN_OUTPUT_TOKENS,
+      source: getConfigEnvironmentSource("MOSAIC_OPENAI_MIN_OUTPUT_TOKENS")
+    },
+    environmentMinTimeoutMs: {
+      value: env.MOSAIC_OPENAI_MIN_TIMEOUT_MS,
+      source: getConfigEnvironmentSource("MOSAIC_OPENAI_MIN_TIMEOUT_MS")
+    }
+  });
 }
 
 function detectLanguage(filePath: string): string | undefined {
@@ -455,6 +503,7 @@ async function copyFixtureSource(sourcePath: string): Promise<string> {
 function createEvalLlmClient(
   provider: LLMProvider,
   route: EvalClientRoute,
+  openAIConfiguration: ResolvedEvalOpenAIConfiguration,
   telemetry?: EvalTelemetry,
   phase = "unspecified"
 ): LLMClient {
@@ -465,10 +514,14 @@ function createEvalLlmClient(
     mode: "platform",
     platformApiKey: isOpenAI ? env.AZURE_OPENAI_API_KEY ?? env.OPENAI_API_KEY : env.ANTHROPIC_API_KEY,
     openAIBaseURL: isOpenAI ? resolveOpenAIBaseURL(env.OPENAI_BASE_URL, env.AZURE_OPENAI_ENDPOINT) : undefined,
-    openAIMinOutputTokens: isOpenAI ? env.MOSAIC_OPENAI_MIN_OUTPUT_TOKENS : undefined,
-    openAIMinTimeoutMs: isOpenAI ? env.MOSAIC_OPENAI_MIN_TIMEOUT_MS : undefined,
-    model: isOpenAI ? env.MOSAIC_OPENAI_MODEL ?? route.model : route.model,
-    reasoningEffort: isOpenAI ? env.MOSAIC_OPENAI_REASONING_EFFORT ?? route.reasoningEffort : route.reasoningEffort,
+    openAIMinOutputTokens: isOpenAI ? openAIConfiguration.minOutputTokens.value ?? undefined : undefined,
+    openAIMinTimeoutMs: isOpenAI ? openAIConfiguration.minTimeoutMs.value ?? undefined : undefined,
+    model: isOpenAI && !openAIConfiguration.frozenEvaluation
+      ? env.MOSAIC_OPENAI_MODEL ?? route.model
+      : route.model,
+    reasoningEffort: isOpenAI && !openAIConfiguration.frozenEvaluation
+      ? env.MOSAIC_OPENAI_REASONING_EFFORT ?? route.reasoningEffort
+      : route.reasoningEffort,
     advisorTool: route.advisorTool,
     disableUsageTracking: true,
     assertRequest: telemetry ? (request) => telemetry.assertRequest(phase, request) : undefined,
@@ -1198,6 +1251,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   await mkdir(artifactPath, { recursive: true });
   await writeFile(join(artifactPath, "temp-path.txt"), `${repoPath}\n`, "utf8");
   const modelVisiblePathPolicy = modelVisiblePlanPathPolicy(evalCase);
+  const openAIConfiguration = effectiveEvalOpenAIConfiguration(options);
   const telemetry = await createEvalTelemetry(options, artifactPath, modelVisiblePathPolicy);
   const repoIndexer = new RepoIndexer();
   const repoContext: RepoContext = {
@@ -1235,6 +1289,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
         createClient: (route) => createEvalLlmClient(
           "openai",
           route,
+          openAIConfiguration,
           telemetry,
           "classification"
         )
@@ -1246,6 +1301,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
         createEvalLlmClient(
           options.provider,
           routes.classification,
+          openAIConfiguration,
           telemetry,
           "classification"
         ),
@@ -1313,7 +1369,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     const fileTree = visibleFileTreePaths(repoIndexer, repoContext, modelVisiblePathPolicy);
     const planPathPolicy = modelVisiblePathPolicy;
     const planner = new ImplementationPlanner(
-      createEvalLlmClient(options.provider, routes.planning, telemetry, "planning"),
+      createEvalLlmClient(options.provider, routes.planning, openAIConfiguration, telemetry, "planning"),
       { modelVisiblePlanPathPolicy: planPathPolicy }
     );
     implementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
@@ -1322,7 +1378,13 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     relevantFiles = sanitizeModelVisibleFileEntries(relevantFiles, modelVisiblePathPolicy);
     await persistArtifacts();
     const generator = new CodeGenerator(
-      createEvalLlmClient(options.provider, routes.generation, telemetry, "generation-and-repair"),
+      createEvalLlmClient(
+        options.provider,
+        routes.generation,
+        openAIConfiguration,
+        telemetry,
+        "generation-and-repair"
+      ),
       { modelVisiblePlanPathPolicy: planPathPolicy }
     );
     try {
@@ -1558,6 +1620,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     const generator = new CodeGenerator(createEvalLlmClient(
       options.provider,
       routes.generation,
+      openAIConfiguration,
       telemetry,
       "check-repair"
     ), {
@@ -1916,6 +1979,18 @@ function childArguments(
     ...(options.generate ? ["--generate"] : []),
     ...(options.classify ? ["--classify"] : []),
     ...(options.frozenEvaluation ? ["--frozen-evaluation"] : []),
+    ...(options.frozenOpenAIMinOutputTokens === undefined
+      ? []
+      : [
+          "--frozen-openai-min-output-tokens",
+          options.frozenOpenAIMinOutputTokens === null ? "disabled" : String(options.frozenOpenAIMinOutputTokens)
+        ]),
+    ...(options.frozenOpenAIMinTimeoutMs === undefined
+      ? []
+      : [
+          "--frozen-openai-min-timeout-ms",
+          options.frozenOpenAIMinTimeoutMs === null ? "automatic" : String(options.frozenOpenAIMinTimeoutMs)
+        ]),
     ...(options.keep ? ["--keep"] : [])
   ];
 }
@@ -2137,6 +2212,7 @@ async function writeRunMetadata(
   startedAt: number
 ): Promise<void> {
   const env = getEnv();
+  const openAIConfiguration = effectiveEvalOpenAIConfiguration(options);
   const fixturePaths = [...new Set(selectedCases
     .map((evalCase) => evalCase.fixturePath)
     .filter((path): path is string => Boolean(path)))];
@@ -2164,11 +2240,38 @@ async function writeRunMetadata(
     caseTimeoutMs: options.caseTimeoutMs,
     command: process.argv,
     routeOverrides: {
-      model: options.modelOverrideProvided ? options.model : env.MOSAIC_OPENAI_MODEL ?? null,
-      reasoningEffort: env.MOSAIC_OPENAI_REASONING_EFFORT ?? null
+      model: options.frozenEvaluation
+        ? (options.modelOverrideProvided ? options.model : null)
+        : (options.modelOverrideProvided ? options.model : env.MOSAIC_OPENAI_MODEL ?? null),
+      reasoningEffort: options.frozenEvaluation ? null : env.MOSAIC_OPENAI_REASONING_EFFORT ?? null
     },
-    openAIMinOutputTokens: env.MOSAIC_OPENAI_MIN_OUTPUT_TOKENS ?? null,
-    openAIMinTimeoutMs: env.MOSAIC_OPENAI_MIN_TIMEOUT_MS ?? null,
+    openAIMinOutputTokens: openAIConfiguration.minOutputTokens.value,
+    openAIMinTimeoutMs: openAIConfiguration.minTimeoutMs.value,
+    effectiveConfiguration: {
+      openAI: openAIConfiguration,
+      routing: {
+        preset: {
+          value: options.preset,
+          source: options.frozenEvaluation ? "frozen-proof" : "command-line"
+        },
+        modelOverride: {
+          value: options.frozenEvaluation
+            ? (options.modelOverrideProvided ? options.model : null)
+            : (options.modelOverrideProvided ? options.model : env.MOSAIC_OPENAI_MODEL ?? null),
+          source: options.frozenEvaluation
+            ? "frozen-proof"
+            : options.modelOverrideProvided
+              ? "command-line"
+              : getConfigEnvironmentSource("MOSAIC_OPENAI_MODEL")
+        },
+        reasoningEffortOverride: {
+          value: options.frozenEvaluation ? null : env.MOSAIC_OPENAI_REASONING_EFFORT ?? null,
+          source: options.frozenEvaluation
+            ? "frozen-proof"
+            : getConfigEnvironmentSource("MOSAIC_OPENAI_REASONING_EFFORT")
+        }
+      }
+    },
     startedAt
   }, null, 2)}\n`, "utf8");
 }
@@ -2192,10 +2295,14 @@ async function main(): Promise<void> {
   const unpinnedOpenAIEvaluation = options.provider === "openai" &&
     options.preset === "quality" &&
     (options.generate || options.classify);
+  const explicitEnvironmentModelOverride = env.MOSAIC_OPENAI_MODEL &&
+    getConfigEnvironmentSource("MOSAIC_OPENAI_MODEL") === "process-environment";
+  const explicitEnvironmentReasoningOverride = env.MOSAIC_OPENAI_REASONING_EFFORT &&
+    getConfigEnvironmentSource("MOSAIC_OPENAI_REASONING_EFFORT") === "process-environment";
   if (options.frozenEvaluation && unpinnedOpenAIEvaluation && (
     options.modelOverrideProvided ||
-    env.MOSAIC_OPENAI_MODEL ||
-    env.MOSAIC_OPENAI_REASONING_EFFORT
+    explicitEnvironmentModelOverride ||
+    explicitEnvironmentReasoningOverride
   )) {
     throw new Error(
       "Unpinned OpenAI evaluation refuses --model, MOSAIC_OPENAI_MODEL, or MOSAIC_OPENAI_REASONING_EFFORT overrides"
