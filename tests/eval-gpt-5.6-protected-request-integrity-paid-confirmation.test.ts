@@ -1,0 +1,323 @@
+import { execFile as execFileCallback } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFile, readdir, stat } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
+import { promisify } from "node:util";
+
+import { describe, expect, it } from "vitest";
+
+import { assessFeedbackContent } from "../packages/intake/src/abuse-protection.js";
+import { containsProtectedModelVisiblePath } from "../packages/pipeline/src/implementation-plan-sanitizer.js";
+import { partitionVerificationCommands } from "../scripts/eval-local-fixes-support.js";
+
+const execFile = promisify(execFileCallback);
+const manifestPath = "evals/gpt-5.6-protected-request-integrity-paid-confirmation-manifest-2026-07-15.json";
+const protocolPath = "evals/GPT_5_6_PROTECTED_REQUEST_INTEGRITY_PAID_CONFIRMATION_PROTOCOL_2026_07_15.md";
+
+interface SourceCase {
+  id: string;
+  fixturePath: string;
+  feedback: {
+    rawContent: string;
+    relevantFiles: string[];
+  };
+  expectedOpenAIRoute: {
+    model: string;
+    reasoningEffort: string;
+  };
+  expectedReferenceFiles: string[];
+  oracleTestPathPrefixes: string[];
+  generatedTestPathPrefixes: string[];
+  verificationCommands: string[];
+  runChangedPythonTests: boolean;
+  model?: string;
+  reasoningEffort?: string;
+}
+
+interface ProofManifest {
+  schemaVersion: number;
+  proofId: string;
+  proofKind: string;
+  status: string;
+  implementationUnderTest: {
+    commit: string;
+    report: string;
+  };
+  frozenInputs: {
+    casesPath: string;
+    casesSha256: string;
+    fixturePath: string;
+    fixtureSha256: string;
+    pricingPath: string;
+    pricingSha256: string;
+  };
+  protectedPathPolicy: {
+    protectedPaths: string[];
+    protectedPathPrefixes: string[];
+    generatedTestPathPrefixes: string[];
+    canonicalization: string;
+  };
+  run: {
+    provider: string;
+    preset: string;
+    trialsPerCase: number;
+    caseCount: number;
+    caseIds: string[];
+    modelOverride: string | null;
+    reasoningEffortOverride: string | null;
+    openAIMinOutputTokens: number;
+    openAIMinOutputTokensSource: string;
+    openAIMinTimeoutMs: number | null;
+    openAIMinTimeoutMode: string;
+    routeTimeoutFloorsMs: Record<string, number>;
+    caseTimeoutMs: number;
+    maxCostUsd: number;
+    outputDir: string;
+  };
+  cases: Array<{
+    id: string;
+    caseInputSha256: string;
+    expectedAutomaticRoute: {
+      model: string;
+      reasoningEffort: string;
+    };
+    plannerCorrectionContract?: {
+      required: boolean;
+      initialPlanScope: string[];
+      initialPlanRequiredOmissions: string[];
+      correctedPlanRequiredScope: string[];
+    };
+    visibleAcceptanceCriteria: string[];
+  }>;
+  predeclaredSuccessCriteria: string[];
+  forbiddenRepairDiagnostics: string[];
+  integrityStopRules: string[];
+  requiredReporting: string[];
+}
+
+async function sha256File(path: string): Promise<string> {
+  return createHash("sha256").update(await readFile(path)).digest("hex");
+}
+
+async function sha256Path(path: string): Promise<string> {
+  const root = resolve(path);
+  const hash = createHash("sha256");
+  const visit = async (currentPath: string): Promise<void> => {
+    const currentStat = await stat(currentPath);
+    const pathLabel = relative(root, currentPath) || ".";
+    hash.update(`${currentStat.isDirectory() ? "dir" : "file"}\0${pathLabel}\0`);
+    if (currentStat.isDirectory()) {
+      for (const entry of (await readdir(currentPath)).sort()) {
+        await visit(join(currentPath, entry));
+      }
+    } else {
+      hash.update(await readFile(currentPath));
+    }
+  };
+  await visit(root);
+  return hash.digest("hex");
+}
+
+async function loadManifest(): Promise<ProofManifest> {
+  return JSON.parse(await readFile(manifestPath, "utf8")) as ProofManifest;
+}
+
+async function loadCases(manifest: ProofManifest): Promise<SourceCase[]> {
+  return JSON.parse(await readFile(manifest.frozenInputs.casesPath, "utf8")) as SourceCase[];
+}
+
+async function unittestExitCode(fixturePath: string, module: string): Promise<number> {
+  try {
+    await execFile("python3", ["-m", "unittest", module], {
+      cwd: resolve(fixturePath),
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" }
+    });
+    return 0;
+  } catch (error) {
+    return (error as { code?: number }).code ?? -1;
+  }
+}
+
+describe("frozen GPT-5.6 protected-request integrity paid confirmation", () => {
+  it("pins the implementation, exact two-case inputs, fixture snapshot, pricing, provider, transport floor, timeout mode, and cap", async () => {
+    const manifest = await loadManifest();
+
+    expect(manifest).toEqual(expect.objectContaining({
+      schemaVersion: 1,
+      proofId: "gpt-5.6-protected-request-integrity-paid-confirmation-2026-07-15",
+      proofKind: "non-holdout-two-case-paid-confirmation",
+      status: "predeclared-before-paid-execution"
+    }));
+    expect(manifest.implementationUnderTest).toEqual({
+      commit: "385cedb7bcf6122ed81cc5f4838dbdb6dcdb9410",
+      report: "evals/GPT_5_6_PROTECTED_REQUEST_BOUNDARY_INTEGRITY_FIX_REPORT_2026_07_15.md"
+    });
+    await expect(sha256File(manifest.frozenInputs.casesPath)).resolves.toBe(manifest.frozenInputs.casesSha256);
+    await expect(sha256Path(manifest.frozenInputs.fixturePath)).resolves.toBe(manifest.frozenInputs.fixtureSha256);
+    await expect(sha256File(manifest.frozenInputs.pricingPath)).resolves.toBe(manifest.frozenInputs.pricingSha256);
+    expect(manifest.protectedPathPolicy).toEqual({
+      protectedPaths: [],
+      protectedPathPrefixes: ["tests/baseline/", "tests/oracle/"],
+      generatedTestPathPrefixes: ["tests/generated/"],
+      canonicalization: "case-insensitive slash, backslash, and dotted-module normalization"
+    });
+    expect(manifest.run).toEqual(expect.objectContaining({
+      provider: "openai",
+      preset: "quality",
+      trialsPerCase: 1,
+      caseCount: 2,
+      modelOverride: null,
+      reasoningEffortOverride: null,
+      openAIMinOutputTokens: 49_152,
+      openAIMinOutputTokensSource: "frozen-proof",
+      openAIMinTimeoutMs: null,
+      openAIMinTimeoutMode: "automatic",
+      routeTimeoutFloorsMs: {
+        "gpt-5.6-sol/high": 300_000,
+        "gpt-5.6-sol/xhigh": 480_000
+      },
+      caseTimeoutMs: 900_000,
+      maxCostUsd: 3
+    }));
+  });
+
+  it("selects one retained classification-boundary case and one fresh required planner-correction case", async () => {
+    const manifest = await loadManifest();
+    const sourceCases = await loadCases(manifest);
+
+    expect(manifest.run.caseIds).toEqual([
+      "protected-integrity-retained-classification-details-state",
+      "protected-integrity-fresh-planner-correction-incident-owner"
+    ]);
+    expect(sourceCases.map(({ id }) => id)).toEqual(manifest.run.caseIds);
+    expect(manifest.cases.map(({ id }) => id)).toEqual(manifest.run.caseIds);
+    expect(sourceCases.map(({ expectedOpenAIRoute }) => expectedOpenAIRoute)).toEqual(
+      manifest.cases.map(({ expectedAutomaticRoute }) => expectedAutomaticRoute)
+    );
+    expect(sourceCases.map(({ expectedOpenAIRoute }) => expectedOpenAIRoute)).toEqual([
+      { model: "gpt-5.6-terra", reasoningEffort: "xhigh" },
+      { model: "gpt-5.6-terra", reasoningEffort: "xhigh" }
+    ]);
+    for (const [index, sourceCase] of sourceCases.entries()) {
+      expect(sourceCase.fixturePath).toBe(manifest.frozenInputs.fixturePath);
+      expect(sourceCase.model).toBeUndefined();
+      expect(sourceCase.reasoningEffort).toBeUndefined();
+      expect(createHash("sha256").update(JSON.stringify(sourceCase.feedback)).digest("hex"))
+        .toBe(manifest.cases[index]?.caseInputSha256);
+    }
+    expect(manifest.cases[1]?.plannerCorrectionContract).toEqual({
+      required: true,
+      initialPlanScope: ["incident/service.py"],
+      initialPlanRequiredOmissions: [
+        "incident/api.py",
+        "candidate-authored generated regression",
+        "public-handler verification"
+      ],
+      correctedPlanRequiredScope: [
+        "incident/api.py",
+        "incident/service.py",
+        "candidate-authored generated regression",
+        "backing unit verification",
+        "public-handler verification"
+      ]
+    });
+  });
+
+  it("keeps all visible inputs accepted and protected-path free while partitioning hidden verification", async () => {
+    const manifest = await loadManifest();
+    const sourceCases = await loadCases(manifest);
+    const policy = manifest.protectedPathPolicy;
+
+    expect(JSON.stringify(manifest.cases)).not.toMatch(/tests[\\/.]+(?:oracle|baseline)/i);
+    for (const sourceCase of sourceCases) {
+      expect(assessFeedbackContent(sourceCase.feedback.rawContent).accepted, sourceCase.id).toBe(true);
+      expect(containsProtectedModelVisiblePath(sourceCase.feedback.rawContent, policy), sourceCase.id).toBe(false);
+      expect(sourceCase.feedback.relevantFiles.every((path) => !containsProtectedModelVisiblePath(path, policy))).toBe(true);
+      expect(sourceCase.expectedReferenceFiles.every((path) => !containsProtectedModelVisiblePath(path, policy))).toBe(true);
+      expect(sourceCase.oracleTestPathPrefixes).toEqual(["tests/oracle/"]);
+      expect(sourceCase.generatedTestPathPrefixes).toEqual(["tests/generated/"]);
+      expect(sourceCase.runChangedPythonTests).toBe(true);
+
+      const partitioned = partitionVerificationCommands(
+        sourceCase.verificationCommands,
+        [],
+        sourceCase.oracleTestPathPrefixes
+      );
+      expect(partitioned.visible).toEqual(["python3 -m unittest tests.baseline.test_fixture_baseline"]);
+      expect(partitioned.oracles).toHaveLength(1);
+    }
+
+    for (const path of [
+      "README.md",
+      "index.html",
+      "dashboard.js",
+      "styles.css",
+      "incident/api.py",
+      "incident/repository.py",
+      "incident/service.py",
+      "tests/frontend_harness.py"
+    ]) {
+      const content = await readFile(join(manifest.frozenInputs.fixturePath, path), "utf8");
+      expect(containsProtectedModelVisiblePath(content, policy), path).toBe(false);
+    }
+  });
+
+  it("starts from a passing offline baseline and two independently sensitive hidden suites", async () => {
+    const manifest = await loadManifest();
+
+    expect(await unittestExitCode(manifest.frozenInputs.fixturePath, "tests.baseline.test_fixture_baseline")).toBe(0);
+    expect(await unittestExitCode(manifest.frozenInputs.fixturePath, "tests.oracle.test_details_state")).not.toBe(0);
+    expect(await unittestExitCode(manifest.frozenInputs.fixturePath, "tests.oracle.test_incident_owner")).not.toBe(0);
+  });
+
+  it("pins one override-free paid command with exactly two cases, one trial, frozen output minimum, automatic timeout, and one shared cap", async () => {
+    const manifest = await loadManifest();
+    const protocol = await readFile(protocolPath, "utf8");
+    const command = protocol.match(
+      /<!-- PAID_COMMAND_START -->([\s\S]*?)<!-- PAID_COMMAND_END -->/
+    )?.[1];
+
+    expect(command).toBeDefined();
+    expect(command?.match(/^\s*--case\s+/gm)).toHaveLength(2);
+    for (const caseId of manifest.run.caseIds) {
+      expect(command).toContain(`--case ${caseId}`);
+    }
+    expect(command).toContain("env -u MOSAIC_LLM_PROVIDER");
+    expect(command).toContain("-u MOSAIC_OPENAI_MODEL");
+    expect(command).toContain("-u MOSAIC_OPENAI_REASONING_EFFORT");
+    expect(command).toContain("-u MOSAIC_OPENAI_MIN_OUTPUT_TOKENS");
+    expect(command).toContain("-u MOSAIC_OPENAI_MIN_TIMEOUT_MS");
+    expect(command).toContain("--frozen-evaluation");
+    expect(command).toContain("--frozen-openai-min-output-tokens 49152");
+    expect(command).toContain("--frozen-openai-min-timeout-ms automatic");
+    expect(command).toContain("--generate");
+    expect(command).toContain("--classify");
+    expect(command).toContain("--provider openai");
+    expect(command).toContain("--preset quality");
+    expect(command).toContain("--trials 1");
+    expect(command).toContain("--max-cost-usd 3");
+    expect(command).toContain(`--pricing ${manifest.frozenInputs.pricingPath}`);
+    expect(command).toContain(`--output-dir ${manifest.run.outputDir}`);
+    expect(command).not.toMatch(/^\s*--model\s+/m);
+    expect(command).not.toMatch(/^\s*--reasoning-effort\s+/m);
+    expect(command).not.toMatch(/API_KEY=/);
+  });
+
+  it("freezes fail-closed batch behavior and bounded reporting semantics", async () => {
+    const manifest = await loadManifest();
+    const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
+    const support = await readFile("scripts/eval-local-fixes-support.ts", "utf8");
+
+    expect(source).toContain('type: "protected-request-boundary-rejection"');
+    expect(source).toContain("stopAfterResult: (result) => result.integrityViolation !== undefined");
+    expect(source).toContain('join(options.outputDir, "invalidation.json")');
+    expect(source).toContain("unattemptedCaseIds");
+    expect(source).toContain("noFurtherPaidCalls: true");
+    expect(support).toContain("stopAfterResult?: (result: EvalBatchResult) => boolean");
+    expect(support).toContain("if (options.stopAfterResult?.(batchResult))");
+    expect(manifest.predeclaredSuccessCriteria).toHaveLength(11);
+    expect(manifest.forbiddenRepairDiagnostics).toHaveLength(4);
+    expect(manifest.integrityStopRules).toHaveLength(5);
+    expect(manifest.requiredReporting).toHaveLength(6);
+  });
+});

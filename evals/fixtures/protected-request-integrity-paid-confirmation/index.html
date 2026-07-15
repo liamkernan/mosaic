@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Incident response console</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Incident response center</h1>
+      <article class="incident-card" aria-labelledby="incidentTitle">
+        <h2 id="incidentTitle">Checkout latency</h2>
+        <p>Investigating elevated request latency in checkout.</p>
+        <button id="watchIncident" type="button" data-watching="false">★</button>
+        <span id="watchStatus" aria-live="polite">Not watching</span>
+
+        <button id="detailsToggle" type="button" aria-controls="detailsPanel" aria-expanded="false">
+          Show response details
+        </button>
+        <section id="detailsPanel" class="response-details" aria-labelledby="detailsTitle" hidden>
+          <h3 id="detailsTitle">Response details</h3>
+          <p>Owner: Operations</p>
+          <button id="detailsClose" type="button">Close response details</button>
+        </section>
+      </article>
+    </main>
+    <script src="dashboard.js"></script>
+  </body>
+</html>
