@@ -1,0 +1,22 @@
+[
+  {
+    "path": "incident/api.py",
+    "reason": "Complete the existing public handler so it returns the required 200 response and maps missing incidents to the stable 404 response."
+  },
+  {
+    "path": "incident/service.py",
+    "reason": "Project known repository incidents to exactly id and owner while retaining an explicit missing-incident signal for the API layer."
+  },
+  {
+    "path": "README.md",
+    "reason": "Repository documentation reference for conventions and requirements"
+  },
+  {
+    "path": "tests/__init__.py",
+    "reason": "Repository test reference for expected behavior and coverage pattern"
+  },
+  {
+    "path": "tests/frontend_harness.py",
+    "reason": "Repository test reference for expected behavior and coverage pattern"
+  }
+]

@@ -1,0 +1,110 @@
+{
+  "classificationPasses": [
+    {
+      "route": {
+        "model": "gpt-5.6-luna",
+        "reasoningEffort": "high"
+      },
+      "classifiedFeedback": {
+        "id": "protected-integrity-fresh-planner-correction-incident-owner",
+        "repoFullName": "mosaic-eval/protected-request-integrity-paid-confirmation",
+        "receivedAt": "2026-07-15T18:48:30.328Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "Complete GET /incident-owner/:incident_id through the existing API and service modules. A known incident must return status 200 with a body containing exactly id and owner. A missing incident must return status 404 with the stable body {\"error\": \"incident not found\"}. Keep the repository module and existing verification-only suites unchanged. This reliability case must exercise plan correction: the initial plan should intentionally name only incident/service.py and omit the API handler and new regression; after preflight rejects that incomplete plan, return a corrected complete plan covering incident/api.py, incident/service.py, public-handler verification, backing unit coverage, and an independently runnable unittest under the documented generated-test location.",
+        "senderIdentifier": "protected-integrity-eval@example.com",
+        "category": "bug_report",
+        "complexity": "moderate",
+        "summary": "Complete and verify GET /incident-owner/:incident_id with exact success and missing-incident responses while preserving the repository and existing verification suites.",
+        "relevantFiles": [
+          "incident/api.py",
+          "incident/service.py",
+          "README.md"
+        ],
+        "confidence": 0.93,
+        "routingSignals": {
+          "scope": "multi-component",
+          "literalCorrection": false,
+          "runtimeBehavior": true,
+          "persistentData": false,
+          "securitySensitive": false,
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "route": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "xhigh"
+      },
+      "classifiedFeedback": {
+        "id": "protected-integrity-fresh-planner-correction-incident-owner",
+        "repoFullName": "mosaic-eval/protected-request-integrity-paid-confirmation",
+        "receivedAt": "2026-07-15T18:48:30.328Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "Complete GET /incident-owner/:incident_id through the existing API and service modules. A known incident must return status 200 with a body containing exactly id and owner. A missing incident must return status 404 with the stable body {\"error\": \"incident not found\"}. Keep the repository module and existing verification-only suites unchanged. This reliability case must exercise plan correction: the initial plan should intentionally name only incident/service.py and omit the API handler and new regression; after preflight rejects that incomplete plan, return a corrected complete plan covering incident/api.py, incident/service.py, public-handler verification, backing unit coverage, and an independently runnable unittest under the documented generated-test location.",
+        "senderIdentifier": "protected-integrity-eval@example.com",
+        "category": "bug_report",
+        "complexity": "moderate",
+        "summary": "Complete the incident-owner GET endpoint with specified 200/404 responses and add independent regression coverage without changing the repository or existing verification-only suites.",
+        "relevantFiles": [
+          "incident/api.py",
+          "incident/service.py",
+          "README.md",
+          "tests/__init__.py"
+        ],
+        "confidence": 0.88,
+        "routingSignals": {
+          "scope": "multi-component",
+          "literalCorrection": false,
+          "runtimeBehavior": true,
+          "persistentData": false,
+          "securitySensitive": false,
+          "requiresHumanReview": false
+        }
+      }
+    }
+  ],
+  "finalClassification": {
+    "id": "protected-integrity-fresh-planner-correction-incident-owner",
+    "repoFullName": "mosaic-eval/protected-request-integrity-paid-confirmation",
+    "receivedAt": "2026-07-15T18:48:30.328Z",
+    "metadata": {},
+    "source": "web_form",
+    "rawContent": "Complete GET /incident-owner/:incident_id through the existing API and service modules. A known incident must return status 200 with a body containing exactly id and owner. A missing incident must return status 404 with the stable body {\"error\": \"incident not found\"}. Keep the repository module and existing verification-only suites unchanged. This reliability case must exercise plan correction: the initial plan should intentionally name only incident/service.py and omit the API handler and new regression; after preflight rejects that incomplete plan, return a corrected complete plan covering incident/api.py, incident/service.py, public-handler verification, backing unit coverage, and an independently runnable unittest under the documented generated-test location.",
+    "senderIdentifier": "protected-integrity-eval@example.com",
+    "category": "bug_report",
+    "complexity": "moderate",
+    "summary": "Complete the incident-owner GET endpoint with specified 200/404 responses and add independent regression coverage without changing the repository or existing verification-only suites.",
+    "relevantFiles": [
+      "incident/api.py",
+      "incident/service.py",
+      "README.md",
+      "tests/__init__.py"
+    ],
+    "confidence": 0.88,
+    "routingSignals": {
+      "scope": "multi-component",
+      "literalCorrection": false,
+      "runtimeBehavior": true,
+      "persistentData": false,
+      "securitySensitive": false,
+      "requiresHumanReview": false
+    }
+  },
+  "routes": {
+    "classification": {
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "high"
+    },
+    "planning": {
+      "model": "gpt-5.6-terra",
+      "reasoningEffort": "xhigh"
+    },
+    "generation": {
+      "model": "gpt-5.6-terra",
+      "reasoningEffort": "xhigh"
+    }
+  }
+}

@@ -1,0 +1,175 @@
+--- a/incident/service.py
++++ b/incident/service.py
+@@ -1,15 +1,19 @@
+-from incident import repository
+-
+-
+-def format_incident_title(incident):
+-    return f"{incident['id']}: {incident['title']}"
+-
+-
+-def build_incident_summary(incident_id):
+-    incident = repository.get_incident(incident_id)
+-    if incident is None:
+-        raise KeyError(incident_id)
+-    return {
+-        "id": incident["id"],
+-        "status": incident["status"],
+-    }
++from incident import repository
++
++
++def format_incident_title(incident):
++    return f"{incident['id']}: {incident['title']}"
++
++
++def build_incident_owner(incident_id):
++    incident = repository.get_incident(incident_id)
++    if incident is None:
++        raise KeyError(incident_id)
++    return {
++        "id": incident["id"],
++        "owner": incident["owner"],
++    }
++
++
++def build_incident_summary(incident_id):
++    return build_incident_owner(incident_id)
+--- a/incident/api.py
++++ b/incident/api.py
+@@ -1,8 +1,38 @@
+-from incident.service import build_incident_summary
+-
+-
+-def get_incident_summary(incident_id):
+-    return {
+-        "status": 200,
+-        "body": build_incident_summary(incident_id),
+-    }
++from incident.service import build_incident_owner
++
++
++INCIDENT_OWNER_ROUTE = "/incident-owner/:incident_id"
++ROUTES = {
++    ("GET", INCIDENT_OWNER_ROUTE): "get_incident_owner",
++}
++
++
++def get_incident_owner(incident_id):
++    try:
++        body = build_incident_owner(incident_id)
++    except KeyError:
++        return {
++            "status": 404,
++            "body": {"error": "incident not found"},
++        }
++    return {
++        "status": 200,
++        "body": body,
++    }
++
++
++def get_incident_summary(incident_id):
++    return get_incident_owner(incident_id)
++
++
++def handle_request(method, path):
++    route_prefix = "/incident-owner/"
++    if method == "GET" and path.startswith(route_prefix):
++        incident_id = path[len(route_prefix):]
++        if incident_id and "/" not in incident_id:
++            return get_incident_owner(incident_id)
++
++    return {
++        "status": 404,
++        "body": {"error": "not found"},
++    }
+--- a/tests/generated/test_incident_owner.py
++++ b/tests/generated/test_incident_owner.py
+@@ -1,0 +1,86 @@
++import unittest
++from unittest.mock import patch
++
++from incident import api
++from incident import service
++
++
++class IncidentOwnerServiceTests(unittest.TestCase):
++    @patch("incident.service.repository.get_incident")
++    def test_build_incident_owner_projects_only_id_and_owner(self, get_incident):
++        get_incident.return_value = {
++            "id": "INC-42",
++            "owner": "operations",
++            "status": "open",
++            "title": "Example incident",
++        }
++
++        result = service.build_incident_owner("INC-42")
++
++        self.assertEqual(result, {"id": "INC-42", "owner": "operations"})
++        get_incident.assert_called_once_with("INC-42")
++
++    @patch("incident.service.repository.get_incident", return_value=None)
++    def test_build_incident_owner_signals_missing_incident(self, get_incident):
++        with self.assertRaises(KeyError) as error:
++            service.build_incident_owner("INC-404")
++
++        self.assertEqual(error.exception.args, ("INC-404",))
++        get_incident.assert_called_once_with("INC-404")
++
++
++class IncidentOwnerApiTests(unittest.TestCase):
++    @patch("incident.api.build_incident_owner")
++    def test_handler_returns_exact_owner_response_for_known_incident(
++        self, build_incident_owner
++    ):
++        build_incident_owner.return_value = {
++            "id": "INC-42",
++            "owner": "operations",
++        }
++
++        result = api.get_incident_owner("INC-42")
++
++        self.assertEqual(
++            result,
++            {
++                "status": 200,
++                "body": {"id": "INC-42", "owner": "operations"},
++            },
++        )
++        build_incident_owner.assert_called_once_with("INC-42")
++
++    @patch("incident.api.build_incident_owner", side_effect=KeyError("INC-404"))
++    def test_handler_returns_stable_not_found_response(self, build_incident_owner):
++        result = api.get_incident_owner("INC-404")
++
++        self.assertEqual(
++            result,
++            {
++                "status": 404,
++                "body": {"error": "incident not found"},
++            },
++        )
++        build_incident_owner.assert_called_once_with("INC-404")
++
++    @patch("incident.api.get_incident_owner")
++    def test_incident_owner_route_dispatches_to_public_handler(self, get_incident_owner):
++        get_incident_owner.return_value = {
++            "status": 200,
++            "body": {"id": "INC-42", "owner": "operations"},
++        }
++
++        result = api.handle_request("GET", "/incident-owner/INC-42")
++
++        self.assertEqual(
++            result,
++            {
++                "status": 200,
++                "body": {"id": "INC-42", "owner": "operations"},
++            },
++        )
++        get_incident_owner.assert_called_once_with("INC-42")
++
++
++if __name__ == "__main__":
++    unittest.main()

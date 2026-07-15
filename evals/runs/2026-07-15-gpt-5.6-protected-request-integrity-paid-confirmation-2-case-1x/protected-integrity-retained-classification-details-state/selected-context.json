@@ -1,0 +1,22 @@
+[
+  {
+    "path": "dashboard.js",
+    "reason": "Update the response-details state setter so the existing toggle button's aria-expanded value matches the panel's open/hidden state for both toggle and close actions without changing watch behavior."
+  },
+  {
+    "path": "tests/frontend_harness.py",
+    "reason": "Repository test reference for expected behavior and coverage pattern"
+  },
+  {
+    "path": "index.html",
+    "reason": "Classifier ranked this file as #3 relevant"
+  },
+  {
+    "path": "README.md",
+    "reason": "Repository documentation reference for conventions and requirements"
+  },
+  {
+    "path": "tests/__init__.py",
+    "reason": "Repository test reference for expected behavior and coverage pattern"
+  }
+]

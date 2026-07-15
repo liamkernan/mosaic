@@ -1,0 +1,233 @@
+{
+  "proofId": "gpt-5.6-protected-request-integrity-paid-confirmation-2026-07-15",
+  "status": "valid-completed",
+  "singlePaidCommandIssued": true,
+  "replacementRerunOrRescoreIssued": false,
+  "frozenPopulation": {
+    "caseCount": 2,
+    "trialsPerCase": 1,
+    "attemptedCaseIds": [
+      "protected-integrity-retained-classification-details-state",
+      "protected-integrity-fresh-planner-correction-incident-owner"
+    ],
+    "unattemptedCaseIds": []
+  },
+  "scoring": {
+    "routeAccuracy": {
+      "passedCases": 2,
+      "totalCases": 2,
+      "rate": 1
+    },
+    "rawPassAt1": {
+      "passedCases": 1,
+      "totalCases": 2,
+      "rate": 0.5
+    },
+    "repairAssistedSuccess": {
+      "passedCases": 1,
+      "totalCases": 2,
+      "rate": 0.5
+    },
+    "finalPassAt1": {
+      "passedCases": 2,
+      "totalCases": 2,
+      "rate": 1
+    },
+    "independentlyExecutedGeneratedTests": {
+      "passedCases": 2,
+      "totalCases": 2,
+      "rate": 1
+    }
+  },
+  "integrity": {
+    "valid": true,
+    "requestAssertions": 11,
+    "passedAssertions": 11,
+    "rejectedAssertions": 0,
+    "stoppedBeforeAuthorizationOnViolation": null,
+    "stoppedBeforeTransportOnViolation": null,
+    "providerVisibleProtectedPaths": false,
+    "providerVisibleHiddenContent": false,
+    "promptPayloadsPersisted": false,
+    "hiddenOracleContentsPersisted": false,
+    "secretLikeMaterialPersisted": false
+  },
+  "cases": [
+    {
+      "id": "protected-integrity-retained-classification-details-state",
+      "expectedRoute": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "xhigh"
+      },
+      "actualPlanningAndGenerationRoute": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "xhigh"
+      },
+      "requestPhases": [
+        "classification",
+        "classification",
+        "initial-planning",
+        "generation"
+      ],
+      "rawSolutionPassed": true,
+      "repairAssistedPassed": false,
+      "finalSolutionPassed": true,
+      "rawFailureSurface": null,
+      "generatedTests": [
+        "tests/generated/test_response_details_accessibility.py"
+      ],
+      "independentGeneratedTestExecution": "passed",
+      "visibleValidation": "passed",
+      "hiddenVerification": "passed",
+      "finalChangedFiles": [
+        "dashboard.js",
+        "tests/generated/test_response_details_accessibility.py"
+      ]
+    },
+    {
+      "id": "protected-integrity-fresh-planner-correction-incident-owner",
+      "expectedRoute": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "xhigh"
+      },
+      "actualPlanningAndGenerationRoute": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "xhigh"
+      },
+      "requestPhases": [
+        "classification",
+        "classification",
+        "initial-planning",
+        "planner-correction",
+        "generation",
+        "validation-repair",
+        "verification-repair"
+      ],
+      "plannerCorrectionRequiredAndObserved": true,
+      "rawSolutionPassed": false,
+      "repairAssistedPassed": true,
+      "finalSolutionPassed": true,
+      "rawFailureSurface": "validation",
+      "visibleRawDiagnostic": "Acceptance criteria require endpoint path /incident-owner/:incident_id, but no implementation change appears to route or handle that path",
+      "generatedTests": [
+        "tests/generated/test_incident_owner.py"
+      ],
+      "independentGeneratedTestExecution": "passed",
+      "visibleValidation": "passed-after-repair",
+      "hiddenVerification": "passed-after-isolated-repair",
+      "finalChangedFiles": [
+        "incident/service.py",
+        "incident/api.py",
+        "tests/generated/test_incident_owner.py"
+      ]
+    }
+  ],
+  "usage": {
+    "requestAuthorizations": 11,
+    "providerCalls": 11,
+    "inputTokens": 23387,
+    "outputTokens": 18529,
+    "cacheReadInputTokens": 0,
+    "cacheCreationInputTokens": 0,
+    "providerLatencyMs": 167788,
+    "wallClockDurationMs": 171773,
+    "retries": 0,
+    "reservations": 11,
+    "settledReservations": 11,
+    "observedCostUsd": 0.3189725,
+    "outstandingReservedCostUsd": 0,
+    "committedCostUsd": 0.3189725,
+    "maxCostUsd": 3,
+    "unknownCanceledCallExposure": false,
+    "perCase": [
+      {
+        "id": "protected-integrity-retained-classification-details-state",
+        "providerCalls": 4,
+        "inputTokens": 6808,
+        "outputTokens": 3377,
+        "providerLatencyMs": 33419,
+        "retries": 0,
+        "reservations": 4,
+        "settledReservations": 4,
+        "observedCostUsd": 0.0616645,
+        "outstandingReservedCostUsd": 0,
+        "committedCostUsd": 0.0616645
+      },
+      {
+        "id": "protected-integrity-fresh-planner-correction-incident-owner",
+        "providerCalls": 7,
+        "inputTokens": 16579,
+        "outputTokens": 15152,
+        "providerLatencyMs": 134369,
+        "retries": 0,
+        "reservations": 7,
+        "settledReservations": 7,
+        "observedCostUsd": 0.257308,
+        "outstandingReservedCostUsd": 0,
+        "committedCostUsd": 0.257308
+      }
+    ]
+  },
+  "failureClassification": {
+    "finalFailures": [],
+    "rawFailures": [
+      {
+        "caseId": "protected-integrity-fresh-planner-correction-incident-owner",
+        "surface": "validator",
+        "cause": "model output omitted the exact endpoint route surface",
+        "outcome": "repaired"
+      }
+    ],
+    "evaluationIntegrity": false,
+    "modelFinal": false,
+    "validatorFinal": false,
+    "repairFinal": false,
+    "oracleFinal": false,
+    "provider": false,
+    "budget": false
+  },
+  "telemetryLimitations": [
+    "The raw result's repairAttempts counters report zero model attempts even though usage records one validation-repair and one verification-repair provider call; the immutable proof is not rescored from that counter."
+  ],
+  "frozenConfiguration": {
+    "implementationCommit": "385cedb7bcf6122ed81cc5f4838dbdb6dcdb9410",
+    "proofFreezeCommit": "3fa7c1343e2febb1293caf3b918c880313adbb16",
+    "provider": "openai",
+    "preset": "quality",
+    "modelOverride": null,
+    "reasoningEffortOverride": null,
+    "openAIMinOutputTokens": 49152,
+    "openAIMinOutputTokensSource": "frozen-proof",
+    "openAIMinTimeoutMs": null,
+    "openAIMinTimeoutSource": "frozen-proof",
+    "caseTimeoutMs": 900000,
+    "maxCostUsd": 3,
+    "casesSha256": "cbd489343710ff7b15af005bfefb7af486c23bcfbd1fe7e9ea9b406abfbd3b09",
+    "fixtureSha256": "eaa5e749b1e48b1c583116b9bbc96dd001dfc725e6bd1df942efbd033a35e610",
+    "pricingSha256": "a7c270cd470262a73f72f3fa9adddf463b6fc27f5a0662aa5f7f0d36bee7e193"
+  },
+  "rawArtifactHashes": {
+    "results.json": "4a546c348cc11398ffdd7c40f6d700c1fb559d4ffb21a5603a0249fdd3403e02",
+    "run-metadata.json": "11a428df38f47fd9aaa8edf393652482b844dabd95e90996e34a57c2e8a5abc5",
+    "protected-integrity-retained-classification-details-state/change-manifest.json": "dcc62881afb360d93553fcf07d5355f7364492573e05d3b0fd0e7259abdb3cde",
+    "protected-integrity-retained-classification-details-state/final.diff": "ffc6604ca2ee16261e22d740b7a2960a101cdfda1f743cad4ad87f190c331c77",
+    "protected-integrity-retained-classification-details-state/plan.json": "fc3ff184028a613601cf74ef7ee1c7d5bcd61648b4076b7b0bd3bbb26d0e2db2",
+    "protected-integrity-retained-classification-details-state/result.json": "52a599602aa8bcd06832f407315820a97f365b12f6ff4683c0a1123f25c57667",
+    "protected-integrity-retained-classification-details-state/routing.json": "09b10ef17a4ac8e468dd048c84ed8f361ba0d3537260e8ae6f3dfc1b2fdbcb2c",
+    "protected-integrity-retained-classification-details-state/selected-context.json": "b4e3e79177eca84a035e4538a0e8deb05160051aa28ba1fb6b4e182a8dcd04d3",
+    "protected-integrity-retained-classification-details-state/usage.json": "7c7be8afad43a369d7d629d6630848ce258946968ba2be980400b3226caa917d",
+    "protected-integrity-retained-classification-details-state/validation-candidates.json": "666993c0dad366654f7975899d4837adea32f6d35c1ef8944992a68767ece64b",
+    "protected-integrity-retained-classification-details-state/validation-history.json": "53301b0db1df8db523b043a58e8d2a8247e9dd494b619cde8756fe46cca6b052",
+    "protected-integrity-retained-classification-details-state/verification-history.json": "7797e8e6669108ee8e07d676b7247f35eb5081e084aa272884ab1b32be38bad6",
+    "protected-integrity-fresh-planner-correction-incident-owner/change-manifest.json": "5e0cba2bdfb9a8eff46e5de1f39d9bbba9818a453ba8bb0fa6c0ee4386905ad8",
+    "protected-integrity-fresh-planner-correction-incident-owner/final.diff": "fd51d1571b14b53792ad3663447a65f0ac9b74875b120963abe84e2dbb940361",
+    "protected-integrity-fresh-planner-correction-incident-owner/plan.json": "f03a51a5b391561699d833f9cee8706f8e94545a17d5fc83adcfc02bbef18f92",
+    "protected-integrity-fresh-planner-correction-incident-owner/result.json": "2495c7c21805b2eea84d60271988a29df7316d5b6f08482e7d6c118b2656e722",
+    "protected-integrity-fresh-planner-correction-incident-owner/routing.json": "be4fd44d2ddf7cc78d90b1b3886c8ef3d76674ab6b405d7f7390f91098d9aa00",
+    "protected-integrity-fresh-planner-correction-incident-owner/selected-context.json": "48cc8dadd7f6278733f46415ef1c893a820ffff9244e963d3884ccc5a5d6f5e7",
+    "protected-integrity-fresh-planner-correction-incident-owner/usage.json": "c2bbcdfeb8ef0012c0f8525539a27b0ce24b6978b9853f51d1c92ca3c9e5ac30",
+    "protected-integrity-fresh-planner-correction-incident-owner/validation-candidates.json": "c094a1854dfd61c33f7ab8c4dda5b087983914341c944190b867c3e416cefd7c",
+    "protected-integrity-fresh-planner-correction-incident-owner/validation-history.json": "30601b7f686f7fa217458a895fc33339b78b81e25a380d6b0b14d9ed1e8747eb",
+    "protected-integrity-fresh-planner-correction-incident-owner/verification-history.json": "a765ce3ca19a797a9452658914de43fe4ea34c65ebd1c6141ab3194452bb4921"
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "codeCommit": "3fa7c1343e2febb1293caf3b918c880313adbb16",
+  "casesPath": "evals/gpt-5.6-protected-request-integrity-paid-confirmation-cases-2026-07-15.json",
+  "casesSha256": "cbd489343710ff7b15af005bfefb7af486c23bcfbd1fe7e9ea9b406abfbd3b09",
+  "fixtureHashes": {
+    "evals/fixtures/protected-request-integrity-paid-confirmation": "eaa5e749b1e48b1c583116b9bbc96dd001dfc725e6bd1df942efbd033a35e610"
+  },
+  "pricingPath": "/Users/liamkernan/Documents/automatedfeedback/evals/openai-model-pricing-2026-07-09.json",
+  "pricingSha256": "a7c270cd470262a73f72f3fa9adddf463b6fc27f5a0662aa5f7f0d36bee7e193",
+  "selectedCaseIds": [
+    "protected-integrity-retained-classification-details-state",
+    "protected-integrity-fresh-planner-correction-incident-owner"
+  ],
+  "frozenEvaluation": true,
+  "trials": 1,
+  "provider": "openai",
+  "preset": "quality",
+  "maxCostUsd": 3,
+  "caseTimeoutMs": 900000,
+  "command": [
+    "/Users/liamkernan/.nvm/versions/node/v22.16.0/bin/node",
+    "/Users/liamkernan/Documents/automatedfeedback/scripts/eval-local-fixes.ts",
+    "--",
+    "--frozen-evaluation",
+    "--frozen-openai-min-output-tokens",
+    "49152",
+    "--frozen-openai-min-timeout-ms",
+    "automatic",
+    "--generate",
+    "--classify",
+    "--cases",
+    "evals/gpt-5.6-protected-request-integrity-paid-confirmation-cases-2026-07-15.json",
+    "--case",
+    "protected-integrity-retained-classification-details-state",
+    "--case",
+    "protected-integrity-fresh-planner-correction-incident-owner",
+    "--provider",
+    "openai",
+    "--preset",
+    "quality",
+    "--trials",
+    "1",
+    "--case-timeout-ms",
+    "900000",
+    "--max-cost-usd",
+    "3",
+    "--pricing",
+    "evals/openai-model-pricing-2026-07-09.json",
+    "--output-dir",
+    "evals/runs/2026-07-15-gpt-5.6-protected-request-integrity-paid-confirmation-2-case-1x"
+  ],
+  "routeOverrides": {
+    "model": null,
+    "reasoningEffort": null
+  },
+  "openAIMinOutputTokens": 49152,
+  "openAIMinTimeoutMs": null,
+  "effectiveConfiguration": {
+    "openAI": {
+      "frozenEvaluation": true,
+      "minOutputTokens": {
+        "value": 49152,
+        "source": "frozen-proof"
+      },
+      "minTimeoutMs": {
+        "value": null,
+        "source": "frozen-proof"
+      },
+      "automaticTierTimeoutFloors": {
+        "gpt-5.6-sol/high": {
+          "value": 300000,
+          "source": "automatic-tier-floor"
+        },
+        "gpt-5.6-sol/xhigh": {
+          "value": 480000,
+          "source": "automatic-tier-floor"
+        }
+      }
+    },
+    "routing": {
+      "preset": {
+        "value": "quality",
+        "source": "frozen-proof"
+      },
+      "modelOverride": {
+        "value": null,
+        "source": "frozen-proof"
+      },
+      "reasoningEffortOverride": {
+        "value": null,
+        "source": "frozen-proof"
+      }
+    }
+  },
+  "startedAt": 1784141273569
+}

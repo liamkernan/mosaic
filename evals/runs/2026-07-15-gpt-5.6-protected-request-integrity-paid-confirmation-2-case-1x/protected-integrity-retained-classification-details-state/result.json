@@ -1,0 +1,303 @@
+{
+  "id": "protected-integrity-retained-classification-details-state",
+  "caseId": "protected-integrity-retained-classification-details-state",
+  "trial": 1,
+  "passed": true,
+  "tempPath": "/var/folders/fg/cvqdvtjx1g98hw6k7ybsn48h0000gn/T/mosaic-eval-JcIzVP/repo",
+  "generated": true,
+  "references": [
+    "tests/frontend_harness.py",
+    "tests/oracle/test_details_state.py",
+    "README.md",
+    "tests/baseline/test_fixture_baseline.py",
+    "tests/__init__.py",
+    "tests/oracle/test_incident_owner.py"
+  ],
+  "loadedFiles": [
+    "dashboard.js",
+    "tests/frontend_harness.py",
+    "index.html",
+    "README.md",
+    "tests/__init__.py"
+  ],
+  "changedFiles": [
+    "dashboard.js",
+    "tests/generated/test_response_details_accessibility.py"
+  ],
+  "errors": [],
+  "artifactPath": "/Users/liamkernan/Documents/automatedfeedback/evals/runs/2026-07-15-gpt-5.6-protected-request-integrity-paid-confirmation-2-case-1x/protected-integrity-retained-classification-details-state",
+  "usage": {
+    "calls": [
+      {
+        "authorizationId": "eval-request-1",
+        "requestPhase": "classification",
+        "model": "gpt-5.6-luna",
+        "inputTokens": 713,
+        "outputTokens": 549,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "latencyMs": 5815,
+        "retries": 0,
+        "advisorOffered": false,
+        "advisorUsed": false,
+        "advisorUnavailable": false,
+        "iterations": [
+          {
+            "type": "message",
+            "model": "gpt-5.6-luna",
+            "inputTokens": 713,
+            "outputTokens": 549,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "costUsd": 0.004007
+          }
+        ],
+        "phase": "classification",
+        "costUsd": 0.004007
+      },
+      {
+        "authorizationId": "eval-request-2",
+        "requestPhase": "classification",
+        "model": "gpt-5.6-terra",
+        "inputTokens": 713,
+        "outputTokens": 252,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "latencyMs": 2875,
+        "retries": 0,
+        "advisorOffered": false,
+        "advisorUsed": false,
+        "advisorUnavailable": false,
+        "iterations": [
+          {
+            "type": "message",
+            "model": "gpt-5.6-terra",
+            "inputTokens": 713,
+            "outputTokens": 252,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "costUsd": 0.0055625
+          }
+        ],
+        "phase": "classification",
+        "costUsd": 0.0055625
+      },
+      {
+        "authorizationId": "eval-request-3",
+        "requestPhase": "initial-planning",
+        "model": "gpt-5.6-terra",
+        "inputTokens": 2092,
+        "outputTokens": 1858,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "latencyMs": 18957,
+        "retries": 0,
+        "advisorOffered": false,
+        "advisorUsed": false,
+        "advisorUnavailable": false,
+        "iterations": [
+          {
+            "type": "message",
+            "model": "gpt-5.6-terra",
+            "inputTokens": 2092,
+            "outputTokens": 1858,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "costUsd": 0.0331
+          }
+        ],
+        "phase": "initial-planning",
+        "costUsd": 0.0331
+      },
+      {
+        "authorizationId": "eval-request-4",
+        "requestPhase": "generation",
+        "model": "gpt-5.6-terra",
+        "inputTokens": 3290,
+        "outputTokens": 718,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "latencyMs": 5772,
+        "retries": 0,
+        "advisorOffered": false,
+        "advisorUsed": false,
+        "advisorUnavailable": false,
+        "iterations": [
+          {
+            "type": "message",
+            "model": "gpt-5.6-terra",
+            "inputTokens": 3290,
+            "outputTokens": 718,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "costUsd": 0.018995
+          }
+        ],
+        "phase": "generation",
+        "costUsd": 0.018995
+      }
+    ],
+    "requestAssertions": [
+      {
+        "sequence": 1,
+        "phase": "classification",
+        "provider": "openai",
+        "model": "gpt-5.6-luna",
+        "status": "passed"
+      },
+      {
+        "sequence": 2,
+        "phase": "classification",
+        "provider": "openai",
+        "model": "gpt-5.6-terra",
+        "status": "passed"
+      },
+      {
+        "sequence": 3,
+        "phase": "initial-planning",
+        "provider": "openai",
+        "model": "gpt-5.6-terra",
+        "status": "passed"
+      },
+      {
+        "sequence": 4,
+        "phase": "generation",
+        "provider": "openai",
+        "model": "gpt-5.6-terra",
+        "status": "passed"
+      }
+    ],
+    "requestAssertionCount": 4,
+    "callCount": 4,
+    "totalInputTokens": 6808,
+    "totalOutputTokens": 3377,
+    "totalCacheReadInputTokens": 0,
+    "totalCacheCreationInputTokens": 0,
+    "totalLatencyMs": 33419,
+    "totalRetries": 0,
+    "totalCostUsd": 0.0616645,
+    "observedCostUsd": 0.0616645,
+    "outstandingReservedCostUsd": 0,
+    "committedCostUsd": 0.0616645,
+    "reservations": [
+      {
+        "id": "eval-request-1",
+        "estimatedMaxCostUsd": 0.296048,
+        "status": "settled",
+        "observedCostUsd": 0.004007
+      },
+      {
+        "id": "eval-request-2",
+        "estimatedMaxCostUsd": 0.74012,
+        "status": "settled",
+        "observedCostUsd": 0.0055625
+      },
+      {
+        "id": "eval-request-3",
+        "estimatedMaxCostUsd": 0.745605,
+        "status": "settled",
+        "observedCostUsd": 0.0331
+      },
+      {
+        "id": "eval-request-4",
+        "estimatedMaxCostUsd": 0.75081,
+        "status": "settled",
+        "observedCostUsd": 0.018995
+      }
+    ]
+  },
+  "scopeViolations": [],
+  "routes": {
+    "classification": {
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "high"
+    },
+    "planning": {
+      "model": "gpt-5.6-terra",
+      "reasoningEffort": "xhigh"
+    },
+    "generation": {
+      "model": "gpt-5.6-terra",
+      "reasoningEffort": "xhigh"
+    }
+  },
+  "classificationPasses": [
+    {
+      "route": {
+        "model": "gpt-5.6-luna",
+        "reasoningEffort": "high"
+      },
+      "classifiedFeedback": {
+        "id": "protected-integrity-retained-classification-details-state",
+        "repoFullName": "mosaic-eval/protected-request-integrity-paid-confirmation",
+        "receivedAt": "2026-07-15T18:47:54.714Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "The response-details panel opens and closes visually, but assistive technology always hears that its button is collapsed. Keep the existing button's expanded state synchronized for both opening and closing, preserve the watch behavior, and add an independently runnable regression test using the fixture's existing unittest frontend harness.",
+        "senderIdentifier": "protected-integrity-eval@example.com",
+        "category": "bug_report",
+        "complexity": "moderate",
+        "summary": "Synchronize the details toggle button’s expanded accessibility state with panel opening and closing while preserving watch behavior, and add a standalone unittest regression test.",
+        "relevantFiles": [
+          "dashboard.js",
+          "tests/frontend_harness.py"
+        ],
+        "confidence": 0.95,
+        "routingSignals": {
+          "scope": "coordinated",
+          "literalCorrection": false,
+          "runtimeBehavior": true,
+          "persistentData": false,
+          "securitySensitive": false,
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "route": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "xhigh"
+      },
+      "classifiedFeedback": {
+        "id": "protected-integrity-retained-classification-details-state",
+        "repoFullName": "mosaic-eval/protected-request-integrity-paid-confirmation",
+        "receivedAt": "2026-07-15T18:47:54.714Z",
+        "metadata": {},
+        "source": "web_form",
+        "rawContent": "The response-details panel opens and closes visually, but assistive technology always hears that its button is collapsed. Keep the existing button's expanded state synchronized for both opening and closing, preserve the watch behavior, and add an independently runnable regression test using the fixture's existing unittest frontend harness.",
+        "senderIdentifier": "protected-integrity-eval@example.com",
+        "category": "bug_report",
+        "complexity": "moderate",
+        "summary": "Synchronize the response-details button's expanded accessibility state when the panel opens and closes while preserving watch behavior and adding a standalone frontend-harness regression test.",
+        "relevantFiles": [
+          "dashboard.js",
+          "tests/frontend_harness.py",
+          "index.html"
+        ],
+        "confidence": 0.94,
+        "routingSignals": {
+          "scope": "multi-component",
+          "literalCorrection": false,
+          "runtimeBehavior": true,
+          "persistentData": false,
+          "securitySensitive": false,
+          "requiresHumanReview": false
+        }
+      }
+    }
+  ],
+  "safetyAssessment": {
+    "accepted": true,
+    "reasons": []
+  },
+  "routePassed": true,
+  "rawSolutionPassed": true,
+  "finalSolutionPassed": true,
+  "repairAssistedPassed": false,
+  "repairAttempts": {
+    "modelAttempts": 0,
+    "deterministicAttempts": 0,
+    "totalAttempts": 0,
+    "stages": []
+  }
+}

@@ -1,0 +1,50 @@
+[
+  {
+    "stage": "initial",
+    "selected": true,
+    "changes": [
+      {
+        "filePath": "incident/service.py",
+        "originalContent": "from incident import repository\n\n\ndef format_incident_title(incident):\n    return f\"{incident['id']}: {incident['title']}\"\n\n\ndef build_incident_summary(incident_id):\n    incident = repository.get_incident(incident_id)\n    if incident is None:\n        raise KeyError(incident_id)\n    return {\n        \"id\": incident[\"id\"],\n        \"status\": incident[\"status\"],\n    }\n",
+        "modifiedContent": "from incident import repository\n\n\ndef format_incident_title(incident):\n    return f\"{incident['id']}: {incident['title']}\"\n\n\ndef build_incident_summary(incident_id):\n    incident = repository.get_incident(incident_id)\n    if incident is None:\n        raise KeyError(incident_id)\n    return {\n        \"id\": incident[\"id\"],\n        \"owner\": incident[\"owner\"],\n    }\n",
+        "explanation": "Projects known incidents to the required id and owner fields while preserving the missing-incident signal."
+      },
+      {
+        "filePath": "incident/api.py",
+        "originalContent": "from incident.service import build_incident_summary\n\n\ndef get_incident_summary(incident_id):\n    return {\n        \"status\": 200,\n        \"body\": build_incident_summary(incident_id),\n    }\n",
+        "modifiedContent": "from incident.service import build_incident_summary\n\n\ndef get_incident_summary(incident_id):\n    try:\n        body = build_incident_summary(incident_id)\n    except KeyError:\n        return {\n            \"status\": 404,\n            \"body\": {\"error\": \"incident not found\"},\n        }\n    return {\n        \"status\": 200,\n        \"body\": body,\n    }\n",
+        "explanation": "Maps the service missing-incident signal to the stable 404 response while retaining successful handler responses."
+      },
+      {
+        "filePath": "tests/generated/test_incident_owner.py",
+        "originalContent": "",
+        "modifiedContent": "import unittest\nfrom unittest.mock import patch\n\nfrom incident import api\nfrom incident import service\n\n\nclass IncidentOwnerServiceTests(unittest.TestCase):\n    @patch(\"incident.service.repository.get_incident\")\n    def test_build_incident_summary_projects_only_id_and_owner(self, get_incident):\n        get_incident.return_value = {\n            \"id\": \"INC-42\",\n            \"owner\": \"operations\",\n            \"status\": \"open\",\n            \"title\": \"Example incident\",\n        }\n\n        result = service.build_incident_summary(\"INC-42\")\n\n        self.assertEqual(result, {\"id\": \"INC-42\", \"owner\": \"operations\"})\n        get_incident.assert_called_once_with(\"INC-42\")\n\n    @patch(\"incident.service.repository.get_incident\", return_value=None)\n    def test_build_incident_summary_signals_missing_incident(self, get_incident):\n        with self.assertRaises(KeyError) as error:\n            service.build_incident_summary(\"INC-404\")\n\n        self.assertEqual(error.exception.args, (\"INC-404\",))\n        get_incident.assert_called_once_with(\"INC-404\")\n\n\nclass IncidentOwnerApiTests(unittest.TestCase):\n    @patch(\"incident.api.build_incident_summary\")\n    def test_handler_returns_exact_owner_response_for_known_incident(\n        self, build_incident_summary\n    ):\n        build_incident_summary.return_value = {\n            \"id\": \"INC-42\",\n            \"owner\": \"operations\",\n        }\n\n        result = api.get_incident_summary(\"INC-42\")\n\n        self.assertEqual(\n            result,\n            {\n                \"status\": 200,\n                \"body\": {\"id\": \"INC-42\", \"owner\": \"operations\"},\n            },\n        )\n        build_incident_summary.assert_called_once_with(\"INC-42\")\n\n    @patch(\"incident.api.build_incident_summary\", side_effect=KeyError(\"INC-404\"))\n    def test_handler_returns_stable_not_found_response(self, build_incident_summary):\n        result = api.get_incident_summary(\"INC-404\")\n\n        self.assertEqual(\n            result,\n            {\n                \"status\": 404,\n                \"body\": {\"error\": \"incident not found\"},\n            },\n        )\n        build_incident_summary.assert_called_once_with(\"INC-404\")\n\n\nif __name__ == \"__main__\":\n    unittest.main()",
+        "explanation": "Adds independently runnable unittest coverage for service projection, missing incidents, and direct public handler responses."
+      }
+    ]
+  },
+  {
+    "stage": "model-repair-reduced-1",
+    "selected": true,
+    "changes": [
+      {
+        "filePath": "incident/service.py",
+        "originalContent": "from incident import repository\n\n\ndef format_incident_title(incident):\n    return f\"{incident['id']}: {incident['title']}\"\n\n\ndef build_incident_summary(incident_id):\n    incident = repository.get_incident(incident_id)\n    if incident is None:\n        raise KeyError(incident_id)\n    return {\n        \"id\": incident[\"id\"],\n        \"status\": incident[\"status\"],\n    }\n",
+        "modifiedContent": "from incident import repository\n\n\ndef format_incident_title(incident):\n    return f\"{incident['id']}: {incident['title']}\"\n\n\ndef build_incident_summary(incident_id):\n    incident = repository.get_incident(incident_id)\n    if incident is None:\n        raise KeyError(incident_id)\n    return {\n        \"id\": incident[\"id\"],\n        \"owner\": incident[\"owner\"],\n    }\n",
+        "explanation": "Projects known incidents to the required id and owner fields while preserving the missing-incident signal."
+      },
+      {
+        "filePath": "incident/api.py",
+        "originalContent": "from incident.service import build_incident_summary\n\n\ndef get_incident_summary(incident_id):\n    return {\n        \"status\": 200,\n        \"body\": build_incident_summary(incident_id),\n    }\n",
+        "modifiedContent": "from incident.service import build_incident_summary\n\n\nINCIDENT_OWNER_ROUTE = \"/incident-owner/:incident_id\"\nROUTES = {\n    (\"GET\", INCIDENT_OWNER_ROUTE): \"get_incident_summary\",\n}\n\n\ndef get_incident_summary(incident_id):\n    try:\n        body = build_incident_summary(incident_id)\n    except KeyError:\n        return {\n            \"status\": 404,\n            \"body\": {\"error\": \"incident not found\"},\n        }\n    return {\n        \"status\": 200,\n        \"body\": body,\n    }\n\n\ndef handle_request(method, path):\n    route_prefix = \"/incident-owner/\"\n    if method == \"GET\" and path.startswith(route_prefix):\n        incident_id = path[len(route_prefix):]\n        if incident_id and \"/\" not in incident_id:\n            return get_incident_summary(incident_id)\n\n    return {\n        \"status\": 404,\n        \"body\": {\"error\": \"not found\"},\n    }\n",
+        "explanation": "Registers and dispatches GET /incident-owner/:incident_id to the existing public incident summary handler."
+      },
+      {
+        "filePath": "tests/generated/test_incident_owner.py",
+        "originalContent": "",
+        "modifiedContent": "import unittest\nfrom unittest.mock import patch\n\nfrom incident import api\nfrom incident import service\n\n\nclass IncidentOwnerServiceTests(unittest.TestCase):\n    @patch(\"incident.service.repository.get_incident\")\n    def test_build_incident_summary_projects_only_id_and_owner(self, get_incident):\n        get_incident.return_value = {\n            \"id\": \"INC-42\",\n            \"owner\": \"operations\",\n            \"status\": \"open\",\n            \"title\": \"Example incident\",\n        }\n\n        result = service.build_incident_summary(\"INC-42\")\n\n        self.assertEqual(result, {\"id\": \"INC-42\", \"owner\": \"operations\"})\n        get_incident.assert_called_once_with(\"INC-42\")\n\n    @patch(\"incident.service.repository.get_incident\", return_value=None)\n    def test_build_incident_summary_signals_missing_incident(self, get_incident):\n        with self.assertRaises(KeyError) as error:\n            service.build_incident_summary(\"INC-404\")\n\n        self.assertEqual(error.exception.args, (\"INC-404\",))\n        get_incident.assert_called_once_with(\"INC-404\")\n\n\nclass IncidentOwnerApiTests(unittest.TestCase):\n    @patch(\"incident.api.build_incident_summary\")\n    def test_handler_returns_exact_owner_response_for_known_incident(\n        self, build_incident_summary\n    ):\n        build_incident_summary.return_value = {\n            \"id\": \"INC-42\",\n            \"owner\": \"operations\",\n        }\n\n        result = api.get_incident_summary(\"INC-42\")\n\n        self.assertEqual(\n            result,\n            {\n                \"status\": 200,\n                \"body\": {\"id\": \"INC-42\", \"owner\": \"operations\"},\n            },\n        )\n        build_incident_summary.assert_called_once_with(\"INC-42\")\n\n    @patch(\"incident.api.build_incident_summary\", side_effect=KeyError(\"INC-404\"))\n    def test_handler_returns_stable_not_found_response(self, build_incident_summary):\n        result = api.get_incident_summary(\"INC-404\")\n\n        self.assertEqual(\n            result,\n            {\n                \"status\": 404,\n                \"body\": {\"error\": \"incident not found\"},\n            },\n        )\n        build_incident_summary.assert_called_once_with(\"INC-404\")\n\n\nif __name__ == \"__main__\":\n    unittest.main()",
+        "explanation": "Adds independently runnable unittest coverage for service projection, missing incidents, and direct public handler responses."
+      }
+    ]
+  }
+]

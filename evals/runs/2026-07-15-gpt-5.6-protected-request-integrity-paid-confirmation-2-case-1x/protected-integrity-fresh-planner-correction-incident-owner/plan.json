@@ -1,0 +1,45 @@
+{
+  "requiredFiles": [
+    {
+      "path": "incident/service.py",
+      "reason": "Project known repository incidents to exactly id and owner while retaining an explicit missing-incident signal for the API layer."
+    },
+    {
+      "path": "incident/api.py",
+      "reason": "Complete the existing public handler so it returns the required 200 response and maps missing incidents to the stable 404 response."
+    },
+    {
+      "path": "tests/generated/test_incident_owner.py",
+      "reason": "Add independently runnable unittest coverage for both the service projection and the public handler responses without a network listener."
+    }
+  ],
+  "acceptanceCriteria": [
+    "GET /incident-owner/:incident_id returns status 200 for a known incident.",
+    "A known incident response body contains exactly id and owner.",
+    "A missing incident returns status 404 with the stable body {\"error\": \"incident not found\"}.",
+    "The repository module remains unchanged.",
+    "Existing verification-only suites remain unchanged.",
+    "New Python regressions belong under tests/generated/test_*.py and use the standard-library unittest runner.",
+    "Handler verification exercises the public API entry point without opening a real network listener."
+  ],
+  "implementationChecklist": [
+    "Update incident/service.py so build_incident_summary fetches through the existing repository dependency and returns exactly {\"id\": incident[\"id\"], \"owner\": incident[\"owner\"]} for a known incident.",
+    "Retain an explicit missing-incident outcome in incident/service.py, such as the existing KeyError when repository.get_incident returns None.",
+    "Update incident/api.py so the existing handler returns {\"status\": 200, \"body\": {\"id\": ..., \"owner\": ...}} for a successful service result.",
+    "Update incident/api.py to translate the service missing-incident outcome into exactly {\"status\": 404, \"body\": {\"error\": \"incident not found\"}}.",
+    "Do not modify incident/repository.py or existing verification-only suites.",
+    "Add tests/generated/test_incident_owner.py with mocked repository unit tests covering known-incident id/owner projection, exclusion of extra fields, and the missing-incident signal.",
+    "In the generated test module, call the API handler directly to verify exact 200 and 404 response dictionaries and confirm it invokes the backing service with the requested incident id."
+  ],
+  "verificationChecklist": [
+    "Mock a repository incident containing id, owner, and extra fields; assert the service result is exactly the id/owner dictionary.",
+    "Mock a missing repository lookup and assert the service produces its defined missing-incident signal.",
+    "Directly invoke the public API handler with a successful service result and assert status 200 and an exact id/owner body.",
+    "Directly invoke the public API handler with the service missing-incident signal and assert status 404 and body exactly {\"error\": \"incident not found\"}.",
+    "Run only the generated regression module; it must not open a listener or make external network calls.",
+    "Unit test the backing behavior used by /incident-owner/:incident_id, including its empty-state response."
+  ],
+  "verificationCommands": [
+    "python -m unittest discover -s tests/generated -p test_incident_owner.py"
+  ]
+}

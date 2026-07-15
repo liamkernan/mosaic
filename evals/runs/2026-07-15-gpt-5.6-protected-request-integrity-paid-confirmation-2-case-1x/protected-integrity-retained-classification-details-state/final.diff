@@ -1,0 +1,83 @@
+--- a/dashboard.js
++++ b/dashboard.js
+@@ -1,23 +1,24 @@
+-/* global document */
+-
+-const watchButton = document.querySelector("#watchIncident");
+-const watchStatus = document.querySelector("#watchStatus");
+-
+-watchButton.addEventListener("click", () => {
+-  const watching = watchButton.dataset.watching !== "true";
+-  watchButton.dataset.watching = String(watching);
+-  watchStatus.textContent = watching ? "Watching incident" : "Not watching";
+-});
+-
+-function setDetailsOpen(open) {
+-  document.querySelector("#detailsPanel").hidden = !open;
+-}
+-
+-document.querySelector("#detailsToggle").addEventListener("click", () => {
+-  const panel = document.querySelector("#detailsPanel");
+-  setDetailsOpen(panel.hidden);
+-});
+-
+-document.querySelector("#detailsClose").addEventListener("click", () => {
+-  setDetailsOpen(false);
+-});
++/* global document */
++
++const watchButton = document.querySelector("#watchIncident");
++const watchStatus = document.querySelector("#watchStatus");
++
++watchButton.addEventListener("click", () => {
++  const watching = watchButton.dataset.watching !== "true";
++  watchButton.dataset.watching = String(watching);
++  watchStatus.textContent = watching ? "Watching incident" : "Not watching";
++});
++
++function setDetailsOpen(open) {
++  document.querySelector("#detailsPanel").hidden = !open;
++  document.querySelector("#detailsToggle").setAttribute("aria-expanded", String(open));
++}
++
++document.querySelector("#detailsToggle").addEventListener("click", () => {
++  const panel = document.querySelector("#detailsPanel");
++  setDetailsOpen(panel.hidden);
++});
++
++document.querySelector("#detailsClose").addEventListener("click", () => {
++  setDetailsOpen(false);
++});
+--- a/tests/generated/test_response_details_accessibility.py
++++ b/tests/generated/test_response_details_accessibility.py
+@@ -1,0 +1,30 @@
++import unittest
++
++from tests.frontend_harness import run_dashboard
++
++
++class ResponseDetailsAccessibilityTest(unittest.TestCase):
++    def test_response_details_visibility_and_accessibility_state(self):
++        opened = run_dashboard(["#detailsToggle"])
++        self.assertFalse(opened["detailsHidden"])
++        self.assertEqual(opened["detailsExpanded"], "true")
++
++        toggle_closed = run_dashboard(["#detailsToggle", "#detailsToggle"])
++        self.assertTrue(toggle_closed["detailsHidden"])
++        self.assertEqual(toggle_closed["detailsExpanded"], "false")
++
++        close_button_closed = run_dashboard(["#detailsToggle", "#detailsClose"])
++        self.assertTrue(close_button_closed["detailsHidden"])
++        self.assertEqual(close_button_closed["detailsExpanded"], "false")
++
++        watching = run_dashboard(["#watchIncident"])
++        self.assertEqual(watching["watching"], "true")
++        self.assertEqual(watching["watchStatus"], "Watching incident")
++
++        not_watching = run_dashboard(["#watchIncident", "#watchIncident"])
++        self.assertEqual(not_watching["watching"], "false")
++        self.assertEqual(not_watching["watchStatus"], "Not watching")
++
++
++if __name__ == "__main__":
++    unittest.main()

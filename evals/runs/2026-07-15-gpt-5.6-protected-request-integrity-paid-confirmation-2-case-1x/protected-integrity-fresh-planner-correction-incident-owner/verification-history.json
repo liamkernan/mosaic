@@ -1,0 +1,14 @@
+[
+  {
+    "stage": "initial",
+    "errors": []
+  },
+  {
+    "stage": "check-repair-reduced",
+    "errors": []
+  },
+  {
+    "stage": "hidden-oracle",
+    "errors": []
+  }
+]

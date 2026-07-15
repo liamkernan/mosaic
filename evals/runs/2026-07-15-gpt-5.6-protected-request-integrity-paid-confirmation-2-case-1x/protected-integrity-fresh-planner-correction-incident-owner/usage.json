@@ -1,0 +1,300 @@
+{
+  "calls": [
+    {
+      "authorizationId": "eval-request-1",
+      "requestPhase": "classification",
+      "model": "gpt-5.6-luna",
+      "inputTokens": 791,
+      "outputTokens": 1137,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 10731,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-luna",
+          "inputTokens": 791,
+          "outputTokens": 1137,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.007613
+        }
+      ],
+      "phase": "classification",
+      "costUsd": 0.007613
+    },
+    {
+      "authorizationId": "eval-request-2",
+      "requestPhase": "classification",
+      "model": "gpt-5.6-terra",
+      "inputTokens": 791,
+      "outputTokens": 626,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 6968,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-terra",
+          "inputTokens": 791,
+          "outputTokens": 626,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.0113675
+        }
+      ],
+      "phase": "classification",
+      "costUsd": 0.0113675
+    },
+    {
+      "authorizationId": "eval-request-3",
+      "requestPhase": "initial-planning",
+      "model": "gpt-5.6-terra",
+      "inputTokens": 1842,
+      "outputTokens": 2845,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 26743,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-terra",
+          "inputTokens": 1842,
+          "outputTokens": 2845,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.04728
+        }
+      ],
+      "phase": "initial-planning",
+      "costUsd": 0.04728
+    },
+    {
+      "authorizationId": "eval-request-4",
+      "requestPhase": "planner-correction",
+      "model": "gpt-5.6-terra",
+      "inputTokens": 2541,
+      "outputTokens": 2219,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 20754,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-terra",
+          "inputTokens": 2541,
+          "outputTokens": 2219,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.0396375
+        }
+      ],
+      "phase": "planner-correction",
+      "costUsd": 0.0396375
+    },
+    {
+      "authorizationId": "eval-request-5",
+      "requestPhase": "generation",
+      "model": "gpt-5.6-terra",
+      "inputTokens": 3163,
+      "outputTokens": 1754,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 16075,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-terra",
+          "inputTokens": 3163,
+          "outputTokens": 1754,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.0342175
+        }
+      ],
+      "phase": "generation",
+      "costUsd": 0.0342175
+    },
+    {
+      "authorizationId": "eval-request-6",
+      "requestPhase": "validation-repair",
+      "model": "gpt-5.6-terra",
+      "inputTokens": 3624,
+      "outputTokens": 2092,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 18673,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-terra",
+          "inputTokens": 3624,
+          "outputTokens": 2092,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.04044
+        }
+      ],
+      "phase": "validation-repair",
+      "costUsd": 0.04044
+    },
+    {
+      "authorizationId": "eval-request-7",
+      "requestPhase": "verification-repair",
+      "model": "gpt-5.6-terra",
+      "inputTokens": 3827,
+      "outputTokens": 4479,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "latencyMs": 34425,
+      "retries": 0,
+      "advisorOffered": false,
+      "advisorUsed": false,
+      "advisorUnavailable": false,
+      "iterations": [
+        {
+          "type": "message",
+          "model": "gpt-5.6-terra",
+          "inputTokens": 3827,
+          "outputTokens": 4479,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "costUsd": 0.0767525
+        }
+      ],
+      "phase": "verification-repair",
+      "costUsd": 0.0767525
+    }
+  ],
+  "requestAssertions": [
+    {
+      "sequence": 1,
+      "phase": "classification",
+      "provider": "openai",
+      "model": "gpt-5.6-luna",
+      "status": "passed"
+    },
+    {
+      "sequence": 2,
+      "phase": "classification",
+      "provider": "openai",
+      "model": "gpt-5.6-terra",
+      "status": "passed"
+    },
+    {
+      "sequence": 3,
+      "phase": "initial-planning",
+      "provider": "openai",
+      "model": "gpt-5.6-terra",
+      "status": "passed"
+    },
+    {
+      "sequence": 4,
+      "phase": "planner-correction",
+      "provider": "openai",
+      "model": "gpt-5.6-terra",
+      "status": "passed"
+    },
+    {
+      "sequence": 5,
+      "phase": "generation",
+      "provider": "openai",
+      "model": "gpt-5.6-terra",
+      "status": "passed"
+    },
+    {
+      "sequence": 6,
+      "phase": "validation-repair",
+      "provider": "openai",
+      "model": "gpt-5.6-terra",
+      "status": "passed"
+    },
+    {
+      "sequence": 7,
+      "phase": "verification-repair",
+      "provider": "openai",
+      "model": "gpt-5.6-terra",
+      "status": "passed"
+    }
+  ],
+  "requestAssertionCount": 7,
+  "callCount": 7,
+  "totalInputTokens": 16579,
+  "totalOutputTokens": 15152,
+  "totalCacheReadInputTokens": 0,
+  "totalCacheCreationInputTokens": 0,
+  "totalLatencyMs": 134369,
+  "totalRetries": 0,
+  "totalCostUsd": 0.257308,
+  "observedCostUsd": 0.257308,
+  "outstandingReservedCostUsd": 0,
+  "committedCostUsd": 0.257308,
+  "reservations": [
+    {
+      "id": "eval-request-1",
+      "estimatedMaxCostUsd": 0.296192,
+      "status": "settled",
+      "observedCostUsd": 0.007613
+    },
+    {
+      "id": "eval-request-2",
+      "estimatedMaxCostUsd": 0.74048,
+      "status": "settled",
+      "observedCostUsd": 0.0113675
+    },
+    {
+      "id": "eval-request-3",
+      "estimatedMaxCostUsd": 0.7448325,
+      "status": "settled",
+      "observedCostUsd": 0.04728
+    },
+    {
+      "id": "eval-request-4",
+      "estimatedMaxCostUsd": 0.7476975,
+      "status": "settled",
+      "observedCostUsd": 0.0396375
+    },
+    {
+      "id": "eval-request-5",
+      "estimatedMaxCostUsd": 0.7503625,
+      "status": "settled",
+      "observedCostUsd": 0.0342175
+    },
+    {
+      "id": "eval-request-6",
+      "estimatedMaxCostUsd": 0.7523525,
+      "status": "settled",
+      "observedCostUsd": 0.04044
+    },
+    {
+      "id": "eval-request-7",
+      "estimatedMaxCostUsd": 0.7531775,
+      "status": "settled",
+      "observedCostUsd": 0.0767525
+    }
+  ]
+}

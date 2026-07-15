@@ -1,0 +1,38 @@
+{
+  "requiredFiles": [
+    {
+      "path": "dashboard.js",
+      "reason": "Update the response-details state setter so the existing toggle button's aria-expanded value matches the panel's open/hidden state for both toggle and close actions without changing watch behavior."
+    },
+    {
+      "path": "tests/generated/test_response_details_accessibility.py",
+      "reason": "Add an independently runnable unittest regression using tests.frontend_harness.run_dashboard to verify response-details visibility and accessibility state synchronization."
+    }
+  ],
+  "acceptanceCriteria": [
+    "The response-details panel can still open and close visually.",
+    "The existing response-details button's aria-expanded state is synchronized when the panel opens and when it closes, so assistive technology receives the correct expanded/collapsed state.",
+    "The response-details toggle opens a hidden panel and closes an open panel.",
+    "The response-details close button closes the panel and returns the toggle's aria-expanded state to false.",
+    "Existing watch behavior remains unchanged: clicking the watch button toggles data-watching and the watch-status text between Watching incident and Not watching.",
+    "The regression test is placed under tests/generated/test_*.py, uses the standard-library unittest runner, and imports the existing tests.frontend_harness.run_dashboard helper."
+  ],
+  "implementationChecklist": [
+    "Make setDetailsOpen set detailsPanel.hidden to the inverse of the requested open state and set #detailsToggle aria-expanded to the requested state as a string.",
+    "Continue routing both the toggle click and details-close click through setDetailsOpen so visual and accessibility state cannot diverge.",
+    "Leave the watch button's dataset.watching toggle and watch-status text behavior unchanged.",
+    "Create a unittest that verifies opening via #detailsToggle yields detailsHidden false and detailsExpanded true.",
+    "Verify closing via a second toggle click yields detailsHidden true and detailsExpanded false.",
+    "Verify closing via #detailsClose after opening also yields detailsHidden true and detailsExpanded false.",
+    "Include watch assertions confirming its existing state and status behavior still work through the frontend harness."
+  ],
+  "verificationChecklist": [
+    "Run the new unittest module independently.",
+    "Confirm a toggle-open action reports detailsHidden as false and detailsExpanded as true.",
+    "Confirm both toggle-close and close-button actions report detailsHidden as true and detailsExpanded as false.",
+    "Confirm watch activation reports watching true and Watching incident, and a subsequent activation returns it to false and Not watching."
+  ],
+  "verificationCommands": [
+    "python -m unittest tests.generated.test_response_details_accessibility"
+  ]
+}
