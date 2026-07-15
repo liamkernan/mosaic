@@ -153,6 +153,30 @@ describe("local fix evaluation harness", () => {
     }));
   });
 
+  it("stops the batch after an integrity-invalidated result", async () => {
+    const runCase = vi.fn(async (id: string) => ({
+      id,
+      passed: id !== "case-1",
+      ...(id === "case-1"
+        ? { integrityViolation: { type: "protected-request-boundary-rejection" } }
+        : {})
+    }));
+
+    const results = await runEvalCaseBatch(["case-1", "case-2"], {
+      timeoutMs: 100,
+      runCase,
+      stopAfterResult: (result) => result.integrityViolation !== undefined
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual(expect.objectContaining({
+      id: "case-1",
+      passed: false,
+      integrityViolation: { type: "protected-request-boundary-rejection" }
+    }));
+    expect(runCase).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves recorded case details when an isolated run fails", async () => {
     const results = await runEvalCaseBatch(["case-1"], {
       timeoutMs: 100,

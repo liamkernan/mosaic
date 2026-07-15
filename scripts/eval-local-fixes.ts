@@ -187,6 +187,15 @@ interface EvalResult {
   finalSolutionPassed?: boolean;
   repairAssistedPassed?: boolean;
   rawFailureSurface?: RawSolutionFailureSurface;
+  integrityViolation?: EvalIntegrityViolation;
+}
+
+interface EvalIntegrityViolation {
+  type: "protected-request-boundary-rejection";
+  sequence: number;
+  phase: string;
+  provider: LLMProvider;
+  model: string;
 }
 
 interface EvalUsageCall extends Omit<LLMUsageObservation, "iterations"> {
@@ -2044,6 +2053,16 @@ async function runInternalCase(
     result.usage = await readFile(join(result.artifactPath, "usage.json"), "utf8")
       .then((content) => JSON.parse(content) as EvalUsageSummary)
       .catch(() => undefined);
+    const rejectedAssertion = result.usage?.requestAssertions.find(({ status }) => status === "rejected");
+    if (rejectedAssertion) {
+      result.integrityViolation = {
+        type: "protected-request-boundary-rejection",
+        sequence: rejectedAssertion.sequence,
+        phase: rejectedAssertion.phase,
+        provider: rejectedAssertion.provider,
+        model: rejectedAssertion.model
+      };
+    }
     const validationStages = await readFile(join(result.artifactPath, "validation-history.json"), "utf8")
       .then((content) => (JSON.parse(content) as Array<{ stage: string }>).map(({ stage }) => stage))
       .catch(() => [] as string[]);
@@ -2233,7 +2252,8 @@ async function main(): Promise<void> {
         );
       }
       return result;
-    }
+    },
+    stopAfterResult: (result) => result.integrityViolation !== undefined
   });
   const results = batchResults.map((result, index) => ({
     ...result,
@@ -2243,6 +2263,18 @@ async function main(): Promise<void> {
   const finishedAt = Date.now();
   const summary = summarizeEvalTrials(results);
   await writeEvalReport(join(options.outputDir, "results.json"), results, { startedAt, finishedAt }, summary);
+  const integrityViolation = results.find((result) => result.integrityViolation !== undefined);
+  if (integrityViolation?.integrityViolation) {
+    await writeJsonAtomically(join(options.outputDir, "invalidation.json"), {
+      status: "invalidated",
+      reason: integrityViolation.integrityViolation.type,
+      caseId: integrityViolation.caseId,
+      trial: integrityViolation.trial,
+      requestAssertion: integrityViolation.integrityViolation,
+      unattemptedCaseIds: workItems.slice(results.length).map(({ trialRun }) => trialRun.runId),
+      noFurtherPaidCalls: true
+    });
+  }
 
   if (!options.keep) {
     await Promise.all(results.map(async (result) => {

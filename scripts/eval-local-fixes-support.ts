@@ -111,6 +111,7 @@ interface EvalCaseBatchOptions<T> {
   timeoutMs: number;
   runCase: (evalCase: T, signal: AbortSignal) => Promise<{ id: string; passed: boolean; errors?: string[] }>;
   getId?: (evalCase: T) => string;
+  stopAfterResult?: (result: EvalBatchResult) => boolean;
 }
 
 function errorMessage(error: unknown): string {
@@ -134,22 +135,30 @@ export async function runEvalCaseBatch<T>(
 
     try {
       const result = await options.runCase(evalCase, abortController.signal);
-      results.push({
+      const batchResult: EvalBatchResult = {
         ...result,
         id: result.id,
         passed: result.passed,
         outcome: "completed",
         errors: result.errors ?? []
-      });
+      };
+      results.push(batchResult);
+      if (options.stopAfterResult?.(batchResult)) {
+        break;
+      }
     } catch (error) {
       const resultDetails = error instanceof EvalCaseExecutionError ? error.resultDetails : {};
-      results.push({
+      const batchResult: EvalBatchResult = {
         ...resultDetails,
         id,
         passed: false,
         outcome: timedOut || abortController.signal.aborted ? "timeout" : "error",
         errors: [errorMessage(error)]
-      });
+      };
+      results.push(batchResult);
+      if (options.stopAfterResult?.(batchResult)) {
+        break;
+      }
     } finally {
       clearTimeout(timeout);
     }
