@@ -1,0 +1,17 @@
+{
+  "status": "invalidated",
+  "reason": "protected-request-boundary-rejection",
+  "caseId": "protected-boundary-retained-moderate-safe-details-state",
+  "trial": 1,
+  "requestAssertion": {
+    "type": "protected-request-boundary-rejection",
+    "sequence": 1,
+    "phase": "classification",
+    "provider": "openai",
+    "model": "gpt-5.6-luna"
+  },
+  "unattemptedCaseIds": [
+    "protected-boundary-fresh-planner-correction-incident-summary"
+  ],
+  "noFurtherPaidCalls": true
+}

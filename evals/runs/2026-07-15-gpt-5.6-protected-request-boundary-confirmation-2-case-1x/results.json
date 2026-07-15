@@ -1,0 +1,88 @@
+{
+  "startedAt": 1784136345943,
+  "finishedAt": 1784136347203,
+  "summary": {
+    "totalTrials": 1,
+    "passedTrials": 0,
+    "trialPassRate": 0,
+    "passAt1": {
+      "passedCases": 0,
+      "totalCases": 1,
+      "rate": 0
+    },
+    "passAtK": {
+      "passedCases": 0,
+      "totalCases": 1,
+      "rate": 0
+    },
+    "cases": [
+      {
+        "caseId": "protected-boundary-retained-moderate-safe-details-state",
+        "passedTrials": 0,
+        "totalTrials": 1,
+        "passAt1": false,
+        "passAtK": false
+      }
+    ]
+  },
+  "results": [
+    {
+      "id": "protected-boundary-retained-moderate-safe-details-state",
+      "caseId": "protected-boundary-retained-moderate-safe-details-state",
+      "trial": 1,
+      "passed": false,
+      "tempPath": "",
+      "generated": true,
+      "references": [],
+      "loadedFiles": [],
+      "changedFiles": [],
+      "errors": [
+        "Outbound evaluation request rejected by protected-path boundary assertion during classification"
+      ],
+      "artifactPath": "/Users/liamkernan/Documents/automatedfeedback/evals/runs/2026-07-15-gpt-5.6-protected-request-boundary-confirmation-2-case-1x/protected-boundary-retained-moderate-safe-details-state",
+      "rawSolutionPassed": false,
+      "finalSolutionPassed": false,
+      "repairAssistedPassed": false,
+      "scopeViolations": [],
+      "repairAttempts": {
+        "modelAttempts": 0,
+        "deterministicAttempts": 0,
+        "totalAttempts": 0,
+        "stages": []
+      },
+      "usage": {
+        "calls": [],
+        "requestAssertions": [
+          {
+            "sequence": 1,
+            "phase": "classification",
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "status": "rejected"
+          }
+        ],
+        "requestAssertionCount": 1,
+        "callCount": 0,
+        "totalInputTokens": 0,
+        "totalOutputTokens": 0,
+        "totalCacheReadInputTokens": 0,
+        "totalCacheCreationInputTokens": 0,
+        "totalLatencyMs": 0,
+        "totalRetries": 0,
+        "totalCostUsd": 0,
+        "observedCostUsd": 0,
+        "outstandingReservedCostUsd": 0,
+        "committedCostUsd": 0,
+        "reservations": []
+      },
+      "integrityViolation": {
+        "type": "protected-request-boundary-rejection",
+        "sequence": 1,
+        "phase": "classification",
+        "provider": "openai",
+        "model": "gpt-5.6-luna"
+      },
+      "outcome": "completed"
+    }
+  ]
+}
