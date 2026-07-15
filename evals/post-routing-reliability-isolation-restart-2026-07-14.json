@@ -1,0 +1,41 @@
+{
+  "invalidatedRun": {
+    "outputDir": "evals/runs/2026-07-14-gpt-5.6-post-routing-reliability-3x",
+    "codeCommit": "0d155cc4c4849633979a849c37b9d38492c1c27a",
+    "status": "invalidated-not-scored",
+    "reason": "Dotted unittest oracle modules were mispartitioned into repair-visible verification.",
+    "completedResultCount": 9,
+    "interruptedCaseId": "post-routing-complex-escalation-export",
+    "interruptedTrial": 2,
+    "observedUsage": {
+      "usageSnapshots": 10,
+      "modelCalls": 46,
+      "latencyMs": 1062570,
+      "retries": 0,
+      "costUsd": 1.69076
+    }
+  },
+  "frozenInputs": {
+    "casesPath": "evals/gpt-5.6-post-routing-reliability-cases-2026-07-14.json",
+    "casesSha256": "85f38e339fff7c78df507680fd411d3cbbb5712149231d3ea745226ee328cb28",
+    "fixturePath": "evals/fixtures/post-routing-reliability",
+    "fixtureSha256": "3fc0fbdd89c57426535524675de93cb765327636aa7f84c36b99e234048d2f71",
+    "pricingPath": "evals/openai-model-pricing-2026-07-09.json",
+    "pricingSha256": "a7c270cd470262a73f72f3fa9adddf463b6fc27f5a0662aa5f7f0d36bee7e193"
+  },
+  "replacementRun": {
+    "requiredIsolationCommit": "2864eacf17832356822783869e2d623293542bd1",
+    "unsafeOutputDir": "evals/runs/2026-07-14-gpt-5.6-post-routing-reliability-isolated-unsafe",
+    "safeOutputDir": "evals/runs/2026-07-14-gpt-5.6-post-routing-reliability-isolated-3x",
+    "safeTrialsPerCase": 3,
+    "safeCaseCount": 5,
+    "maxCostUsd": 2.75
+  },
+  "aggregateBudget": {
+    "originalCapUsd": 5,
+    "observedInvalidatedCostUsd": 1.69076,
+    "replacementHardCapUsd": 2.75,
+    "knownPlusAuthorizedMaximumUsd": 4.44076,
+    "canceledCallReserveUsd": 0.55924
+  }
+}
