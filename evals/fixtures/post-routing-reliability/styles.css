@@ -1,0 +1,18 @@
+body {
+  color: #172033;
+  font-family: system-ui, sans-serif;
+  margin: 2rem;
+}
+
+.incident-card {
+  border: 1px solid #c8d1e1;
+  border-radius: 0.75rem;
+  max-width: 38rem;
+  padding: 1.25rem;
+}
+
+.response-details {
+  background: #f3f6fb;
+  margin-top: 1rem;
+  padding: 1rem;
+}
