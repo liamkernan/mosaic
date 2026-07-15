@@ -53,7 +53,7 @@ export interface LLMClientOptions {
   advisorTool?: AdvisorToolOptions;
   reasoningEffort?: OpenAIReasoningEffort;
   disableUsageTracking?: boolean;
-  authorizeRequest?: (request: LLMRequestAuthorization) => void | Promise<void>;
+  authorizeRequest?: (request: LLMRequestAuthorization) => string | void | Promise<string | void>;
   observeUsage?: (event: LLMUsageObservation) => void | Promise<void>;
 }
 
@@ -66,6 +66,7 @@ export interface LLMRequestAuthorization {
 }
 
 export interface LLMUsageObservation {
+  authorizationId?: string;
   model: string;
   advisorModel?: string;
   inputTokens: number;
@@ -402,7 +403,7 @@ export class LLMClient {
           await enforceRepoRateLimit(this.usageContext.repoFullName);
         }
 
-        await this.authorizeRequest?.({
+        const authorizationId = await this.authorizeRequest?.({
           model,
           estimatedInputTokens: Math.ceil((systemPrompt.length + userMessage.length) / 3),
           maxOutputTokens
@@ -440,6 +441,7 @@ export class LLMClient {
 
         if (response.usage && this.observeUsage) {
           await this.observeUsage({
+            ...(authorizationId ? { authorizationId } : {}),
             model,
             inputTokens,
             outputTokens,
@@ -511,8 +513,8 @@ export class LLMClient {
     let requestAttempts = 0;
     const startedAt = Date.now();
 
-    const authorizeApiRequest = async (advisorTool?: AdvisorToolOptions): Promise<void> => {
-      await this.authorizeRequest?.({
+    const authorizeApiRequest = async (advisorTool?: AdvisorToolOptions): Promise<string | undefined> => {
+      const authorizationId = await this.authorizeRequest?.({
         model,
         ...(advisorTool ? { advisorModel: advisorTool.model } : {}),
         ...(advisorTool?.maxTokens === undefined ? {} : { advisorMaxTokens: advisorTool.maxTokens }),
@@ -520,6 +522,7 @@ export class LLMClient {
         maxOutputTokens: options.maxTokens ?? 4096
       });
       requestAttempts += 1;
+      return authorizationId || undefined;
     };
 
     while (attempt < maxRetries) {
@@ -538,10 +541,11 @@ export class LLMClient {
         const requestOptions = options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : undefined;
         const advisorTool = advisorUnavailable ? undefined : this.advisorTool;
         let response: AnthropicCompletionResponse;
+        let authorizationId: string | undefined;
 
         if (advisorTool) {
           try {
-            await authorizeApiRequest(advisorTool);
+            authorizationId = await authorizeApiRequest(advisorTool);
             const advisorStream = this.anthropicClient.beta.messages.stream(
               {
                 ...request,
@@ -569,19 +573,16 @@ export class LLMClient {
               "Advisor tool unavailable, retrying Anthropic completion without advisor"
             );
 
-            await authorizeApiRequest();
+            authorizationId = await authorizeApiRequest();
             const fallbackStream = this.anthropicClient.messages.stream(request, requestOptions);
             response = await withHardTimeout(fallbackStream.finalMessage(), options.timeoutMs);
           }
         } else {
-          await authorizeApiRequest();
+          authorizationId = await authorizeApiRequest();
           const stream = this.anthropicClient.messages.stream(request, requestOptions);
           response = await withHardTimeout(stream.finalMessage(), options.timeoutMs);
         }
 
-        if (response.stop_reason === "refusal") {
-          throw new LLMError("Anthropic completion was refused by the model safety system");
-        }
         const text = extractTextContent(response.content);
 
         if (this.usageContext && response.usage && !this.disableUsageTracking) {
@@ -601,6 +602,7 @@ export class LLMClient {
           };
           const advisorUsed = response.content.some(isAdvisorUseBlock);
           await this.observeUsage({
+            ...(authorizationId ? { authorizationId } : {}),
             model,
             ...(this.advisorTool ? { advisorModel: this.advisorTool.model } : {}),
             inputTokens: usage.input_tokens ?? 0,
@@ -614,6 +616,10 @@ export class LLMClient {
             advisorUnavailable,
             iterations: extractUsageIterations(usage, model, this.advisorTool?.model, advisorUsed)
           });
+        }
+
+        if (response.stop_reason === "refusal") {
+          throw new LLMError("Anthropic completion was refused by the model safety system");
         }
 
         return text.trim();

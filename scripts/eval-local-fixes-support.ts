@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 
 export type EvalOutcome = "completed" | "error" | "timeout";
@@ -523,19 +523,21 @@ function formatFinalDiff(changes: CaseArtifactChange[]): string {
   }).join("\n") + (changes.length > 0 ? "\n" : "");
 }
 
-async function writeJson(path: string, value: unknown): Promise<void> {
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+export async function writeJsonAtomically(path: string, value: unknown): Promise<void> {
+  const temporaryPath = `${path}.tmp`;
+  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await rename(temporaryPath, path);
 }
 
 export async function writeCaseArtifacts(outputDir: string, artifacts: CaseArtifacts): Promise<void> {
   await mkdir(outputDir, { recursive: true });
   await Promise.all([
-    writeJson(`${outputDir}/plan.json`, artifacts.plan),
-    writeJson(`${outputDir}/selected-context.json`, artifacts.selectedContext),
-    writeJson(`${outputDir}/change-manifest.json`, artifacts.changes),
-    writeJson(`${outputDir}/validation-history.json`, artifacts.validationHistory),
-    writeJson(`${outputDir}/validation-candidates.json`, artifacts.validationCandidates),
-    writeJson(`${outputDir}/verification-history.json`, artifacts.verificationHistory),
+    writeJsonAtomically(`${outputDir}/plan.json`, artifacts.plan),
+    writeJsonAtomically(`${outputDir}/selected-context.json`, artifacts.selectedContext),
+    writeJsonAtomically(`${outputDir}/change-manifest.json`, artifacts.changes),
+    writeJsonAtomically(`${outputDir}/validation-history.json`, artifacts.validationHistory),
+    writeJsonAtomically(`${outputDir}/validation-candidates.json`, artifacts.validationCandidates),
+    writeJsonAtomically(`${outputDir}/verification-history.json`, artifacts.verificationHistory),
     writeFile(`${outputDir}/final.diff`, formatFinalDiff(artifacts.changes), "utf8")
   ]);
 }
@@ -547,6 +549,20 @@ export interface EvalUsageRecord {
   cacheReadInputTokens: number;
   cacheCreationInputTokens: number;
   costUsd: number;
+}
+
+export interface EvalBudgetReservation {
+  id: string;
+  estimatedMaxCostUsd: number;
+  status: "outstanding" | "settled";
+  observedCostUsd?: number;
+}
+
+export interface EvalBudgetSnapshot {
+  observedCostUsd: number;
+  outstandingReservedCostUsd: number;
+  committedCostUsd: number;
+  reservations: EvalBudgetReservation[];
 }
 
 export interface ModelPricing {
@@ -747,7 +763,9 @@ export function estimateMaximumAdvisorCallCostUsd(
 }
 
 export class EvalBudget {
-  private spentUsd = 0;
+  private observedCostUsd = 0;
+  private nextReservationNumber = 1;
+  private readonly reservations = new Map<string, EvalBudgetReservation>();
 
   constructor(private readonly maxCostUsd: number) {
     if (!Number.isFinite(maxCostUsd) || maxCostUsd < 0) {
@@ -755,26 +773,78 @@ export class EvalBudget {
     }
   }
 
-  authorize({ estimatedMaxCostUsd }: { estimatedMaxCostUsd: number }): void {
+  authorize({ estimatedMaxCostUsd }: { estimatedMaxCostUsd: number }): string {
     if (estimatedMaxCostUsd < 0 || !Number.isFinite(estimatedMaxCostUsd)) {
       throw new Error("Estimated request cost must be a non-negative finite number");
     }
-    if (this.spentUsd + estimatedMaxCostUsd > this.maxCostUsd) {
+    if (this.committedCostUsd + estimatedMaxCostUsd > this.maxCostUsd) {
       throw new Error(
-        `Evaluation budget exhausted: $${this.spentUsd.toFixed(6)} spent, ` +
+        `Evaluation budget exhausted: $${this.observedCostUsd.toFixed(6)} observed, ` +
+        `$${this.outstandingReservedCostUsd.toFixed(6)} reserved, ` +
         `$${estimatedMaxCostUsd.toFixed(6)} maximum next-call cost, $${this.maxCostUsd.toFixed(6)} limit`
       );
     }
+
+    const id = `eval-request-${this.nextReservationNumber}`;
+    this.nextReservationNumber += 1;
+    this.reservations.set(id, {
+      id,
+      estimatedMaxCostUsd,
+      status: "outstanding"
+    });
+    return id;
   }
 
-  record(record: EvalUsageRecord): void {
+  record(record: EvalUsageRecord, reservationId?: string): void {
     if (record.costUsd < 0 || !Number.isFinite(record.costUsd)) {
       throw new Error("Recorded request cost must be a non-negative finite number");
     }
-    this.spentUsd += record.costUsd;
+
+    if (reservationId) {
+      const reservation = this.reservations.get(reservationId);
+      if (!reservation) {
+        throw new Error(`Unknown evaluation budget reservation: ${reservationId}`);
+      }
+      if (reservation.status !== "outstanding") {
+        throw new Error(`Evaluation budget reservation was already settled: ${reservationId}`);
+      }
+      reservation.status = "settled";
+      reservation.observedCostUsd = record.costUsd;
+    }
+
+    this.observedCostUsd += record.costUsd;
   }
 
   get totalCostUsd(): number {
-    return this.spentUsd;
+    return this.observedCostUsd;
   }
+
+  get outstandingReservedCostUsd(): number {
+    return [...this.reservations.values()].reduce(
+      (total, reservation) => reservation.status === "outstanding"
+        ? total + reservation.estimatedMaxCostUsd
+        : total,
+      0
+    );
+  }
+
+  get committedCostUsd(): number {
+    return this.observedCostUsd + this.outstandingReservedCostUsd;
+  }
+
+  snapshot(): EvalBudgetSnapshot {
+    return {
+      observedCostUsd: this.observedCostUsd,
+      outstandingReservedCostUsd: this.outstandingReservedCostUsd,
+      committedCostUsd: this.committedCostUsd,
+      reservations: [...this.reservations.values()].map((reservation) => ({ ...reservation }))
+    };
+  }
+}
+
+export function resolveCommittedEvalCostUsd(usage: {
+  totalCostUsd: number;
+  committedCostUsd?: number;
+}): number {
+  return usage.committedCostUsd ?? usage.totalCostUsd;
 }

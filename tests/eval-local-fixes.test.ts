@@ -23,6 +23,7 @@ import {
   partitionVisibleContext,
   partitionVerificationCommands,
   relocateGeneratedTestsFromImmutablePaths,
+  resolveCommittedEvalCostUsd,
   sanitizePlanForImmutablePaths,
   runEvalCaseBatch,
   summarizeRepairAttempts,
@@ -32,6 +33,7 @@ import {
   validateUnchangedSymbolsWithAllowedLines,
   validateUnchangedPythonSymbols,
   writeCaseArtifacts,
+  writeJsonAtomically,
   writeEvalReport
 } from "../scripts/eval-local-fixes-support.js";
 import { createTempDirTracker } from "./helpers/temp-dirs.js";
@@ -158,6 +160,39 @@ describe("local fix evaluation harness", () => {
       finishedAt: 20,
       results
     });
+  });
+
+  it("atomically replaces a prior JSON snapshot", async () => {
+    const outputDir = await tempDirs.create("mosaic-atomic-json-");
+    const outputPath = join(outputDir, "usage.json");
+    await writeFile(outputPath, '{"state":"reserved"}\n', "utf8");
+
+    await writeJsonAtomically(outputPath, { state: "settled" });
+
+    expect(JSON.parse(await readFile(outputPath, "utf8"))).toEqual({ state: "settled" });
+    await expect(readFile(`${outputPath}.tmp`, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("persists reservations before requests and charges committed cost after child interruption", async () => {
+    const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
+    const telemetryStart = source.indexOf("async function createEvalTelemetry");
+    const telemetryEnd = source.indexOf("function mergeFiles", telemetryStart);
+    const telemetry = source.slice(telemetryStart, telemetryEnd);
+    const reserveIndex = telemetry.indexOf("budget.authorize({ estimatedMaxCostUsd })");
+    const persistIndex = telemetry.indexOf("await persistUsage()", reserveIndex);
+    const returnIndex = telemetry.indexOf("return reservationId", persistIndex);
+
+    expect(reserveIndex).toBeGreaterThan(-1);
+    expect(persistIndex).toBeGreaterThan(reserveIndex);
+    expect(returnIndex).toBeGreaterThan(persistIndex);
+    expect(telemetry).toContain("budget.record({ ...event, costUsd }, event.authorizationId)");
+    expect(source).toContain("remainingBudgetUsd - resolveCommittedEvalCostUsd(usage)");
+    expect(source).toContain("remainingBudgetUsd - (result.usage ? resolveCommittedEvalCostUsd(result.usage) : 0)");
+
+    const routingSource = await readFile("scripts/eval-routing-benchmark.ts", "utf8");
+    expect(routingSource).toContain("await writeJsonAtomically(path, value)");
+    expect(routingSource).toContain("usageSummary(calls, budget.snapshot())");
+    expect(routingSource).toContain("}, event.authorizationId)");
   });
 
   it("creates round-robin trial runs with isolated identities", () => {
@@ -528,6 +563,108 @@ describe("local fix evaluation harness", () => {
 
     expect(() => budget.authorize({ estimatedMaxCostUsd: 0.006 })).toThrow("budget");
     expect(() => budget.authorize({ estimatedMaxCostUsd: 0.005 })).not.toThrow();
+  });
+
+  it("releases a completed call's maximum reservation and retains only its observed cost", () => {
+    const budget = new EvalBudget(1);
+    const reservationId = budget.authorize({ estimatedMaxCostUsd: 0.8 });
+
+    budget.record({
+      model: "test-model",
+      inputTokens: 1_000,
+      outputTokens: 500,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+      costUsd: 0.2
+    }, reservationId);
+
+    expect(budget.snapshot()).toEqual({
+      observedCostUsd: 0.2,
+      outstandingReservedCostUsd: 0,
+      committedCostUsd: 0.2,
+      reservations: [{
+        id: reservationId,
+        estimatedMaxCostUsd: 0.8,
+        status: "settled",
+        observedCostUsd: 0.2
+      }]
+    });
+    expect(() => budget.authorize({ estimatedMaxCostUsd: 0.8 })).not.toThrow();
+  });
+
+  it("retains an unknown-cost call reservation and creates no reservation for a rejected call", () => {
+    const budget = new EvalBudget(1);
+    const reservationId = budget.authorize({ estimatedMaxCostUsd: 0.8 });
+
+    expect(() => budget.authorize({ estimatedMaxCostUsd: 0.21 })).toThrow("budget");
+    expect(budget.snapshot()).toEqual({
+      observedCostUsd: 0,
+      outstandingReservedCostUsd: 0.8,
+      committedCostUsd: 0.8,
+      reservations: [{
+        id: reservationId,
+        estimatedMaxCostUsd: 0.8,
+        status: "outstanding"
+      }]
+    });
+  });
+
+  it("settles only the successful retry while retaining an earlier unknown attempt", () => {
+    const budget = new EvalBudget(1);
+    const unknownAttemptId = budget.authorize({ estimatedMaxCostUsd: 0.4 });
+    const successfulAttemptId = budget.authorize({ estimatedMaxCostUsd: 0.4 });
+
+    budget.record({
+      model: "test-model",
+      inputTokens: 1_000,
+      outputTokens: 500,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+      costUsd: 0.1
+    }, successfulAttemptId);
+
+    expect(budget.snapshot()).toEqual({
+      observedCostUsd: 0.1,
+      outstandingReservedCostUsd: 0.4,
+      committedCostUsd: 0.5,
+      reservations: [
+        {
+          id: unknownAttemptId,
+          estimatedMaxCostUsd: 0.4,
+          status: "outstanding"
+        },
+        {
+          id: successfulAttemptId,
+          estimatedMaxCostUsd: 0.4,
+          status: "settled",
+          observedCostUsd: 0.1
+        }
+      ]
+    });
+  });
+
+  it("preserves the retained late-trial cap rejection using the actual transport maximum", () => {
+    const budget = new EvalBudget(2.75);
+    budget.record({
+      model: "gpt-5.6-sol",
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+      costUsd: 1.6313315 + 0.003444
+    });
+
+    expect(budget.totalCostUsd).toBeCloseTo(1.6347755, 10);
+    expect(() => budget.authorize({ estimatedMaxCostUsd: 1.480475 })).toThrow("budget");
+    expect(budget.snapshot().reservations).toEqual([]);
+  });
+
+  it("uses committed cost for new snapshots and observed cost for legacy snapshots", () => {
+    expect(resolveCommittedEvalCostUsd({
+      totalCostUsd: 0.25,
+      committedCostUsd: 0.75
+    })).toBe(0.75);
+    expect(resolveCommittedEvalCostUsd({ totalCostUsd: 0.25 })).toBe(0.25);
   });
 
   it("calculates executor and cache token cost from exact usage", () => {

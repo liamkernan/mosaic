@@ -66,7 +66,10 @@ import {
   summarizeRepairAttempts,
   validateAllowedChangedPaths,
   writeCaseArtifacts,
+  writeJsonAtomically,
   writeEvalReport,
+  resolveCommittedEvalCostUsd,
+  type EvalBudgetSnapshot,
   type EvalBatchResult,
   type EvalTrialRun,
   type EvalRepairSummary,
@@ -176,7 +179,7 @@ interface EvalUsageCall extends Omit<LLMUsageObservation, "iterations"> {
   iterations: Array<LLMUsageIteration & { costUsd: number }>;
 }
 
-interface EvalUsageSummary {
+interface EvalUsageSummary extends EvalBudgetSnapshot {
   calls: EvalUsageCall[];
   callCount: number;
   totalInputTokens: number;
@@ -198,14 +201,18 @@ function emptyEvalUsageSummary(): EvalUsageSummary {
     totalCacheCreationInputTokens: 0,
     totalLatencyMs: 0,
     totalRetries: 0,
-    totalCostUsd: 0
+    totalCostUsd: 0,
+    observedCostUsd: 0,
+    outstandingReservedCostUsd: 0,
+    committedCostUsd: 0,
+    reservations: []
   };
 }
 
 type PricingTable = Record<string, ModelPricing>;
 
 interface EvalTelemetry {
-  authorize: (request: LLMRequestAuthorization) => void;
+  authorize: (request: LLMRequestAuthorization) => Promise<string>;
   observe: (phase: string, event: LLMUsageObservation) => Promise<void>;
   snapshot: () => EvalUsageSummary;
 }
@@ -445,20 +452,37 @@ async function createEvalTelemetry(
   const calls: EvalUsageCall[] = [];
   let writeQueue = Promise.resolve();
 
-  const snapshot = (): EvalUsageSummary => calls.reduce<EvalUsageSummary>((summary, call) => ({
-    calls,
-    callCount: summary.callCount + 1,
-    totalInputTokens: summary.totalInputTokens + call.iterations.reduce((total, iteration) => total + iteration.inputTokens, 0),
-    totalOutputTokens: summary.totalOutputTokens + call.iterations.reduce((total, iteration) => total + iteration.outputTokens, 0),
-    totalCacheReadInputTokens: summary.totalCacheReadInputTokens + call.iterations.reduce((total, iteration) => total + iteration.cacheReadInputTokens, 0),
-    totalCacheCreationInputTokens: summary.totalCacheCreationInputTokens + call.iterations.reduce((total, iteration) => total + iteration.cacheCreationInputTokens, 0),
-    totalLatencyMs: summary.totalLatencyMs + call.latencyMs,
-    totalRetries: summary.totalRetries + call.retries,
-    totalCostUsd: summary.totalCostUsd + call.costUsd
-  }), emptyEvalUsageSummary());
+  const snapshot = (): EvalUsageSummary => {
+    const observedUsage = calls.reduce<EvalUsageSummary>((summary, call) => ({
+      ...summary,
+      calls,
+      callCount: summary.callCount + 1,
+      totalInputTokens: summary.totalInputTokens + call.iterations.reduce((total, iteration) => total + iteration.inputTokens, 0),
+      totalOutputTokens: summary.totalOutputTokens + call.iterations.reduce((total, iteration) => total + iteration.outputTokens, 0),
+      totalCacheReadInputTokens: summary.totalCacheReadInputTokens + call.iterations.reduce((total, iteration) => total + iteration.cacheReadInputTokens, 0),
+      totalCacheCreationInputTokens: summary.totalCacheCreationInputTokens + call.iterations.reduce((total, iteration) => total + iteration.cacheCreationInputTokens, 0),
+      totalLatencyMs: summary.totalLatencyMs + call.latencyMs,
+      totalRetries: summary.totalRetries + call.retries,
+      totalCostUsd: summary.totalCostUsd + call.costUsd
+    }), emptyEvalUsageSummary());
+    return {
+      ...observedUsage,
+      ...budget.snapshot(),
+      totalCostUsd: budget.totalCostUsd
+    };
+  };
+
+  const persistUsage = async (): Promise<void> => {
+    const usageSnapshot = snapshot();
+    writeQueue = writeQueue.then(async () => {
+      await mkdir(artifactPath, { recursive: true });
+      await writeJsonAtomically(join(artifactPath, "usage.json"), usageSnapshot);
+    });
+    await writeQueue;
+  };
 
   return {
-    authorize: (request) => {
+    authorize: async (request) => {
       const modelPricing = pricing[request.model];
       if (!modelPricing) {
         throw new Error(`Missing pricing for model: ${request.model}`);
@@ -480,7 +504,9 @@ async function createEvalTelemetry(
           advisorPricing
         );
       }
-      budget.authorize({ estimatedMaxCostUsd });
+      const reservationId = budget.authorize({ estimatedMaxCostUsd });
+      await persistUsage();
+      return reservationId;
     },
     observe: async (phase, event) => {
       const costUsd = calculateUsageIterationsCostUsd(event.iterations, pricing);
@@ -488,13 +514,9 @@ async function createEvalTelemetry(
         ...iteration,
         costUsd: calculateUsageCostUsd(iteration, pricing[iteration.model])
       }));
-      budget.record({ ...event, costUsd });
+      budget.record({ ...event, costUsd }, event.authorizationId);
       calls.push({ ...event, iterations, phase, costUsd });
-      writeQueue = writeQueue.then(async () => {
-        await mkdir(artifactPath, { recursive: true });
-        await writeFile(join(artifactPath, "usage.json"), `${JSON.stringify(snapshot(), null, 2)}\n`, "utf8");
-      });
-      await writeQueue;
+      await persistUsage();
     },
     snapshot
   };
@@ -1075,7 +1097,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   if (evalCase.expectedSafetyOutcome === "rejected") {
     await mkdir(artifactPath, { recursive: true });
     await writeFile(join(artifactPath, "safety.json"), `${JSON.stringify(safetyAssessment, null, 2)}\n`, "utf8");
-    await writeFile(join(artifactPath, "usage.json"), `${JSON.stringify(emptyEvalUsageSummary(), null, 2)}\n`, "utf8");
+    await writeJsonAtomically(join(artifactPath, "usage.json"), emptyEvalUsageSummary());
     const passed = !safetyAssessment.accepted;
     return {
       id: runId,
@@ -1874,11 +1896,11 @@ async function runCaseInChild(
         clearTimeout(forceKillTimeout);
       }
       signal.removeEventListener("abort", abort);
+      const artifactPath = join(options.outputDir, trialRun.runId);
+      const usage = await readFile(join(artifactPath, "usage.json"), "utf8")
+        .then((content) => JSON.parse(content) as EvalUsageSummary)
+        .catch(() => undefined);
       if (signal.aborted) {
-        const artifactPath = join(options.outputDir, trialRun.runId);
-        const usage = await readFile(join(artifactPath, "usage.json"), "utf8")
-          .then((content) => JSON.parse(content) as EvalUsageSummary)
-          .catch(() => undefined);
         if (usage) {
           recordInterruptedUsage(usage);
         }
@@ -1913,6 +1935,9 @@ async function runCaseInChild(
         const result = JSON.parse(await readFile(resultPath, "utf8")) as EvalResult;
         resolveResult(result);
       } catch (error) {
+        if (usage) {
+          recordInterruptedUsage(usage);
+        }
         const details = stderr.trim();
         rejectResult(new Error(
           `Eval child exited with code ${String(code)} without a result${details ? `: ${details}` : ""}`,
@@ -2133,20 +2158,21 @@ async function main(): Promise<void> {
     timeoutMs: options.caseTimeoutMs,
     getId: ({ trialRun }) => trialRun.runId,
     runCase: async ({ evalCase, trialRun }, signal) => {
-      let interruptedCostUsd = 0;
       const result = await runCaseInChild(evalCase, trialRun, {
         ...options,
         maxCostUsd: remainingBudgetUsd,
         trial: trialRun.trial,
         runId: trialRun.runId
       }, signal, (usage) => {
-        interruptedCostUsd = usage.totalCostUsd;
         if (remainingBudgetUsd !== undefined) {
-          remainingBudgetUsd = Math.max(0, remainingBudgetUsd - interruptedCostUsd);
+          remainingBudgetUsd = Math.max(0, remainingBudgetUsd - resolveCommittedEvalCostUsd(usage));
         }
       });
       if (remainingBudgetUsd !== undefined) {
-        remainingBudgetUsd = Math.max(0, remainingBudgetUsd - (result.usage?.totalCostUsd ?? 0));
+        remainingBudgetUsd = Math.max(
+          0,
+          remainingBudgetUsd - (result.usage ? resolveCommittedEvalCostUsd(result.usage) : 0)
+        );
       }
       return result;
     }

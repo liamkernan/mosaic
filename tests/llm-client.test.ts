@@ -191,13 +191,19 @@ describe("LLMClient", () => {
         name: "NotFoundError"
       })
     );
+    const authorizeRequest = vi.fn()
+      .mockResolvedValueOnce("advisor-attempt")
+      .mockResolvedValueOnce("fallback-attempt");
+    const observeUsage = vi.fn();
     const client = new LLMClient({
       mode: "platform",
       platformApiKey: "test-key",
       advisorTool: {
         model: ANTHROPIC_ADVISOR_MODEL_ID,
         maxUses: 1
-      }
+      },
+      authorizeRequest,
+      observeUsage
     });
 
     await expect(client.complete("system", "user")).resolves.toBe("ok");
@@ -211,6 +217,10 @@ describe("LLMClient", () => {
       undefined
     );
     expect(finalMessageMock).toHaveBeenCalledTimes(2);
+    expect(authorizeRequest).toHaveBeenCalledTimes(2);
+    expect(observeUsage).toHaveBeenCalledWith(expect.objectContaining({
+      authorizationId: "fallback-attempt"
+    }));
   });
 
   it("does not fall back for unrelated beta request failures", async () => {
@@ -389,6 +399,30 @@ describe("LLMClient", () => {
     expect(streamMock).not.toHaveBeenCalled();
   });
 
+  it("waits for durable async authorization before starting an API request", async () => {
+    let resolveAuthorization: ((value: string) => void) | undefined;
+    const authorizeRequest = vi.fn(() => new Promise<string>((resolve) => {
+      resolveAuthorization = resolve;
+    }));
+    const observeUsage = vi.fn();
+    const client = new LLMClient({
+      mode: "platform",
+      platformApiKey: "test-key",
+      authorizeRequest,
+      observeUsage
+    });
+
+    const completion = client.complete("system", "user");
+    await vi.waitFor(() => expect(authorizeRequest).toHaveBeenCalledTimes(1));
+    expect(streamMock).not.toHaveBeenCalled();
+
+    resolveAuthorization?.("durable-request");
+    await expect(completion).resolves.toBe("ok");
+    expect(observeUsage).toHaveBeenCalledWith(expect.objectContaining({
+      authorizationId: "durable-request"
+    }));
+  });
+
   it("joins text response blocks while ignoring non-text blocks", async () => {
     finalMessageMock.mockResolvedValueOnce({
       content: [
@@ -426,17 +460,26 @@ describe("LLMClient", () => {
       stop_reason: "refusal",
       usage: { input_tokens: 10, output_tokens: 1 }
     });
+    const authorizeRequest = vi.fn(() => "refused-request");
+    const observeUsage = vi.fn();
     const client = new LLMClient({
       mode: "platform",
-      platformApiKey: "test-key"
+      platformApiKey: "test-key",
+      authorizeRequest,
+      observeUsage
     });
 
     await expect(client.complete("system", "user")).rejects.toThrow("refused by the model safety system");
+    expect(observeUsage).toHaveBeenCalledWith(expect.objectContaining({
+      authorizationId: "refused-request",
+      inputTokens: 10,
+      outputTokens: 1
+    }));
   });
 
   it("maps completions directly to the stateless OpenAI Responses API", async () => {
     const observeUsage = vi.fn();
-    const authorizeRequest = vi.fn();
+    const authorizeRequest = vi.fn((_request: unknown) => "openai-request-1");
     const client = new LLMClient({
       provider: "openai",
       mode: "platform",
@@ -470,6 +513,7 @@ describe("LLMClient", () => {
     }));
     expect(authorizeRequest.mock.calls[0]?.[0]).not.toHaveProperty("advisorModel");
     expect(observeUsage).toHaveBeenCalledWith(expect.objectContaining({
+      authorizationId: "openai-request-1",
       model: "gpt-5.6-sol",
       inputTokens: 10,
       outputTokens: 5,
@@ -485,6 +529,50 @@ describe("LLMClient", () => {
         cacheCreationInputTokens: 0
       }]
     }));
+  });
+
+  it("settles only the successful OpenAI retry authorization", async () => {
+    vi.useFakeTimers();
+    try {
+      responsesCreateMock
+        .mockRejectedValueOnce(Object.assign(new Error("rate limit"), {
+          status: 429,
+          name: "RateLimitError"
+        }))
+        .mockResolvedValueOnce({
+          output_text: "openai ok",
+          usage: {
+            input_tokens: 10,
+            output_tokens: 5,
+            input_tokens_details: { cached_tokens: 2 }
+          }
+        });
+      const authorizeRequest = vi.fn()
+        .mockReturnValueOnce("unknown-attempt")
+        .mockReturnValueOnce("successful-attempt");
+      const observeUsage = vi.fn();
+      const client = new LLMClient({
+        provider: "openai",
+        mode: "platform",
+        platformApiKey: "openai-test-key",
+        model: OPENAI_MODEL_IDS.sol,
+        disableUsageTracking: true,
+        authorizeRequest,
+        observeUsage
+      });
+
+      const completion = client.complete("system", "user");
+      await vi.runAllTimersAsync();
+      await expect(completion).resolves.toBe("openai ok");
+
+      expect(authorizeRequest).toHaveBeenCalledTimes(2);
+      expect(observeUsage).toHaveBeenCalledWith(expect.objectContaining({
+        authorizationId: "successful-attempt",
+        retries: 1
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("defaults OpenAI to GPT-5.4 when no model is supplied", async () => {

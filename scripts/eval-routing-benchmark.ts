@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -19,6 +19,8 @@ import {
   calculateUsageCostUsd,
   calculateUsageIterationsCostUsd,
   estimateMaximumCallCostUsd,
+  writeJsonAtomically,
+  type EvalBudgetSnapshot,
   type ModelPricing
 } from "./eval-local-fixes-support.js";
 import {
@@ -120,7 +122,7 @@ async function ensureNewOutputDir(outputDir: string): Promise<void> {
 }
 
 async function writeJson(path: string, value: unknown): Promise<void> {
-  await writeFile(path, JSON.stringify(value, null, 2) + "\n", "utf8");
+  await writeJsonAtomically(path, value);
 }
 
 async function gitRevision(revision = "HEAD"): Promise<string> {
@@ -149,7 +151,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function usageSummary(calls: RoutingUsageCall[]): {
+function usageSummary(calls: RoutingUsageCall[], budgetSnapshot?: EvalBudgetSnapshot): {
   calls: RoutingUsageCall[];
   callCount: number;
   inputTokens: number;
@@ -158,8 +160,12 @@ function usageSummary(calls: RoutingUsageCall[]): {
   cacheCreationInputTokens: number;
   latencyMs: number;
   costUsd: number;
+  observedCostUsd?: number;
+  outstandingReservedCostUsd?: number;
+  committedCostUsd?: number;
+  reservations?: EvalBudgetSnapshot["reservations"];
 } {
-  return calls.reduce((summary, call) => ({
+  const observedUsage = calls.reduce((summary, call) => ({
     calls,
     callCount: summary.callCount + 1,
     inputTokens: summary.inputTokens + call.iterations.reduce((total, item) => total + item.inputTokens, 0),
@@ -178,6 +184,10 @@ function usageSummary(calls: RoutingUsageCall[]): {
     latencyMs: 0,
     costUsd: 0
   });
+  return {
+    ...observedUsage,
+    ...(budgetSnapshot ?? {})
+  };
 }
 
 async function main(): Promise<void> {
@@ -232,18 +242,20 @@ async function main(): Promise<void> {
     startedAt
   });
 
-  const authorize = (request: LLMRequestAuthorization): void => {
+  const authorize = async (request: LLMRequestAuthorization): Promise<string> => {
     const modelPricing = pricing[request.model];
     if (!modelPricing) {
       throw new Error("Missing pricing for model: " + request.model);
     }
-    budget.authorize({
+    const reservationId = budget.authorize({
       estimatedMaxCostUsd: estimateMaximumCallCostUsd(
         request.estimatedInputTokens,
         request.maxOutputTokens,
         modelPricing
       )
     });
+    await writeJson(join(options.outputDir, "usage.json"), usageSummary(calls, budget.snapshot()));
+    return reservationId;
   };
 
   for (const inputCase of selectedCases) {
@@ -276,7 +288,7 @@ async function main(): Promise<void> {
             cacheReadInputTokens: event.cacheReadInputTokens,
             cacheCreationInputTokens: event.cacheCreationInputTokens,
             costUsd
-          });
+          }, event.authorizationId);
           calls.push({
             ...event,
             caseId: inputCase.id,
@@ -285,7 +297,7 @@ async function main(): Promise<void> {
             costUsd,
             iterations
           });
-          await writeJson(join(options.outputDir, "usage.json"), usageSummary(calls));
+          await writeJson(join(options.outputDir, "usage.json"), usageSummary(calls, budget.snapshot()));
         }
       });
     };
@@ -326,7 +338,7 @@ async function main(): Promise<void> {
   );
   const scored = scoreRoutingResults(unscoredResults, selectedExpectations);
   const finishedAt = Date.now();
-  const totalUsage = usageSummary(calls);
+  const totalUsage = usageSummary(calls, budget.snapshot());
   const resultsWithUsage = scored.results.map((result) => ({
     ...result,
     usage: usageSummary(calls.filter((call) => call.caseId === result.id))
