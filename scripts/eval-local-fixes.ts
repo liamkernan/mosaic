@@ -14,7 +14,10 @@ import {
   type OpenAIClassificationPass
 } from "../packages/pipeline/src/classification-routing.js";
 import { ImplementationPlanner, type ImplementationPlan } from "../packages/pipeline/src/implementation-planner.js";
-import type { ModelVisiblePlanPathPolicy } from "../packages/pipeline/src/implementation-plan-sanitizer.js";
+import {
+  containsProtectedModelVisiblePath,
+  type ModelVisiblePlanPathPolicy
+} from "../packages/pipeline/src/implementation-plan-sanitizer.js";
 import { pruneChangesToPlanScope, validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
 import { assessRepairProgress, findUnplannedAddedFiles } from "../packages/pipeline/src/repair-progress.js";
 import { RepoIndexer } from "../packages/pipeline/src/repo-indexer.js";
@@ -26,6 +29,8 @@ import type { ClassifiedFeedback, ComplexityLevel, FeedbackCategory, FeedbackSou
 import { assessFeedbackContent, type AbuseAssessment } from "../packages/intake/src/abuse-protection.js";
 import {
   LLMClient,
+  LLMRequestBoundaryError,
+  type LLMRequestBoundaryAssertion,
   type LLMRequestAuthorization,
   type LLMUsageIteration,
   type LLMUsageObservation,
@@ -192,6 +197,8 @@ interface EvalUsageCall extends Omit<LLMUsageObservation, "iterations"> {
 
 interface EvalUsageSummary extends EvalBudgetSnapshot {
   calls: EvalUsageCall[];
+  requestAssertions: EvalRequestAssertion[];
+  requestAssertionCount: number;
   callCount: number;
   totalInputTokens: number;
   totalOutputTokens: number;
@@ -205,6 +212,8 @@ interface EvalUsageSummary extends EvalBudgetSnapshot {
 function emptyEvalUsageSummary(): EvalUsageSummary {
   return {
     calls: [],
+    requestAssertions: [],
+    requestAssertionCount: 0,
     callCount: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
@@ -223,9 +232,18 @@ function emptyEvalUsageSummary(): EvalUsageSummary {
 type PricingTable = Record<string, ModelPricing>;
 
 interface EvalTelemetry {
+  assertRequest: (phase: string, request: LLMRequestBoundaryAssertion) => Promise<void>;
   authorize: (request: LLMRequestAuthorization) => Promise<string>;
   observe: (phase: string, event: LLMUsageObservation) => Promise<void>;
   snapshot: () => EvalUsageSummary;
+}
+
+interface EvalRequestAssertion {
+  sequence: number;
+  phase: string;
+  provider: LLMProvider;
+  model: string;
+  status: "passed" | "rejected";
 }
 
 function parseArgs(argv: string[]): {
@@ -442,14 +460,16 @@ function createEvalLlmClient(
     reasoningEffort: isOpenAI ? env.MOSAIC_OPENAI_REASONING_EFFORT ?? route.reasoningEffort : route.reasoningEffort,
     advisorTool: route.advisorTool,
     disableUsageTracking: true,
+    assertRequest: telemetry ? (request) => telemetry.assertRequest(phase, request) : undefined,
     authorizeRequest: telemetry?.authorize,
-    observeUsage: telemetry ? (event) => telemetry.observe(phase, event) : undefined
+    observeUsage: telemetry ? (event) => telemetry.observe(event.requestPhase ?? phase, event) : undefined
   });
 }
 
 async function createEvalTelemetry(
   options: ReturnType<typeof parseArgs>,
-  artifactPath: string
+  artifactPath: string,
+  protectedPathPolicy: ModelVisiblePlanPathPolicy
 ): Promise<EvalTelemetry | undefined> {
   if (!options.generate && !options.classify) {
     return undefined;
@@ -461,6 +481,7 @@ async function createEvalTelemetry(
   const pricing = JSON.parse(await readFile(options.pricingPath, "utf8")) as PricingTable;
   const budget = new EvalBudget(options.maxCostUsd);
   const calls: EvalUsageCall[] = [];
+  const requestAssertions: EvalRequestAssertion[] = [];
   let writeQueue = Promise.resolve();
 
   const snapshot = (): EvalUsageSummary => {
@@ -478,6 +499,8 @@ async function createEvalTelemetry(
     }), emptyEvalUsageSummary());
     return {
       ...observedUsage,
+      requestAssertions,
+      requestAssertionCount: requestAssertions.length,
       ...budget.snapshot(),
       totalCostUsd: budget.totalCostUsd
     };
@@ -493,6 +516,25 @@ async function createEvalTelemetry(
   };
 
   return {
+    assertRequest: async (phase, request) => {
+      const assertion: EvalRequestAssertion = {
+        sequence: requestAssertions.length + 1,
+        phase: request.requestPhase ?? phase,
+        provider: request.provider,
+        model: request.model,
+        status: containsProtectedModelVisiblePath(request.systemPrompt, protectedPathPolicy) ||
+          containsProtectedModelVisiblePath(request.userMessage, protectedPathPolicy)
+          ? "rejected"
+          : "passed"
+      };
+      requestAssertions.push(assertion);
+      await persistUsage();
+      if (assertion.status === "rejected") {
+        throw new LLMRequestBoundaryError(
+          `Outbound evaluation request rejected by protected-path boundary assertion during ${assertion.phase}`
+        );
+      }
+    },
     authorize: async (request) => {
       const modelPricing = pricing[request.model];
       if (!modelPricing) {
@@ -1144,7 +1186,7 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     : await copyRepoAtRef(sourceRepo, evalCase.baseRef ?? "");
   await mkdir(artifactPath, { recursive: true });
   await writeFile(join(artifactPath, "temp-path.txt"), `${repoPath}\n`, "utf8");
-  const telemetry = await createEvalTelemetry(options, artifactPath);
+  const telemetry = await createEvalTelemetry(options, artifactPath, modelVisiblePlanPathPolicy(evalCase));
   const repoIndexer = new RepoIndexer();
   const repoContext: RepoContext = {
     fullName: evalCase.repoFullName,
@@ -1781,7 +1823,8 @@ async function repairVerificationFailure(
       verificationErrors.map((error) => `Verification failed: ${error}`),
       implementationPlan,
       {
-        completeSolution: true
+        completeSolution: true,
+        requestPhase: "verification-repair"
       }
     );
   } catch (error) {

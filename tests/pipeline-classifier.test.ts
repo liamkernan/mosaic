@@ -30,7 +30,7 @@ describe("FeedbackClassifier", () => {
     expect(complete).toHaveBeenCalledWith(
       expect.stringContaining("The checkout button is broken."),
       "Return only the JSON classification.",
-      { temperature: 0.2, maxTokens: 1_024 }
+      { temperature: 0.2, maxTokens: 1_024, requestPhase: "classification" }
     );
     expect(result).toMatchObject({
       category: "bug_report",

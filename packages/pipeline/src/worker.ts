@@ -482,7 +482,8 @@ export class FeedbackPipelineWorker {
           verification.errors,
           implementationPlan,
           {
-            completeSolution
+            completeSolution,
+            requestPhase: "verification-repair"
           }
         );
 

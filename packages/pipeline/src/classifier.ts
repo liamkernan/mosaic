@@ -16,7 +16,7 @@ interface ClassificationClient {
   complete(
     systemPrompt: string,
     userMessage: string,
-    options: { temperature: number; maxTokens: number }
+    options: { temperature: number; maxTokens: number; requestPhase?: string }
   ): Promise<string>;
 }
 
@@ -44,7 +44,8 @@ export class FeedbackClassifier {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const response = await this.llmClient.complete(systemPrompt, "Return only the JSON classification.", {
         temperature: 0.2,
-        maxTokens: 1_024
+        maxTokens: 1_024,
+        requestPhase: "classification"
       });
 
       try {

@@ -53,8 +53,18 @@ export interface LLMClientOptions {
   advisorTool?: AdvisorToolOptions;
   reasoningEffort?: OpenAIReasoningEffort;
   disableUsageTracking?: boolean;
+  assertRequest?: (request: LLMRequestBoundaryAssertion) => void | Promise<void>;
   authorizeRequest?: (request: LLMRequestAuthorization) => string | void | Promise<string | void>;
   observeUsage?: (event: LLMUsageObservation) => void | Promise<void>;
+}
+
+export interface LLMRequestBoundaryAssertion {
+  provider: LLMProvider;
+  model: string;
+  advisorModel?: string;
+  systemPrompt: string;
+  userMessage: string;
+  requestPhase?: string;
 }
 
 export interface LLMRequestAuthorization {
@@ -67,6 +77,7 @@ export interface LLMRequestAuthorization {
 
 export interface LLMUsageObservation {
   authorizationId?: string;
+  requestPhase?: string;
   model: string;
   advisorModel?: string;
   inputTokens: number;
@@ -94,6 +105,7 @@ export interface CompletionOptions {
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
+  requestPhase?: string;
 }
 
 export interface UsageContext {
@@ -106,6 +118,13 @@ export class OpenAIOutputLimitError extends LLMError {
 
   constructor(outputTokens: number) {
     super(`OpenAI response incomplete: max_output_tokens after ${outputTokens} output tokens; partial output was discarded`);
+  }
+}
+
+export class LLMRequestBoundaryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LLMRequestBoundaryError";
   }
 }
 
@@ -328,6 +347,7 @@ export class LLMClient {
   private readonly advisorTool?: AdvisorToolOptions;
   private readonly reasoningEffort?: OpenAIReasoningEffort;
   private readonly disableUsageTracking: boolean;
+  private readonly assertRequest?: LLMClientOptions["assertRequest"];
   private readonly authorizeRequest?: LLMClientOptions["authorizeRequest"];
   private readonly observeUsage?: LLMClientOptions["observeUsage"];
   private usageContext?: UsageContext;
@@ -344,6 +364,7 @@ export class LLMClient {
     advisorTool,
     reasoningEffort,
     disableUsageTracking = false,
+    assertRequest,
     authorizeRequest,
     observeUsage
   }: LLMClientOptions) {
@@ -366,6 +387,7 @@ export class LLMClient {
     this.advisorTool = provider === "anthropic" ? advisorTool : undefined;
     this.reasoningEffort = reasoningEffort;
     this.disableUsageTracking = disableUsageTracking;
+    this.assertRequest = assertRequest;
     this.authorizeRequest = authorizeRequest;
     this.observeUsage = observeUsage;
   }
@@ -403,6 +425,13 @@ export class LLMClient {
           await enforceRepoRateLimit(this.usageContext.repoFullName);
         }
 
+        await this.assertRequest?.({
+          provider: this.provider,
+          model,
+          systemPrompt,
+          userMessage,
+          ...(options.requestPhase ? { requestPhase: options.requestPhase } : {})
+        });
         const authorizationId = await this.authorizeRequest?.({
           model,
           estimatedInputTokens: Math.ceil((systemPrompt.length + userMessage.length) / 3),
@@ -442,6 +471,7 @@ export class LLMClient {
         if (response.usage && this.observeUsage) {
           await this.observeUsage({
             ...(authorizationId ? { authorizationId } : {}),
+            ...(options.requestPhase ? { requestPhase: options.requestPhase } : {}),
             model,
             inputTokens,
             outputTokens,
@@ -475,6 +505,9 @@ export class LLMClient {
 
         return response.output_text.trim();
       } catch (error) {
+        if (error instanceof LLMRequestBoundaryError) {
+          throw error;
+        }
         attempt += 1;
         if (isOpenAIOutputLimitError(error)) {
           throw error;
@@ -514,6 +547,14 @@ export class LLMClient {
     const startedAt = Date.now();
 
     const authorizeApiRequest = async (advisorTool?: AdvisorToolOptions): Promise<string | undefined> => {
+      await this.assertRequest?.({
+        provider: this.provider,
+        model,
+        ...(advisorTool ? { advisorModel: advisorTool.model } : {}),
+        systemPrompt,
+        userMessage,
+        ...(options.requestPhase ? { requestPhase: options.requestPhase } : {})
+      });
       const authorizationId = await this.authorizeRequest?.({
         model,
         ...(advisorTool ? { advisorModel: advisorTool.model } : {}),
@@ -603,6 +644,7 @@ export class LLMClient {
           const advisorUsed = response.content.some(isAdvisorUseBlock);
           await this.observeUsage({
             ...(authorizationId ? { authorizationId } : {}),
+            ...(options.requestPhase ? { requestPhase: options.requestPhase } : {}),
             model,
             ...(this.advisorTool ? { advisorModel: this.advisorTool.model } : {}),
             inputTokens: usage.input_tokens ?? 0,
@@ -624,6 +666,9 @@ export class LLMClient {
 
         return text.trim();
       } catch (error) {
+        if (error instanceof LLMRequestBoundaryError) {
+          throw error;
+        }
         attempt += 1;
         const { status, name: errorName, message: errorMessage } = getAnthropicErrorDetails(error);
         if (status === 429 && attempt < maxRetries) {

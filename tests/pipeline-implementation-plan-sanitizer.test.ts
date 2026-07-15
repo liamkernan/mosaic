@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  containsProtectedModelVisiblePath,
   sanitizeImplementationPlanForModel,
   sanitizeModelVisiblePlanText
 } from "../packages/pipeline/src/implementation-plan-sanitizer.js";
@@ -137,5 +138,24 @@ describe("implementation-plan model-visible sanitization", () => {
       .toBe("Keep tests/oracle-helper/ and tests/baseline_data/ unchanged.");
     expect(sanitizeModelVisiblePlanText("Keep fixtures/hidden/expected.schema.json unchanged.", policy))
       .toBe("Keep fixtures/hidden/expected.schema.json unchanged.");
+  });
+
+  it.each([
+    "tests/oracle/test_secret.py",
+    "TESTS\\ORACLE\\TEST_SECRET.PY",
+    "tests.oracle.test_secret",
+    "Fixtures/Hidden/Expected.json"
+  ])("detects the canonical protected request variant %s", (value) => {
+    expect(containsProtectedModelVisiblePath(value, policy)).toBe(true);
+  });
+
+  it.each([
+    "immutable verification tests",
+    "The oracle explains expected behavior.",
+    "tests/oracle-helper/test_public.py",
+    "tests/baseline_data/test_public.py",
+    "fixtures/hidden/expected.schema.json"
+  ])("allows generic or near-miss request wording %s", (value) => {
+    expect(containsProtectedModelVisiblePath(value, policy)).toBe(false);
   });
 });

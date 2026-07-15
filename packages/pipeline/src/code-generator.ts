@@ -31,6 +31,7 @@ export const scopeValidationPattern = /outside the implementation plan scope/i;
 
 interface GenerationOptions {
   completeSolution?: boolean;
+  requestPhase?: "validation-repair" | "verification-repair";
 }
 
 export interface CodeGeneratorOptions {
@@ -860,7 +861,8 @@ export class CodeGenerator {
         {
           temperature: 0.3,
           maxTokens,
-          timeoutMs: generationTimeoutMs
+          timeoutMs: generationTimeoutMs,
+          requestPhase: "generation"
         }
       );
     } catch (error) {
@@ -883,7 +885,8 @@ export class CodeGenerator {
         {
           temperature: 0.2,
           maxTokens: Math.min(estimateGenerationMaxTokens(retryFiles, options), STATIC_FRONTEND_RETRY_MAX_TOKENS),
-          timeoutMs: STATIC_FRONTEND_RETRY_TIMEOUT_MS
+          timeoutMs: STATIC_FRONTEND_RETRY_TIMEOUT_MS,
+          requestPhase: "generation-repair"
         }
       );
     }
@@ -902,7 +905,8 @@ export class CodeGenerator {
         {
           temperature: 0,
           maxTokens,
-          timeoutMs: GENERATION_TIMEOUT_MS
+          timeoutMs: GENERATION_TIMEOUT_MS,
+          requestPhase: "generation-repair"
         }
       );
 
@@ -923,7 +927,8 @@ export class CodeGenerator {
         {
           temperature: 0,
           maxTokens,
-          timeoutMs: GENERATION_TIMEOUT_MS
+          timeoutMs: GENERATION_TIMEOUT_MS,
+          requestPhase: "generation-repair"
         }
       );
       return this.toGeneratedChanges(parseGeneratedChanges(reanchoredResponse), relevantFiles, fileTree);
@@ -970,7 +975,8 @@ export class CodeGenerator {
       {
         temperature: 0,
         maxTokens,
-        timeoutMs: repairRoute?.timeoutMs ?? GENERATION_TIMEOUT_MS
+        timeoutMs: repairRoute?.timeoutMs ?? GENERATION_TIMEOUT_MS,
+        requestPhase: options.requestPhase ?? "validation-repair"
       }
     );
     const currentChangesByPath = new Map(currentChanges.map((change) => [change.filePath, change]));

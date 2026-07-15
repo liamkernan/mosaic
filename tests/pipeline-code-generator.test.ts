@@ -8,6 +8,41 @@ import { validate } from "../packages/pipeline/src/validator.js";
 import { buildClassifiedFeedback, createPipelineLlmClient } from "./helpers/pipeline.js";
 
 describe("CodeGenerator", () => {
+  it("labels generation, validation repair, and verification repair requests at the call boundary", async () => {
+    const complete = vi.fn(async (
+      _systemPrompt: string,
+      _userMessage: string,
+      _options?: { requestPhase?: string }
+    ) => `<changes>
+  <change>
+    <filePath>src/service.ts</filePath>
+    <modifiedContent><![CDATA[export const value = 2;]]></modifiedContent>
+    <explanation>Fix the visible behavior.</explanation>
+  </change>
+</changes>`);
+    const generator = new CodeGenerator(createPipelineLlmClient(complete));
+    const feedback = buildClassifiedFeedback({ relevantFiles: ["src/service.ts"] });
+    const files = [{ path: "src/service.ts", content: "export const value = 1;", reason: "reported file" }];
+
+    const changes = await generator.generate(feedback, files, ["src/service.ts"]);
+    await generator.repairValidationFailure(feedback, files, ["src/service.ts"], changes, ["validation failed"]);
+    await generator.repairValidationFailure(
+      feedback,
+      files,
+      ["src/service.ts"],
+      changes,
+      ["verification failed"],
+      undefined,
+      { requestPhase: "verification-repair" }
+    );
+
+    expect(complete.mock.calls.map((call) => call[2]?.requestPhase)).toEqual([
+      "generation",
+      "validation-repair",
+      "verification-repair"
+    ]);
+  });
+
   it("scrubs protected plan paths from generation and validation-repair prompts", async () => {
     const capturedPrompts: string[] = [];
     const fakeClient = createPipelineLlmClient(async (systemPrompt: string) => {
@@ -609,6 +644,11 @@ export const target = "new";
     );
 
     expect(complete).toHaveBeenCalledTimes(3);
+    expect(complete.mock.calls.map((call) => call[2]?.requestPhase)).toEqual([
+      "generation",
+      "generation-repair",
+      "generation-repair"
+    ]);
     expect(complete.mock.calls[2]?.[0]).toContain("REPAIRED_PAYLOAD_MARKER");
     expect(complete.mock.calls[2]?.[0]).not.toContain("MALFORMED_INITIAL_PAYLOAD");
     expect(changes[0]?.modifiedContent).toBe('<main><button type="button">Open</button></main>');

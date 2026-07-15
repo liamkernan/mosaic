@@ -216,7 +216,8 @@ export class ImplementationPlanner {
       {
         temperature: 0,
         maxTokens: PLAN_MAX_TOKENS,
-        timeoutMs: PLAN_TIMEOUT_MS
+        timeoutMs: PLAN_TIMEOUT_MS,
+        requestPhase: "initial-planning"
       }
     );
 
@@ -233,7 +234,8 @@ export class ImplementationPlanner {
       {
         temperature: 0,
         maxTokens: PLAN_MAX_TOKENS,
-        timeoutMs: PLAN_TIMEOUT_MS
+        timeoutMs: PLAN_TIMEOUT_MS,
+        requestPhase: "planner-correction"
       }
     );
     plan = completeEndpointVerificationChecklist(

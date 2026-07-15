@@ -59,8 +59,10 @@ import {
   ANTHROPIC_MODEL_IDS,
   OPENAI_MODEL_IDS,
   LLMClient,
+  LLMRequestBoundaryError,
   resolveOpenAIRequestTimeoutMs
 } from "../packages/llm/src/client.js";
+import { containsProtectedModelVisiblePath } from "../packages/pipeline/src/implementation-plan-sanitizer.js";
 import { resolveOpenAIBaseURL } from "../packages/llm/src/openai.js";
 
 describe("LLMClient", () => {
@@ -397,6 +399,102 @@ describe("LLMClient", () => {
       maxOutputTokens: 100
     }));
     expect(streamMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["anthropic", "tests/oracle/test_secret.py"],
+    ["anthropic", "TESTS\\ORACLE\\TEST_SECRET.PY"],
+    ["openai", "tests.oracle.test_secret"],
+    ["openai", "Tests/Oracle/Test_Secret.py"],
+    ["anthropic", "fixtures/hidden/expected.json"],
+    ["openai", "FIXTURES.HIDDEN.EXPECTED.JSON"]
+  ] as const)("rejects an unsanitized %s request containing %s before authorization or transport", async (provider, protectedReference) => {
+    const authorizeRequest = vi.fn();
+    const assertRequest = vi.fn((request: { systemPrompt: string; userMessage: string }) => {
+      if (containsProtectedModelVisiblePath(`${request.systemPrompt}\n${request.userMessage}`, {
+        protectedPaths: ["fixtures/hidden/expected.json"],
+        protectedPathPrefixes: ["tests/oracle/"],
+        generatedTestPathPrefixes: ["tests/generated/"]
+      })) {
+        throw new LLMRequestBoundaryError("outbound evaluation request rejected");
+      }
+    });
+    const client = new LLMClient({
+      provider,
+      mode: "platform",
+      platformApiKey: "test-key",
+      disableUsageTracking: true,
+      assertRequest,
+      authorizeRequest
+    });
+
+    await expect(client.complete(
+      `Repair the implementation without changing ${protectedReference}.`,
+      "Return the corrected payload.",
+      { requestPhase: "verification-repair" }
+    )).rejects.toThrow("outbound evaluation request rejected");
+
+    expect(assertRequest).toHaveBeenCalledWith(expect.objectContaining({
+      provider,
+      requestPhase: "verification-repair"
+    }));
+    expect(authorizeRequest).not.toHaveBeenCalled();
+    expect(streamMock).not.toHaveBeenCalled();
+    expect(betaStreamMock).not.toHaveBeenCalled();
+    expect(responsesCreateMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "immutable verification tests",
+    "Use the Oracle database adapter.",
+    "Keep tests/oracle-helper/test_public.py unchanged.",
+    "Keep fixtures/hidden/expected.schema.json unchanged."
+  ])("allows the safe or near-miss boundary request %s", async (safeText) => {
+    const authorizeRequest = vi.fn(() => "authorized");
+    const client = new LLMClient({
+      provider: "openai",
+      mode: "platform",
+      platformApiKey: "test-key",
+      disableUsageTracking: true,
+      assertRequest: (request) => {
+        if (containsProtectedModelVisiblePath(`${request.systemPrompt}\n${request.userMessage}`, {
+          protectedPaths: ["fixtures/hidden/expected.json"],
+          protectedPathPrefixes: ["tests/oracle/"],
+          generatedTestPathPrefixes: ["tests/generated/"]
+        })) {
+          throw new LLMRequestBoundaryError("outbound evaluation request rejected");
+        }
+      },
+      authorizeRequest
+    });
+
+    await expect(client.complete(safeText, "Return the payload.")).resolves.toBe("openai ok");
+
+    expect(authorizeRequest).toHaveBeenCalledTimes(1);
+    expect(responsesCreateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs the outbound assertion immediately before authorization and OpenAI transport", async () => {
+    const assertRequest = vi.fn(async () => {});
+    const authorizeRequest = vi.fn(async () => "authorized");
+    const client = new LLMClient({
+      provider: "openai",
+      mode: "platform",
+      platformApiKey: "test-key",
+      disableUsageTracking: true,
+      assertRequest,
+      authorizeRequest
+    });
+
+    await client.complete("safe system prompt", "safe user message", { requestPhase: "generation" });
+
+    expect(assertRequest).toHaveBeenCalledWith(expect.objectContaining({
+      systemPrompt: "safe system prompt",
+      userMessage: "safe user message",
+      requestPhase: "generation"
+    }));
+    expect(assertRequest.mock.invocationCallOrder[0]).toBeLessThan(authorizeRequest.mock.invocationCallOrder[0] ?? 0);
+    expect(authorizeRequest.mock.invocationCallOrder[0]).toBeLessThan(responsesCreateMock.mock.invocationCallOrder[0] ?? 0);
   });
 
   it("waits for durable async authorization before starting an API request", async () => {

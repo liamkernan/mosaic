@@ -65,6 +65,28 @@ describe("local fix evaluation harness", () => {
     expect(source).not.toContain("implementationPlan = sanitizePlanForImmutablePaths");
   });
 
+  it("records content-free boundary assertions before every paid authorization", async () => {
+    const evalSource = await readFile("scripts/eval-local-fixes.ts", "utf8");
+    const clientSource = await readFile("packages/llm/src/client.ts", "utf8");
+    const assertionStart = evalSource.indexOf("interface EvalRequestAssertion");
+    const assertionEnd = evalSource.indexOf("function parseArgs", assertionStart);
+    const assertionShape = evalSource.slice(assertionStart, assertionEnd);
+    const openAIAssertIndex = clientSource.indexOf("await this.assertRequest?.({");
+    const openAIAuthorizeIndex = clientSource.indexOf("await this.authorizeRequest?.({", openAIAssertIndex);
+    const anthropicAssertIndex = clientSource.indexOf("await this.assertRequest?.({", openAIAssertIndex + 1);
+    const anthropicAuthorizeIndex = clientSource.indexOf("await this.authorizeRequest?.({", anthropicAssertIndex);
+
+    expect(openAIAssertIndex).toBeGreaterThan(-1);
+    expect(openAIAuthorizeIndex).toBeGreaterThan(openAIAssertIndex);
+    expect(anthropicAssertIndex).toBeGreaterThan(openAIAuthorizeIndex);
+    expect(anthropicAuthorizeIndex).toBeGreaterThan(anthropicAssertIndex);
+    expect(evalSource).toContain("containsProtectedModelVisiblePath(request.systemPrompt, protectedPathPolicy)");
+    expect(evalSource).toContain("requestAssertions");
+    expect(assertionShape).not.toContain("systemPrompt");
+    expect(assertionShape).not.toContain("userMessage");
+    expect(assertionShape).not.toContain("protectedPath");
+  });
+
   it("reuses the accepted plan for focused check repair without replanning", async () => {
     const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
     const checkRepairStart = source.indexOf("if (options.generate && implementationPlan && checkErrors.length > 0)");

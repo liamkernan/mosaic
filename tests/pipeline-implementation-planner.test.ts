@@ -53,6 +53,10 @@ describe("ImplementationPlanner", () => {
 
     const protectedReferencePattern = /tests(?:[\\/.]+)(?:oracle|baseline)/i;
     expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls.map((call) => call[2]?.requestPhase)).toEqual([
+      "initial-planning",
+      "planner-correction"
+    ]);
     for (const call of complete.mock.calls) {
       expect(call[0]).not.toMatch(protectedReferencePattern);
       expect(call[0]).not.toContain("SECRET_ORACLE_ASSERTION");

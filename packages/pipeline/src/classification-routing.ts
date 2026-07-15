@@ -13,7 +13,7 @@ interface ClassificationClient {
   complete(
     systemPrompt: string,
     userMessage: string,
-    options: { temperature: number; maxTokens: number }
+    options: { temperature: number; maxTokens: number; requestPhase?: string }
   ): Promise<string>;
 }
 
