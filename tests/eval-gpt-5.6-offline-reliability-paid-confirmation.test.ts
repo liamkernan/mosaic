@@ -60,7 +60,7 @@ interface ProofManifest {
     maxCostUsd: number;
     outputDir: string;
   };
-  prepaidLaunchIncident: {
+  prepaidLaunchIncidents: Array<{
     occurredAt: string;
     status: string;
     reason: string;
@@ -71,7 +71,7 @@ interface ProofManifest {
     modelCalls: number;
     observedCostUsd: number;
     correctivePreflight: string;
-  };
+  }>;
   cases: Array<{
     id: string;
     label: string;
@@ -143,16 +143,18 @@ describe("frozen GPT-5.6 offline-reliability paid confirmation", () => {
       caseTimeoutMs: 900_000,
       maxCostUsd: 3
     }));
-    expect(manifest.prepaidLaunchIncident).toEqual(expect.objectContaining({
-      status: "invalidated-zero-call-launch",
-      reachedHarnessMain: false,
-      outputDirCreated: false,
-      caseTrialsStarted: 0,
-      requestAuthorizations: 0,
-      modelCalls: 0,
-      observedCostUsd: 0,
-      correctivePreflight: "Run pnpm build before the unchanged paid command."
-    }));
+    expect(manifest.prepaidLaunchIncidents).toHaveLength(2);
+    for (const incident of manifest.prepaidLaunchIncidents) {
+      expect(incident).toEqual(expect.objectContaining({
+        status: "invalidated-zero-call-launch",
+        reachedHarnessMain: false,
+        outputDirCreated: false,
+        caseTrialsStarted: 0,
+        requestAuthorizations: 0,
+        modelCalls: 0,
+        observedCostUsd: 0
+      }));
+    }
   });
 
   it("selects exactly the three retained cases and their production routes", async () => {
@@ -223,6 +225,7 @@ describe("frozen GPT-5.6 offline-reliability paid confirmation", () => {
     expect(command).toBeDefined();
     expect(protocol).toContain("pnpm build");
     expect(protocol).toContain("invalidated-zero-call-launch");
+    expect(command).toContain("env -u MOSAIC_LLM_PROVIDER");
     expect(command?.match(/^\s*--case\s+/gm)).toHaveLength(3);
     for (const caseId of manifest.run.caseIds) {
       expect(command).toContain(`--case ${caseId}`);

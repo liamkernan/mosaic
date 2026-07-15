@@ -50,11 +50,15 @@ pnpm typecheck:tests
 
 These checks cover production-layer inference, current-candidate repair and stalled-loop rejection, Python declaration parsing, generated-test independent execution, dotted and filesystem oracle isolation, atomic reservations, retry settlement, child interruption accounting, and the actual late-trial cap arithmetic. Remove only test-generated `__pycache__` directories before reconfirming the frozen fixture hash. The tracked worktree and index must then be clean, `main` must match `origin/main`, and only the four pre-existing untracked files may remain.
 
-## Invalidated zero-call launch
+## Invalidated zero-call launches
 
 At `2026-07-15T06:11:07Z`, the fixed command was invoked from the clean detached worktree before its workspace packages had been built. Node failed to resolve a package `dist` entry while loading the script, before the harness `main` function, output-directory creation, case selection, authorization, or model-client construction. No trial or paid call started, no output directory was created, and observed cost was zero.
 
-This launch is retained transparently in the manifest as `invalidated-zero-call-launch` and is outside the three-case denominator. The only correction is the missing offline `pnpm build` preflight above; the implementation, paid command, cases, labels, routes, acceptance criteria, pricing, fixture, prompts, and oracles are unchanged. Because no case or request started, executing the unchanged command after the amended freeze is the first and only paid proof run, not a rerun of a trial result.
+This launch is retained transparently in the manifest as `invalidated-zero-call-launch` and is outside the three-case denominator. The only correction was the missing offline `pnpm build` preflight above.
+
+At `2026-07-15T06:13:19Z`, the command reached configuration loading but failed because the redundant empty `MOSAIC_LLM_PROVIDER` assignment is invalid under the environment schema. This also occurred before the harness `main` function, output creation, case selection, authorization, or model-client construction. No trial or paid call started and observed cost was zero. The assignment is now unset with `env -u`; the explicit `--provider openai` CLI selection remains fixed.
+
+Both zero-call launches are outside the denominator. Their corrections do not change the implementation, cases, labels, routes, acceptance criteria, pricing, fixture, prompts, or oracles. Because no case or request started, executing the corrected command after this amended freeze is the first and only paid proof run, not a rerun of a trial result.
 
 ## Single paid command
 
@@ -62,7 +66,7 @@ The command below is the complete paid population. It has automatic production c
 
 <!-- PAID_COMMAND_START -->
 ```sh
-MOSAIC_LLM_PROVIDER= \
+env -u MOSAIC_LLM_PROVIDER \
 MOSAIC_OPENAI_MODEL= \
 MOSAIC_OPENAI_REASONING_EFFORT= \
 MOSAIC_OPENAI_MIN_TIMEOUT_MS= \
