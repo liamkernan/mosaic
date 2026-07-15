@@ -47,6 +47,7 @@ import {
   buildChangedPythonTestCommand,
   calculateUsageCostUsd,
   calculateUsageIterationsCostUsd,
+  captureFrontendElementOpenState,
   createEvalTrialRuns,
   estimateMaximumAdvisorCallCostUsd,
   estimateMaximumCallCostUsd,
@@ -800,7 +801,11 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
 
   const assertExpectations = (
     assertion: FrontendAssertion,
-    action: "assert" | "keyboard_activate"
+    action: "assert" | "keyboard_activate",
+    previousOpenStates: Map<
+      FrontendAssertion["expect"][number],
+      ReturnType<typeof captureFrontendElementOpenState>
+    >
   ): void => {
     for (const expectation of assertion.expect) {
       const elements = querySelectorAll(dom.window.document, expectation.selector);
@@ -867,7 +872,8 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
           },
           actual: { matchCount: elements.length, classes: [...element.classList] }
         });
-      } else if (isOpenExpectation(expectation) && frontendElementIsOpen(element) !== expectation.open) {
+      } else if (isOpenExpectation(expectation) &&
+          frontendElementIsOpen(element, previousOpenStates.get(expectation)) !== expectation.open) {
         addRequirement({
           assertion: assertion.name,
           action,
@@ -876,9 +882,8 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
           actual: {
             matchCount: elements.length,
             tagName: element.tagName.toLowerCase(),
-            openAttribute: element.hasAttribute("open"),
-            ariaHidden: element.getAttribute("aria-hidden"),
-            classes: [...element.classList]
+            before: previousOpenStates.get(expectation) ?? null,
+            after: captureFrontendElementOpenState(element)
           }
         });
       } else if (isDialogExpectation(expectation) && !frontendElementHasDialogSemantics(element)) {
@@ -897,6 +902,25 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
     }
   };
 
+  const captureOpenStates = (
+    assertion: FrontendAssertion
+  ): Map<FrontendAssertion["expect"][number], ReturnType<typeof captureFrontendElementOpenState>> => {
+    const states = new Map<
+      FrontendAssertion["expect"][number],
+      ReturnType<typeof captureFrontendElementOpenState>
+    >();
+    for (const expectation of assertion.expect) {
+      if (!isOpenExpectation(expectation)) {
+        continue;
+      }
+      const element = querySelector(dom.window.document, expectation.selector);
+      if (element) {
+        states.set(expectation, captureFrontendElementOpenState(element));
+      }
+    }
+    return states;
+  };
+
   for (const assertion of evalCase.frontendAssertions) {
     try {
       const clickable = querySelector(dom.window.document, assertion.click);
@@ -912,14 +936,16 @@ async function runFrontendAssertions(evalCase: EvalCase, repoPath: string): Prom
       }
 
       if (shouldAssertKeyboardActivation(clickable)) {
+        const previousOpenStates = captureOpenStates(assertion);
         clickable.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
         await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
-        assertExpectations(assertion, "keyboard_activate");
+        assertExpectations(assertion, "keyboard_activate", previousOpenStates);
       }
 
+      const previousOpenStates = captureOpenStates(assertion);
       clickable.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
       await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
-      assertExpectations(assertion, "assert");
+      assertExpectations(assertion, "assert", previousOpenStates);
     } catch (error) {
       addRequirement({
         assertion: assertion.name,

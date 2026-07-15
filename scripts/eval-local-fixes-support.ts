@@ -248,20 +248,45 @@ export function formatFrontendRepairRequirement(requirement: FrontendRepairRequi
   return `Frontend repair requirement: ${JSON.stringify(requirement)}`;
 }
 
-export function frontendElementIsOpen(element: Element): boolean {
-  if (element.tagName.toLowerCase() === "dialog") {
-    return element.hasAttribute("open");
-  }
+const frontendOpenClasses = ["is-open", "is-visible", "active", "modal-overlay--open"] as const;
 
-  const ariaHidden = element.getAttribute("aria-hidden");
-  if (ariaHidden !== null) {
-    return ariaHidden === "false";
-  }
-  if (element.hasAttribute("hidden")) {
+export interface FrontendElementOpenState {
+  hidden: boolean;
+  ariaHidden: string | null;
+  openAttribute: boolean;
+  openClasses: string[];
+}
+
+export function captureFrontendElementOpenState(element: Element): FrontendElementOpenState {
+  return {
+    hidden: element.hasAttribute("hidden"),
+    ariaHidden: element.getAttribute("aria-hidden"),
+    openAttribute: element.hasAttribute("open"),
+    openClasses: frontendOpenClasses.filter((className) => element.classList.contains(className))
+  };
+}
+
+export function frontendElementIsOpen(
+  element: Element,
+  previousState?: FrontendElementOpenState
+): boolean {
+  const currentState = captureFrontendElementOpenState(element);
+  if (currentState.hidden || currentState.ariaHidden === "true") {
     return false;
   }
-  return ["is-open", "is-visible", "active", "modal-overlay--open"]
-    .some((className) => element.classList.contains(className));
+
+  if (element.tagName.toLowerCase() === "dialog") {
+    return currentState.openAttribute;
+  }
+
+  if (currentState.ariaHidden !== null) {
+    return currentState.ariaHidden === "false";
+  }
+  if (currentState.openClasses.length > 0) {
+    return true;
+  }
+
+  return previousState?.hidden === true;
 }
 
 export function frontendElementHasDialogSemantics(element: Element): boolean {

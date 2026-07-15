@@ -12,6 +12,7 @@ import {
   buildChangedPythonTestCommand,
   calculateUsageCostUsd,
   calculateUsageIterationsCostUsd,
+  captureFrontendElementOpenState,
   createEvalTrialRuns,
   estimateMaximumAdvisorCallCostUsd,
   formatFrontendRepairRequirement,
@@ -610,14 +611,45 @@ describe("local fix evaluation harness", () => {
     );
   });
 
-  it("recognizes native and ARIA dialog open state semantically", () => {
+  it("recognizes explicit hidden-property and hidden-attribute opening transitions", () => {
     const dom = new JSDOM(
-      '<dialog id="native" open></dialog><div id="aria" role="dialog" aria-hidden="false"></div>'
+      '<section id="property" hidden></section><section id="attribute" hidden></section>'
+    );
+    const propertyPanel = dom.window.document.querySelector("#property") as HTMLElement;
+    const attributePanel = dom.window.document.querySelector("#attribute") as HTMLElement;
+    const propertyBefore = captureFrontendElementOpenState(propertyPanel);
+    const attributeBefore = captureFrontendElementOpenState(attributePanel);
+
+    propertyPanel.hidden = false;
+    attributePanel.removeAttribute("hidden");
+
+    expect(frontendElementIsOpen(propertyPanel, propertyBefore)).toBe(true);
+    expect(frontendElementIsOpen(attributePanel, attributeBefore)).toBe(true);
+    dom.window.close();
+  });
+
+  it("recognizes ARIA open and close transitions", () => {
+    const dom = new JSDOM('<section id="panel" aria-hidden="true"></section>');
+    const panel = dom.window.document.querySelector("#panel") as Element;
+
+    expect(frontendElementIsOpen(panel)).toBe(false);
+    panel.setAttribute("aria-hidden", "false");
+    expect(frontendElementIsOpen(panel)).toBe(true);
+    panel.setAttribute("aria-hidden", "true");
+    expect(frontendElementIsOpen(panel)).toBe(false);
+    dom.window.close();
+  });
+
+  it("recognizes native dialog open and close state semantically", () => {
+    const dom = new JSDOM(
+      '<dialog id="native"></dialog><div id="aria" role="dialog" aria-hidden="false"></div>'
     );
     const nativeDialog = dom.window.document.querySelector("#native") as Element;
     const ariaDialog = dom.window.document.querySelector("#aria") as Element;
 
     expect(frontendElementHasDialogSemantics(nativeDialog)).toBe(true);
+    expect(frontendElementIsOpen(nativeDialog)).toBe(false);
+    nativeDialog.setAttribute("open", "");
     expect(frontendElementIsOpen(nativeDialog)).toBe(true);
     expect(frontendElementHasDialogSemantics(ariaDialog)).toBe(true);
     expect(frontendElementIsOpen(ariaDialog)).toBe(true);
@@ -627,5 +659,43 @@ describe("local fix evaluation harness", () => {
     expect(frontendElementIsOpen(nativeDialog)).toBe(false);
     expect(frontendElementIsOpen(ariaDialog)).toBe(false);
     dom.window.close();
+  });
+
+  it("recognizes only supported class-based generic visibility", () => {
+    const dom = new JSDOM('<section id="panel"></section>');
+    const panel = dom.window.document.querySelector("#panel") as Element;
+
+    expect(frontendElementIsOpen(panel)).toBe(false);
+    for (const className of ["is-open", "is-visible", "active", "modal-overlay--open"]) {
+      panel.className = className;
+      expect(frontendElementIsOpen(panel), className).toBe(true);
+    }
+    panel.className = "visible-but-unsupported";
+    expect(frontendElementIsOpen(panel)).toBe(false);
+    dom.window.close();
+  });
+
+  it("keeps absent, ambiguous, and contradictory states closed", () => {
+    const dom = new JSDOM([
+      '<section id="bare"></section>',
+      '<section id="generic-open" open></section>',
+      '<section id="hidden-conflict" hidden aria-hidden="false" class="is-open"></section>',
+      '<section id="aria-conflict" aria-hidden="true" class="is-open"></section>',
+      '<dialog id="dialog-hidden" open hidden></dialog>',
+      '<dialog id="dialog-aria" open aria-hidden="true"></dialog>'
+    ].join(""));
+
+    for (const id of ["bare", "generic-open", "hidden-conflict", "aria-conflict", "dialog-hidden", "dialog-aria"]) {
+      const element = dom.window.document.querySelector(`#${id}`) as Element;
+      expect(frontendElementIsOpen(element), id).toBe(false);
+    }
+    dom.window.close();
+  });
+
+  it("wires pre-action visibility snapshots into frontend assertions", async () => {
+    const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
+
+    expect(source).toContain("const previousOpenStates = captureOpenStates(assertion)");
+    expect(source).toContain("frontendElementIsOpen(element, previousOpenStates.get(expectation))");
   });
 });
