@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "proofId": "gpt-5.6-offline-reliability-paid-confirmation-2026-07-15",
+  "proofKind": "non-holdout-three-case-confirmation",
+  "status": "predeclared-before-paid-execution",
+  "implementationUnderTest": {
+    "commit": "87cdfb52b53ea2bd1883d8be63f0275e69fe3ab3",
+    "report": "evals/GPT_5_6_OFFLINE_RELIABILITY_IMPROVEMENTS_2026_07_14.md"
+  },
+  "historicalEvidence": {
+    "report": "evals/GPT_5_6_POST_ROUTING_RELIABILITY_REPORT_2026_07_14.md",
+    "result": "7/15 raw and 7/15 final",
+    "mutable": false
+  },
+  "protocolPath": "evals/GPT_5_6_OFFLINE_RELIABILITY_PAID_CONFIRMATION_PROTOCOL_2026_07_15.md",
+  "frozenInputs": {
+    "casesPath": "evals/gpt-5.6-post-routing-reliability-cases-2026-07-14.json",
+    "casesSha256": "85f38e339fff7c78df507680fd411d3cbbb5712149231d3ea745226ee328cb28",
+    "fixturePath": "evals/fixtures/post-routing-reliability",
+    "fixtureSha256": "3fc0fbdd89c57426535524675de93cb765327636aa7f84c36b99e234048d2f71",
+    "visibleFixtureReferences": [
+      "README.md",
+      "tests/frontend_harness.py"
+    ],
+    "hiddenOraclePathPrefixes": [
+      "tests/oracle/"
+    ],
+    "generatedTestPathPrefixes": [
+      "tests/generated/"
+    ],
+    "pricingPath": "evals/openai-model-pricing-2026-07-09.json",
+    "pricingSha256": "a7c270cd470262a73f72f3fa9adddf463b6fc27f5a0662aa5f7f0d36bee7e193"
+  },
+  "run": {
+    "provider": "openai",
+    "preset": "quality",
+    "trialsPerCase": 1,
+    "caseCount": 3,
+    "caseIds": [
+      "post-routing-simple-watch-label",
+      "post-routing-moderate-safe-details-state",
+      "post-routing-complex-escalation-export"
+    ],
+    "modelOverride": null,
+    "reasoningEffortOverride": null,
+    "openAIMinOutputTokens": 49152,
+    "openAIMinTimeoutMs": null,
+    "caseTimeoutMs": 900000,
+    "maxCostUsd": 3,
+    "outputDir": "evals/runs/2026-07-15-gpt-5.6-offline-reliability-paid-confirmation-3-case-1x"
+  },
+  "cases": [
+    {
+      "id": "post-routing-simple-watch-label",
+      "label": "simple accessible-name change",
+      "expectedAutomaticRoute": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "high"
+      },
+      "visibleAcceptanceCriteria": [
+        "Give the existing star watch control the accessible name Watch incident.",
+        "Preserve the existing watch toggle and live-status behavior.",
+        "Do not require an unchanged JavaScript companion edit."
+      ]
+    },
+    {
+      "id": "post-routing-moderate-safe-details-state",
+      "label": "moderate-safe client-only details-state behavior",
+      "expectedAutomaticRoute": {
+        "model": "gpt-5.6-terra",
+        "reasoningEffort": "xhigh"
+      },
+      "visibleAcceptanceCriteria": [
+        "Opening response details makes the panel visible and sets aria-expanded to true.",
+        "Closing response details hides the panel and sets aria-expanded to false.",
+        "Preserve the watch behavior and run candidate-generated unittest coverage independently.",
+        "Treat the requested behavior as client-only; generated-test prose must not invent backend work."
+      ]
+    },
+    {
+      "id": "post-routing-complex-escalation-export",
+      "label": "complex export behavior",
+      "expectedAutomaticRoute": {
+        "model": "gpt-5.6-sol",
+        "reasoningEffort": "xhigh"
+      },
+      "visibleAcceptanceCriteria": [
+        "Repeated requests for one incident reuse that incident's oldest open queued or processing job, while different incidents receive different jobs.",
+        "The worker resumes the oldest queued or processing job and completes the visible safe export contract.",
+        "The export includes only the visible allowlisted incident and timeline fields and excludes the visibly forbidden sensitive fields.",
+        "Keep status lookup working and run candidate-generated unittest coverage independently.",
+        "Python test declarations must not be treated as application calls."
+      ]
+    }
+  ],
+  "predeclaredSuccessCriteria": [
+    "All three automatic routes exactly match the expected model and reasoning effort.",
+    "Generated tests and verification prose invent no production layer.",
+    "No repair is driven by any removed false diagnostic listed in forbiddenRepairDiagnostics.",
+    "Every candidate-generated test executes independently.",
+    "The visible acceptance contract and hidden verification both pass.",
+    "Hidden oracle paths, commands, contents, and failure details never enter model-visible generation or repair context.",
+    "Observed cost, outstanding reservations, and committed cost are persisted for every attempted case.",
+    "Committed cost never exceeds 3 USD and reservations use the 49152-token transport minimum."
+  ],
+  "forbiddenRepairDiagnostics": [
+    "An unchanged JavaScript companion is treated as a mandatory edit.",
+    "Client-only interaction is treated as backend work.",
+    "Generated-test wording is treated as full-stack production work.",
+    "Python test declarations are treated as application calls."
+  ],
+  "integrityStopRules": [
+    "Do not rerun any failure, timeout, refusal, or poor model response.",
+    "Stop the batch immediately if hidden-oracle exposure or another evaluation-integrity violation appears.",
+    "Retain and label an integrity-violating run invalid; make no further paid call.",
+    "After paid execution, do not change production code, prompts, fixtures, labels, routes, acceptance criteria, pricing, or oracles to improve the result."
+  ],
+  "requiredReporting": [
+    "Every raw and final result, including failures and interruptions.",
+    "Route accuracy, raw pass@1, repair-assisted success, and generated-test independent execution.",
+    "Model, validator, repair, oracle, provider, and budget failure classification.",
+    "Observed cost, outstanding reservations, committed cost, latency, retries, and unknown canceled-call exposure."
+  ]
+}
