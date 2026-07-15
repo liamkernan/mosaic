@@ -8,6 +8,84 @@ import { validate } from "../packages/pipeline/src/validator.js";
 import { buildClassifiedFeedback, createPipelineLlmClient } from "./helpers/pipeline.js";
 
 describe("CodeGenerator", () => {
+  it("scrubs protected plan paths from generation and validation-repair prompts", async () => {
+    const capturedPrompts: string[] = [];
+    const fakeClient = createPipelineLlmClient(async (systemPrompt: string) => {
+      capturedPrompts.push(systemPrompt);
+      return `<changes>
+  <change>
+    <filePath>src/service.ts</filePath>
+    <modifiedContent><![CDATA[
+export const value = 2;
+]]></modifiedContent>
+    <explanation>Implement the visible behavior.</explanation>
+  </change>
+</changes>`;
+    });
+    const generator = new CodeGenerator(fakeClient, {
+      modelVisiblePlanPathPolicy: {
+        protectedPaths: [],
+        protectedPathPrefixes: ["tests/oracle/", "tests/baseline/"],
+        generatedTestPathPrefixes: ["tests/generated/"]
+      }
+    });
+    const feedback = buildClassifiedFeedback({
+      rawContent: "Fix the visible service behavior.",
+      summary: "Fix visible service behavior",
+      relevantFiles: ["src/service.ts"]
+    });
+    const files = [
+      { path: "src/service.ts", content: "export const value = 1;\n", reason: "reported file" },
+      {
+        path: "Tests\\Oracle\\Test_Secret.ts",
+        content: "SECRET_ORACLE_ASSERTION",
+        reason: "hidden verification"
+      }
+    ];
+    const plan = {
+      requiredFiles: [
+        { path: "src/service.ts", reason: "fix behavior without Tests\\Oracle\\Test_Secret.ts" },
+        { path: "TESTS/BASELINE/test_fixture.ts", reason: "change the protected test" }
+      ],
+      acceptanceCriteria: ["Pass tests.oracle.test_secret without reading it."],
+      implementationChecklist: ["Do not edit Tests\\Baseline\\."],
+      verificationChecklist: ["Run TESTS.ORACLE.Test_Secret."],
+      verificationCommands: ["pnpm test -- tests/oracle/test_secret.ts"]
+    };
+
+    const changes = await generator.generate(
+      feedback,
+      files,
+      ["src/service.ts", "TESTS/ORACLE/Test_Secret.ts"],
+      plan
+    );
+    await generator.repairValidationFailure(
+      feedback,
+      files,
+      ["src/service.ts", "tests.oracle.test_secret"],
+      [
+        ...changes,
+        {
+          filePath: "tests/oracle/test_secret.ts",
+          originalContent: "",
+          modifiedContent: "SECRET_GENERATED_ORACLE_CHANGE",
+          explanation: "Edit Tests\\Oracle\\Test_Secret.ts"
+        }
+      ],
+      ["Verification failed in Tests\\Oracle\\Test_Secret.ts"],
+      plan
+    );
+
+    const protectedReferencePattern = /tests(?:[\\/.]+)(?:oracle|baseline)/i;
+    expect(capturedPrompts).toHaveLength(2);
+    for (const prompt of capturedPrompts) {
+      expect(prompt).not.toMatch(protectedReferencePattern);
+      expect(prompt).toContain("immutable verification tests");
+      expect(prompt).not.toContain("SECRET_ORACLE_ASSERTION");
+      expect(prompt).not.toContain("SECRET_GENERATED_ORACLE_CHANGE");
+    }
+  });
+
   it("formats typed frontend failures as a bounded exact repair checklist", () => {
     const requirement = (expectation: Record<string, unknown>, selectorAlternatives: string[] = ["#productDetailSpecs"]) =>
       "Verification failed: Frontend repair requirement: " + JSON.stringify({

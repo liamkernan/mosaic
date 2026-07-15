@@ -37,7 +37,10 @@ async function loadCases(): Promise<ReliabilityCase[]> {
 
 async function unittestExitCode(module: string): Promise<number> {
   try {
-    await execFile("python3", ["-m", "unittest", module], { cwd: fixtureRoot });
+    await execFile("python3", ["-m", "unittest", module], {
+      cwd: fixtureRoot,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" }
+    });
     return 0;
   } catch (error) {
     return (error as { code?: number }).code ?? -1;

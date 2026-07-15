@@ -12,6 +12,7 @@ export * from "./artifact-store.js";
 export * from "./disposition.js";
 export * from "./generated-change-parser.js";
 export * from "./implementation-planner.js";
+export * from "./implementation-plan-sanitizer.js";
 export * from "./issue-creator.js";
 export * from "./model-routing.js";
 export * from "./pr-creator.js";

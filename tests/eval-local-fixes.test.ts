@@ -56,6 +56,15 @@ describe("local fix evaluation harness", () => {
     expect(source).toContain("validateExpectedOpenAIRoute");
   });
 
+  it("wires one protected-plan policy through planning, generation, and focused repair", async () => {
+    const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
+
+    expect(source).toContain('"tests/baseline/"');
+    expect(source).toContain("...(evalCase.oracleTestPathPrefixes ?? [])");
+    expect(source.match(/modelVisiblePlanPathPolicy:/g)).toHaveLength(3);
+    expect(source).not.toContain("implementationPlan = sanitizePlanForImmutablePaths");
+  });
+
   it("reuses the accepted plan for focused check repair without replanning", async () => {
     const source = await readFile("scripts/eval-local-fixes.ts", "utf8");
     const checkRepairStart = source.indexOf("if (options.generate && implementationPlan && checkErrors.length > 0)");
@@ -294,6 +303,14 @@ describe("local fix evaluation harness", () => {
     )).toThrow("immutable oracle");
 
     expect(() => assertGeneratedPathsAllowed(
+      ["SRC\\service.py", "TESTS\\ORACLES\\TEST_SLA.PY"],
+      {
+        oraclePaths: ["tests/oracles/test_sla.py"],
+        generatedTestPathPrefixes: ["tests/generated/"]
+      }
+    )).toThrow("immutable oracle");
+
+    expect(() => assertGeneratedPathsAllowed(
       ["src/service.py", "tests/generated/test_sla_extra.py"],
       {
         oraclePaths: ["tests/oracles/test_sla.py"],
@@ -302,7 +319,23 @@ describe("local fix evaluation harness", () => {
     )).not.toThrow();
 
     expect(() => assertGeneratedPathsAllowed(
+      ["src/service.py", "TESTS\\GENERATED\\test_sla_extra.py"],
+      {
+        oraclePaths: ["tests/oracles/test_sla.py"],
+        generatedTestPathPrefixes: ["tests/generated/"]
+      }
+    )).not.toThrow();
+
+    expect(() => assertGeneratedPathsAllowed(
       ["tests/test_sla.py"],
+      {
+        oraclePaths: ["tests/oracles/test_sla.py"],
+        generatedTestPathPrefixes: ["tests/generated/"]
+      }
+    )).toThrow("unapproved test path");
+
+    expect(() => assertGeneratedPathsAllowed(
+      [".\\TESTS\\private\\test_sla.py"],
       {
         oraclePaths: ["tests/oracles/test_sla.py"],
         generatedTestPathPrefixes: ["tests/generated/"]
@@ -353,6 +386,7 @@ describe("local fix evaluation harness", () => {
         "python3 -m pytest tests/generated/test_panel.py",
         "python3 -m pytest tests/baseline tests/oracle/test_panel.py",
         "python3 -m unittest tests.oracle.test_panel.PanelOracleTest.test_open",
+        "python3 -m unittest TESTS\\ORACLE\\Test_Panel.py",
         "python3 -m unittest tests.generated.test_panel"
       ],
       [],
@@ -364,7 +398,8 @@ describe("local fix evaluation harness", () => {
       ],
       oracles: [
         "python3 -m pytest tests/baseline tests/oracle/test_panel.py",
-        "python3 -m unittest tests.oracle.test_panel.PanelOracleTest.test_open"
+        "python3 -m unittest tests.oracle.test_panel.PanelOracleTest.test_open",
+        "python3 -m unittest TESTS\\ORACLE\\Test_Panel.py"
       ]
     });
   });
@@ -436,17 +471,17 @@ describe("local fix evaluation harness", () => {
       requiredFiles: [
         { path: "mosaic_demo/service.py", reason: "fix behavior" },
         {
-          path: "tests/generated/test_001_sla_sort.py",
-          reason: "Add independent generated regression coverage; verification-only tests remain immutable"
+          path: "tests/generated/test_generated_regression.py",
+          reason: "Add independent generated regression coverage; immutable verification tests remain separate"
         }
       ],
       acceptanceCriteria: ["SLA ordering is correct"],
       implementationChecklist: [
         "Fix mosaic_demo/service.py",
-        "Extend tests/generated/test_001_sla_sort.py with a tie-breaker"
+        "Extend immutable verification tests with a tie-breaker"
       ],
-      verificationChecklist: ["Run tests/generated/test_001_sla_sort.py"],
-      verificationCommands: ["python3 -m unittest tests.generated.test_001_sla_sort"]
+      verificationChecklist: ["Run immutable verification tests"],
+      verificationCommands: []
     });
   });
 
@@ -469,7 +504,7 @@ describe("local fix evaluation harness", () => {
         { path: "storefront/service.py", reason: "fix confirmation behavior" },
         {
           path: "tests/generated/test_shipping_confirmation.py",
-          reason: "Add independent generated regression coverage; verification-only tests remain immutable"
+          reason: "add regression coverage"
         }
       ],
       acceptanceCriteria: ["Shipping confirmations use the current address"],
@@ -482,7 +517,7 @@ describe("local fix evaluation harness", () => {
   it("relocates only newly invented tests out of immutable oracle prefixes", () => {
     const relocated = relocateGeneratedTestsFromImmutablePaths([
       {
-        filePath: "tests/smoke/test_sla_sort_order.py",
+        filePath: "TESTS\\SMOKE\\test_sla_sort_order.py",
         originalContent: "",
         modifiedContent: "def test_order(): assert True\n",
         explanation: "add generated coverage"

@@ -1,5 +1,11 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
-import { basename, dirname } from "node:path";
+import { dirname } from "node:path";
+
+import {
+  containsProtectedModelVisiblePath,
+  isProtectedModelVisiblePath,
+  sanitizeImplementationPlanForModel
+} from "../packages/pipeline/src/implementation-plan-sanitizer.js";
 
 export type EvalOutcome = "completed" | "error" | "timeout";
 
@@ -332,7 +338,27 @@ export function frontendElementHasDialogSemantics(element: Element): boolean {
 }
 
 function pathMatches(path: string, exactPaths: Set<string>, prefixes: string[]): boolean {
-  return exactPaths.has(path) || prefixes.some((prefix) => path.startsWith(prefix));
+  return isProtectedModelVisiblePath(path, {
+    protectedPaths: [...exactPaths],
+    protectedPathPrefixes: prefixes,
+    generatedTestPathPrefixes: []
+  });
+}
+
+function pathMatchesAnyPrefix(path: string, prefixes: string[]): boolean {
+  return isProtectedModelVisiblePath(path, {
+    protectedPaths: [],
+    protectedPathPrefixes: prefixes,
+    generatedTestPathPrefixes: []
+  });
+}
+
+function rootTestPath(path: string): boolean {
+  return path
+    .replaceAll("\\", "/")
+    .replace(/^\.\/+/, "")
+    .toLowerCase()
+    .startsWith("tests/");
 }
 
 export function assertGeneratedPathsAllowed(changedPaths: string[], policy: GeneratedPathPolicy): void {
@@ -342,8 +368,8 @@ export function assertGeneratedPathsAllowed(changedPaths: string[], policy: Gene
     if (pathMatches(changedPath, oraclePaths, policy.oraclePathPrefixes ?? [])) {
       throw new Error(`Generated change targets immutable oracle path: ${changedPath}`);
     }
-    if (changedPath.startsWith("tests/") &&
-        !policy.generatedTestPathPrefixes.some((prefix) => changedPath.startsWith(prefix))) {
+    if (rootTestPath(changedPath) &&
+        !pathMatchesAnyPrefix(changedPath, policy.generatedTestPathPrefixes)) {
       throw new Error(`Generated change targets unapproved test path: ${changedPath}`);
     }
   }
@@ -355,7 +381,7 @@ export function relocateGeneratedTestsFromImmutablePaths<T extends CaseArtifactC
 ): T[] {
   const oraclePaths = new Set(policy.oraclePaths);
   const generatedPrefix = policy.generatedTestPathPrefixes[0];
-  const occupiedPaths = new Set(changes.map((change) => change.filePath));
+  let occupiedPaths = changes.map((change) => change.filePath);
 
   return changes.map((change) => {
     if (!pathMatches(change.filePath, oraclePaths, policy.oraclePathPrefixes ?? [])) {
@@ -365,12 +391,12 @@ export function relocateGeneratedTestsFromImmutablePaths<T extends CaseArtifactC
       throw new Error(`Generated change targets immutable oracle path: ${change.filePath}`);
     }
 
-    const relocatedPath = `${generatedPrefix}${basename(change.filePath)}`;
-    if (occupiedPaths.has(relocatedPath)) {
+    const relocatedPath = `${generatedPrefix}${change.filePath.replaceAll("\\", "/").split("/").at(-1)}`;
+    if (occupiedPaths.some((path) => pathMatches(relocatedPath, new Set([path]), []))) {
       throw new Error(`Cannot relocate generated oracle-path test because target already exists: ${relocatedPath}`);
     }
-    occupiedPaths.delete(change.filePath);
-    occupiedPaths.add(relocatedPath);
+    occupiedPaths = occupiedPaths.filter((path) => !pathMatches(change.filePath, new Set([path]), []));
+    occupiedPaths.push(relocatedPath);
     return { ...change, filePath: relocatedPath };
   });
 }
@@ -394,24 +420,13 @@ export function partitionVerificationCommands(
   oraclePaths: string[],
   oraclePathPrefixes: string[] = []
 ): { visible: string[]; oracles: string[] } {
-  const patterns = [...oraclePaths, ...oraclePathPrefixes];
   const visible: string[] = [];
   const oracles: string[] = [];
   for (const command of commands) {
-    const tokens = command.match(/"[^"]*"|'[^']*'|\S+/g)?.map((token) =>
-      token.replace(/^["']|["']$/g, "")
-    ) ?? [];
-    const targetsOracle = patterns.some((pattern) => {
-      const normalizedPattern = pattern.replace(/\/$/, "");
-      const normalizedModule = normalizedPattern
-        .replace(/\.py$/, "")
-        .replaceAll("/", ".");
-      return tokens.some((token) =>
-        token === normalizedPattern ||
-        token.startsWith(`${normalizedPattern}/`) ||
-        token === normalizedModule ||
-        token.startsWith(`${normalizedModule}.`)
-      );
+    const targetsOracle = containsProtectedModelVisiblePath(command, {
+      protectedPaths: oraclePaths,
+      protectedPathPrefixes: oraclePathPrefixes,
+      generatedTestPathPrefixes: []
     });
     (targetsOracle ? oracles : visible).push(command);
   }
@@ -430,54 +445,11 @@ export function sanitizePlanForImmutablePaths<T extends PlanWithRequiredFiles>(
   plan: T,
   policy: GeneratedPathPolicy
 ): T {
-  const oraclePaths = new Set(policy.oraclePaths);
-  const replacements = new Map<string, string>();
-  const requiredFiles: Array<{ path: string; reason: string }> = [];
-
-  for (const file of plan.requiredFiles) {
-    const targetsOracle = pathMatches(file.path, oraclePaths, policy.oraclePathPrefixes ?? []);
-    const targetsUnapprovedTest = file.path.startsWith("tests/") &&
-      !policy.generatedTestPathPrefixes.some((prefix) => file.path.startsWith(prefix));
-    if (!targetsOracle && !targetsUnapprovedTest) {
-      requiredFiles.push(file);
-      continue;
-    }
-
-    const generatedPrefix = policy.generatedTestPathPrefixes[0];
-    if (!generatedPrefix) {
-      continue;
-    }
-    const replacementPath = `${generatedPrefix}${basename(file.path)}`;
-    replacements.set(file.path, replacementPath);
-    if (!requiredFiles.some((requiredFile) => requiredFile.path === replacementPath)) {
-      requiredFiles.push({
-        path: replacementPath,
-        reason: "Add independent generated regression coverage; verification-only tests remain immutable"
-      });
-    }
-  }
-
-  const replaceImmutablePaths = (text: string): string => {
-    let sanitized = text;
-    for (const [oraclePath, replacementPath] of replacements) {
-      sanitized = sanitized.replaceAll(oraclePath, replacementPath);
-      if (oraclePath.endsWith(".py") && replacementPath.endsWith(".py")) {
-        const oracleModule = oraclePath.replace(/\.py$/, "").replace(/\//g, ".");
-        const replacementModule = replacementPath.replace(/\.py$/, "").replace(/\//g, ".");
-        sanitized = sanitized.replaceAll(oracleModule, replacementModule);
-      }
-    }
-    return sanitized;
-  };
-
-  return {
-    ...plan,
-    requiredFiles,
-    acceptanceCriteria: plan.acceptanceCriteria.map(replaceImmutablePaths),
-    implementationChecklist: plan.implementationChecklist.map(replaceImmutablePaths),
-    verificationChecklist: plan.verificationChecklist.map(replaceImmutablePaths),
-    verificationCommands: plan.verificationCommands.map(replaceImmutablePaths)
-  };
+  return sanitizeImplementationPlanForModel(plan, {
+    protectedPaths: policy.oraclePaths,
+    protectedPathPrefixes: policy.oraclePathPrefixes ?? [],
+    generatedTestPathPrefixes: policy.generatedTestPathPrefixes
+  });
 }
 
 interface CaseArtifactChange {

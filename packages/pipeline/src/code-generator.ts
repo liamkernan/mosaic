@@ -2,6 +2,12 @@ import { LLMError, type ClassifiedFeedback, type GeneratedChange, type RelevantF
 import { isOpenAIOutputLimitError } from "@mosaic/llm";
 
 import { parseGeneratedChanges } from "./generated-change-parser.js";
+import {
+  isProtectedModelVisiblePath,
+  sanitizeImplementationPlanForModel,
+  sanitizeModelVisiblePlanText,
+  type ModelVisiblePlanPathPolicy
+} from "./implementation-plan-sanitizer.js";
 import type { PipelineLlmClient } from "./pipeline-llm-client.js";
 import { buildGenerationPrompt } from "./prompts/generate.prompt.js";
 import { buildGenerationRepairPrompt, buildValidationRepairPrompt } from "./prompts/repair-generate.prompt.js";
@@ -25,6 +31,10 @@ export const scopeValidationPattern = /outside the implementation plan scope/i;
 
 interface GenerationOptions {
   completeSolution?: boolean;
+}
+
+export interface CodeGeneratorOptions {
+  modelVisiblePlanPathPolicy?: ModelVisiblePlanPathPolicy;
 }
 
 interface PromptFileOptions {
@@ -689,7 +699,49 @@ const VALIDATION_REPAIR_ROUTES: ValidationRepairRoute[] = [
 ];
 
 export class CodeGenerator {
-  constructor(private readonly llmClient: PipelineLlmClient) {}
+  constructor(
+    private readonly llmClient: PipelineLlmClient,
+    private readonly options: CodeGeneratorOptions = {}
+  ) {}
+
+  private modelVisiblePlan(implementationPlan?: ImplementationPlan): ImplementationPlan | undefined {
+    const policy = this.options.modelVisiblePlanPathPolicy;
+    return implementationPlan && policy
+      ? sanitizeImplementationPlanForModel(implementationPlan, policy)
+      : implementationPlan;
+  }
+
+  private modelVisibleErrors(errors: string[]): string[] {
+    const policy = this.options.modelVisiblePlanPathPolicy;
+    return policy ? errors.map((error) => sanitizeModelVisiblePlanText(error, policy)) : errors;
+  }
+
+  private modelVisibleRelevantFiles(relevantFiles: RelevantFile[]): RelevantFile[] {
+    const policy = this.options.modelVisiblePlanPathPolicy;
+    return policy
+      ? relevantFiles.filter((file) => !isProtectedModelVisiblePath(file.path, policy))
+      : relevantFiles;
+  }
+
+  private modelVisibleFileTree(fileTree: string[]): string[] {
+    const policy = this.options.modelVisiblePlanPathPolicy;
+    return policy
+      ? fileTree.filter((path) => !isProtectedModelVisiblePath(path, policy))
+      : fileTree;
+  }
+
+  private modelVisibleChanges(changes: GeneratedChange[]): GeneratedChange[] {
+    const policy = this.options.modelVisiblePlanPathPolicy;
+    return policy
+      ? changes
+          .filter((change) => !isProtectedModelVisiblePath(change.filePath, policy))
+          .map((change) => ({
+            ...change,
+            modifiedContent: sanitizeModelVisiblePlanText(change.modifiedContent, policy),
+            explanation: sanitizeModelVisiblePlanText(change.explanation, policy)
+          }))
+      : changes;
+  }
 
   private toGeneratedChanges(
     parsed: Array<{ filePath: string; modifiedContent?: string; search?: string; replace?: string; explanation: string }>,
@@ -788,19 +840,22 @@ export class CodeGenerator {
       feedbackId: feedback.id
     });
 
-    const promptFiles = promptRelevantFiles(relevantFiles, {
+    const modelVisiblePlan = this.modelVisiblePlan(implementationPlan);
+    const modelVisibleRelevantFiles = this.modelVisibleRelevantFiles(relevantFiles);
+    const modelVisibleFileTree = this.modelVisibleFileTree(fileTree);
+    const promptFiles = promptRelevantFiles(modelVisibleRelevantFiles, {
       compactAssetBytes: COMPACT_STATIC_ASSET_BYTES,
-      keywords: extractKeywords(promptKeywordText(feedback, implementationPlan))
+      keywords: extractKeywords(promptKeywordText(feedback, modelVisiblePlan))
     });
     const maxTokens = estimateGenerationMaxTokens(promptFiles, options);
-    const generationTimeoutMs = shouldCompactStaticFrontendContext(relevantFiles)
+    const generationTimeoutMs = shouldCompactStaticFrontendContext(modelVisibleRelevantFiles)
       ? STATIC_FRONTEND_GENERATION_TIMEOUT_MS
       : GENERATION_TIMEOUT_MS;
 
     let response;
     try {
       response = await this.llmClient.complete(
-        buildGenerationPrompt(visibleRequestText(feedback), promptFiles, fileTree, implementationPlan, options),
+        buildGenerationPrompt(visibleRequestText(feedback), promptFiles, modelVisibleFileTree, modelVisiblePlan, options),
         "Return only the <changes> payload; use exact <edit> blocks for existing files and complete CDATA content only for new files or changes that cannot be expressed safely as localized edits.",
         {
           temperature: 0.3,
@@ -809,21 +864,21 @@ export class CodeGenerator {
         }
       );
     } catch (error) {
-      if (!shouldRetryStaticFrontendGeneration(relevantFiles, error)) {
+      if (!shouldRetryStaticFrontendGeneration(modelVisibleRelevantFiles, error)) {
         throw error;
       }
 
       const outputLimitReached = isOpenAIOutputLimitFailure(error);
       const retryFiles = retryPromptRelevantFiles(
-        relevantFiles,
-        extractKeywords(promptKeywordText(feedback, implementationPlan)),
+        modelVisibleRelevantFiles,
+        extractKeywords(promptKeywordText(feedback, modelVisiblePlan)),
         outputLimitReached
       );
       const retryReason = outputLimitReached
         ? "hit the OpenAI max_output_tokens limit"
         : "timed out";
       response = await this.llmClient.complete(
-        buildGenerationPrompt(visibleRequestText(feedback), retryFiles, fileTree, implementationPlan, options),
+        buildGenerationPrompt(visibleRequestText(feedback), retryFiles, modelVisibleFileTree, modelVisiblePlan, options),
         `The previous static frontend generation ${retryReason}. Return only a compact, complete <changes> payload: prefer exact <edit> blocks or new scoped supplemental JS/CSS files linked from HTML. Do not rewrite full existing HTML/CSS/JS files. Implement one reusable data-driven modal/dialog and matching behavior/styles.`,
         {
           temperature: 0.2,
@@ -889,16 +944,28 @@ export class CodeGenerator {
       feedbackId: feedback.id
     });
 
-    const promptFiles = promptRelevantFiles(relevantFiles, {
+    const modelVisiblePlan = this.modelVisiblePlan(implementationPlan);
+    const modelVisibleErrors = this.modelVisibleErrors(validationErrors);
+    const modelVisibleRelevantFiles = this.modelVisibleRelevantFiles(relevantFiles);
+    const modelVisibleFileTree = this.modelVisibleFileTree(fileTree);
+    const modelVisibleCurrentChanges = this.modelVisibleChanges(currentChanges);
+    const promptFiles = promptRelevantFiles(modelVisibleRelevantFiles, {
       compactAssetBytes: COMPACT_STATIC_ASSET_BYTES,
-      keywords: extractKeywords(promptKeywordText(feedback, implementationPlan, validationErrors))
+      keywords: extractKeywords(promptKeywordText(feedback, modelVisiblePlan, modelVisibleErrors))
     });
     const repairRoute = VALIDATION_REPAIR_ROUTES.find((route) => route.match(validationErrors));
     const maxTokens = repairRoute?.maxTokens(promptFiles) ?? estimateGenerationMaxTokens(promptFiles, options);
     const baseUserMessage = repairRoute?.instruction ?? "Return only the repaired <changes> payload with complete file contents in CDATA blocks.";
-    const userMessage = `${baseUserMessage}${buildFrontendRepairChecklist(validationErrors)}`;
+    const userMessage = `${baseUserMessage}${buildFrontendRepairChecklist(modelVisibleErrors)}`;
     const response = await this.llmClient.complete(
-      buildValidationRepairPrompt(visibleRequestText(feedback), promptFiles, currentChanges, validationErrors, fileTree, implementationPlan),
+      buildValidationRepairPrompt(
+        visibleRequestText(feedback),
+        promptFiles,
+        modelVisibleCurrentChanges,
+        modelVisibleErrors,
+        modelVisibleFileTree,
+        modelVisiblePlan
+      ),
       userMessage,
       {
         temperature: 0,

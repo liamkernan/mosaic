@@ -1,6 +1,11 @@
 import { LLMError, type ClassifiedFeedback, type RelevantFile } from "@mosaic/core";
 import { z } from "zod";
 
+import {
+  isProtectedModelVisiblePath,
+  sanitizeImplementationPlanForModel,
+  type ModelVisiblePlanPathPolicy
+} from "./implementation-plan-sanitizer.js";
 import { buildImplementationPlanPrompt } from "./prompts/implementation-plan.prompt.js";
 import type { PipelineLlmClient } from "./pipeline-llm-client.js";
 import { normalizeRepoRelativePath } from "./repo-paths.js";
@@ -22,6 +27,10 @@ const implementationPlanSchema = z.object({
 });
 
 export type ImplementationPlan = z.infer<typeof implementationPlanSchema>;
+
+export interface ImplementationPlannerOptions {
+  modelVisiblePlanPathPolicy?: ModelVisiblePlanPathPolicy;
+}
 
 function extractJsonObject(response: string): string {
   const trimmed = response.trim();
@@ -163,7 +172,30 @@ function completeEndpointVerificationChecklist(
 }
 
 export class ImplementationPlanner {
-  constructor(private readonly llmClient: PipelineLlmClient) {}
+  constructor(
+    private readonly llmClient: PipelineLlmClient,
+    private readonly options: ImplementationPlannerOptions = {}
+  ) {}
+
+  private sanitizePlan(plan: ImplementationPlan): ImplementationPlan {
+    return this.options.modelVisiblePlanPathPolicy
+      ? sanitizeImplementationPlanForModel(plan, this.options.modelVisiblePlanPathPolicy)
+      : plan;
+  }
+
+  private modelVisibleRelevantFiles(relevantFiles: RelevantFile[]): RelevantFile[] {
+    const policy = this.options.modelVisiblePlanPathPolicy;
+    return policy
+      ? relevantFiles.filter((file) => !isProtectedModelVisiblePath(file.path, policy))
+      : relevantFiles;
+  }
+
+  private modelVisibleFileTree(fileTree: string[]): string[] {
+    const policy = this.options.modelVisiblePlanPathPolicy;
+    return policy
+      ? fileTree.filter((path) => !isProtectedModelVisiblePath(path, policy))
+      : fileTree;
+  }
 
   async plan(
     feedback: ClassifiedFeedback,
@@ -175,7 +207,9 @@ export class ImplementationPlanner {
       feedbackId: feedback.id
     });
 
-    const prompt = buildImplementationPlanPrompt(feedback, relevantFiles, fileTree);
+    const modelVisibleRelevantFiles = this.modelVisibleRelevantFiles(relevantFiles);
+    const modelVisibleFileTree = this.modelVisibleFileTree(fileTree);
+    const prompt = buildImplementationPlanPrompt(feedback, modelVisibleRelevantFiles, modelVisibleFileTree);
     const response = await this.llmClient.complete(
       prompt,
       "Return only the implementation plan JSON object.",
@@ -186,7 +220,7 @@ export class ImplementationPlanner {
       }
     );
 
-    let plan = normalizePlan(response, relevantFiles, fileTree);
+    let plan = this.sanitizePlan(normalizePlan(response, modelVisibleRelevantFiles, modelVisibleFileTree));
     const preflightErrors = validateImplementationPlan(plan, feedback);
     if (preflightErrors.length === 0) {
       return plan;
@@ -203,9 +237,10 @@ export class ImplementationPlanner {
       }
     );
     plan = completeEndpointVerificationChecklist(
-      normalizePlan(repairedResponse, relevantFiles, fileTree),
+      this.sanitizePlan(normalizePlan(repairedResponse, modelVisibleRelevantFiles, modelVisibleFileTree)),
       feedback
     );
+    plan = this.sanitizePlan(plan);
     const repairedErrors = validateImplementationPlan(plan, feedback);
     if (repairedErrors.length > 0) {
       throw new LLMError(`Implementation plan failed preflight: ${repairedErrors.join("; ")}`);

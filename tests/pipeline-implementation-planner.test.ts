@@ -4,6 +4,68 @@ import { ImplementationPlanner } from "../packages/pipeline/src/implementation-p
 import { buildClassifiedFeedback, createPipelineLlmClient } from "./helpers/pipeline.js";
 
 describe("ImplementationPlanner", () => {
+  it("scrubs protected path variants before plan repair and from the returned plan", async () => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({
+        requiredFiles: [
+          { path: "src/settings-form.tsx", reason: "add the settings form UI" },
+          { path: "Tests\\Oracle\\Test_Settings.py", reason: "extend the hidden regression" }
+        ],
+        acceptanceCriteria: ["The form persists settings without reading tests.oracle.test_settings."],
+        implementationChecklist: ["Do not modify TESTS/BASELINE/ or Tests.Oracle.Test_Settings."],
+        verificationChecklist: ["Run tests\\oracle\\test_settings.py."],
+        verificationCommands: ["python3 -m unittest tests.oracle.test_settings"]
+      }))
+      .mockResolvedValueOnce(JSON.stringify({
+        requiredFiles: [
+          { path: "src/settings-form.tsx", reason: "add the settings form UI" },
+          { path: "src/settings-service.ts", reason: "persist settings in the server service without Tests\\Oracle\\ details" }
+        ],
+        acceptanceCriteria: ["Submitting the form persists settings through the server-side service."],
+        implementationChecklist: ["Keep TESTS.BASELINE immutable while wiring the service."],
+        verificationChecklist: ["Verify public behavior, not tests/oracle/test_settings.py."],
+        verificationCommands: []
+      }));
+
+    const planner = new ImplementationPlanner(createPipelineLlmClient(complete), {
+      modelVisiblePlanPathPolicy: {
+        protectedPaths: [],
+        protectedPathPrefixes: ["tests/oracle/", "tests/baseline/"],
+        generatedTestPathPrefixes: ["tests/generated/"]
+      }
+    });
+    const plan = await planner.plan(
+      buildClassifiedFeedback({
+        rawContent: "Add a settings form that persists preferences through the server-side service.",
+        category: "feature_request",
+        complexity: "moderate",
+        summary: "Add persistent account settings UI",
+        relevantFiles: ["src/settings-form.tsx", "src/settings-service.ts"],
+        confidence: 0.9
+      }),
+      [{
+        path: "tests/oracle/test_settings.py",
+        content: "SECRET_ORACLE_ASSERTION",
+        reason: "hidden verification"
+      }],
+      ["src/settings-form.tsx", "src/settings-service.ts", "TESTS\\ORACLE\\test_settings.py"]
+    );
+
+    const protectedReferencePattern = /tests(?:[\\/.]+)(?:oracle|baseline)/i;
+    expect(complete).toHaveBeenCalledTimes(2);
+    for (const call of complete.mock.calls) {
+      expect(call[0]).not.toMatch(protectedReferencePattern);
+      expect(call[0]).not.toContain("SECRET_ORACLE_ASSERTION");
+    }
+    expect(complete.mock.calls[1]?.[0]).toContain("immutable verification tests");
+    expect(JSON.stringify(plan)).not.toMatch(protectedReferencePattern);
+    expect(plan.requiredFiles.map((file) => file.path)).toEqual([
+      "src/settings-form.tsx",
+      "src/settings-service.ts"
+    ]);
+    expect(plan.implementationChecklist[0]).toContain("immutable verification tests");
+  });
+
   it("keeps required files that are in the repo tree or already loaded", async () => {
     const fakeClient = createPipelineLlmClient(async () =>
       JSON.stringify({

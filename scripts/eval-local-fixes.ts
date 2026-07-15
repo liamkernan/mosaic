@@ -14,6 +14,7 @@ import {
   type OpenAIClassificationPass
 } from "../packages/pipeline/src/classification-routing.js";
 import { ImplementationPlanner, type ImplementationPlan } from "../packages/pipeline/src/implementation-planner.js";
+import type { ModelVisiblePlanPathPolicy } from "../packages/pipeline/src/implementation-plan-sanitizer.js";
 import { pruneChangesToPlanScope, validatePlanCompletion } from "../packages/pipeline/src/plan-completion-validator.js";
 import { assessRepairProgress, findUnplannedAddedFiles } from "../packages/pipeline/src/repair-progress.js";
 import { RepoIndexer } from "../packages/pipeline/src/repo-indexer.js";
@@ -61,7 +62,6 @@ import {
   partitionVerificationCommands,
   relocateGeneratedTestsFromImmutablePaths,
   runEvalCaseBatch,
-  sanitizePlanForImmutablePaths,
   summarizeEvalTrials,
   summarizeRepairAttempts,
   validateAllowedChangedPaths,
@@ -133,6 +133,17 @@ interface EvalCase {
   allowedSymbolAdditions?: Record<string, Record<string, string[]>>;
   expectedSafetyOutcome?: "accepted" | "rejected";
   expectedOpenAIRoute?: ExpectedOpenAIRoute;
+}
+
+function modelVisiblePlanPathPolicy(evalCase: EvalCase): ModelVisiblePlanPathPolicy {
+  return {
+    protectedPaths: evalCase.oracleTestPaths ?? [],
+    protectedPathPrefixes: [...new Set([
+      "tests/baseline/",
+      ...(evalCase.oracleTestPathPrefixes ?? [])
+    ])],
+    generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
+  };
 }
 
 interface FrontendAssertion {
@@ -1246,13 +1257,12 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
   if (options.generate) {
     generated = true;
     const fileTree = visibleFileTreePaths(repoIndexer, repoContext, evalCase);
-    const planner = new ImplementationPlanner(createEvalLlmClient(options.provider, routes.planning, telemetry, "planning"));
-    const plannedImplementation = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
-    implementationPlan = sanitizePlanForImmutablePaths(plannedImplementation, {
-      oraclePaths: evalCase.oracleTestPaths ?? [],
-      oraclePathPrefixes: evalCase.oracleTestPathPrefixes ?? [],
-      generatedTestPathPrefixes: evalCase.generatedTestPathPrefixes ?? []
-    });
+    const planPathPolicy = modelVisiblePlanPathPolicy(evalCase);
+    const planner = new ImplementationPlanner(
+      createEvalLlmClient(options.provider, routes.planning, telemetry, "planning"),
+      { modelVisiblePlanPathPolicy: planPathPolicy }
+    );
+    implementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
     const plannedFiles = await repoIndexer.readFiles(repoContext, implementationPlan.requiredFiles);
     relevantFiles = mergeFiles(relevantFiles, plannedFiles);
     const partitionedPlannedFiles = partitionVisibleContext(
@@ -1262,7 +1272,10 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
     );
     relevantFiles = partitionedPlannedFiles.visible;
     await persistArtifacts();
-    const generator = new CodeGenerator(createEvalLlmClient(options.provider, routes.generation, telemetry, "generation-and-repair"));
+    const generator = new CodeGenerator(
+      createEvalLlmClient(options.provider, routes.generation, telemetry, "generation-and-repair"),
+      { modelVisiblePlanPathPolicy: planPathPolicy }
+    );
     try {
       changes = await generateValidatedChanges(
         generator,
@@ -1498,7 +1511,9 @@ async function runCase(evalCase: EvalCase, options: ReturnType<typeof parseArgs>
       routes.generation,
       telemetry,
       "check-repair"
-    ));
+    ), {
+      modelVisiblePlanPathPolicy: modelVisiblePlanPathPolicy(evalCase)
+    });
     let repairedChanges = await repairVerificationFailure(
       generator,
       classifiedFeedback,
