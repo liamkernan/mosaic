@@ -269,9 +269,16 @@ export function summarizeRepairAttempts(
   validationStages: string[],
   verificationStages: string[]
 ): EvalRepairSummary {
-  const generationCalls = calls.filter((call) => call.phase === "generation-and-repair").length;
-  const otherRepairCalls = calls.filter((call) => call.phase === "check-repair").length;
-  const modelAttempts = Math.max(0, generationCalls - 1) + otherRepairCalls;
+  const legacyGenerationCalls = calls.filter((call) => call.phase === "generation-and-repair").length;
+  const legacyCheckRepairCalls = calls.filter((call) => call.phase === "check-repair").length;
+  const requestSpecificRepairCalls = calls.filter((call) => [
+    "generation-repair",
+    "validation-repair",
+    "verification-repair"
+  ].includes(call.phase)).length;
+  const modelAttempts = Math.max(0, legacyGenerationCalls - 1) +
+    legacyCheckRepairCalls +
+    requestSpecificRepairCalls;
   const stages = [...validationStages, ...verificationStages]
     .filter((stage) => stage.includes("repair"));
   const deterministicAttempts = stages.filter((stage) => stage.includes("deterministic-repair")).length;

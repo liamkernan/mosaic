@@ -494,6 +494,46 @@ describe("local fix evaluation harness", () => {
     });
   });
 
+  it("counts the request-specific repair phases recorded by current usage telemetry", () => {
+    expect(summarizeRepairAttempts(
+      [
+        { phase: "classification" },
+        { phase: "initial-planning" },
+        { phase: "planner-correction" },
+        { phase: "generation" },
+        { phase: "validation-repair" },
+        { phase: "verification-repair" }
+      ],
+      ["initial", "model-repair-reduced-1", "verification-model-repair"],
+      ["initial", "check-repair-reduced", "hidden-oracle"]
+    )).toEqual({
+      modelAttempts: 2,
+      deterministicAttempts: 0,
+      totalAttempts: 2,
+      stages: [
+        "model-repair-reduced-1",
+        "verification-model-repair",
+        "check-repair-reduced"
+      ]
+    });
+
+    expect(summarizeRepairAttempts(
+      [
+        { phase: "classification" },
+        { phase: "initial-planning" },
+        { phase: "planner-correction" },
+        { phase: "generation" }
+      ],
+      ["initial"],
+      ["initial", "raw-deterministic-checks", "raw-hidden-oracle"]
+    )).toEqual({
+      modelAttempts: 0,
+      deterministicAttempts: 0,
+      totalAttempts: 0,
+      stages: []
+    });
+  });
+
   it("removes immutable oracles from model-visible context", () => {
     const files = [
       { path: "src/service.py", content: "code", reason: "issue file" },
