@@ -189,13 +189,13 @@ llm:
 
 Quality routing is based on the classified work:
 
-| Work                   | OpenAI          | Reasoning | Anthropic                                          |
-| ---------------------- | --------------- | --------- | -------------------------------------------------- |
-| Trivial                | `gpt-5.6-luna`  | `high`    | Claude Haiku 4.5                                   |
-| Simple                 | `gpt-5.6-terra` | `high`    | Haiku, with Sonnet escalation for non-obvious bugs |
-| Moderate-safe          | `gpt-5.6-terra` | `xhigh`   | Claude Sonnet 5                                    |
-| Moderate-review-needed | `gpt-5.6-sol`   | `high`    | Sonnet 5 with an Opus 4.8 advisor                  |
-| Complex                | `gpt-5.6-sol`   | `xhigh`   | Claude Opus 4.8                                    |
+| Work                   | OpenAI                                                               | Anthropic                                         |
+| ---------------------- | -------------------------------------------------------------------- | ------------------------------------------------- |
+| Trivial                | `gpt-5.6-luna`<br>↳ reasoning effort: `high`     | `claude-haiku-4-5`                                |
+| Simple                 | `gpt-5.6-terra`<br>↳ reasoning effort: `high`    | `claude-sonnet-5`                                 |
+| Moderate-safe          | `gpt-5.6-terra`<br>↳ reasoning effort: `xhigh`   | `claude-sonnet-5`                                 |
+| Moderate-review-needed | `gpt-5.6-sol`<br>↳ reasoning effort: `high`      | `claude-sonnet-5` with `claude-opus-4-8` advisor |
+| Complex                | `gpt-5.6-sol`<br>↳ reasoning effort: `xhigh`     | `claude-opus-4-8`                                 |
 
 `balanced` keeps the OpenAI complexity tiers but uses cost-conscious Anthropic routing: complex work stays on Sonnet and advisor calls are disabled. Classification begins on the cheapest provider tier and escalates when complexity, confidence, relevant-file evidence, or bug ambiguity requires it.
 
