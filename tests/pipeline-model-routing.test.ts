@@ -31,10 +31,22 @@ describe("model routing", () => {
     expect(
       shouldEscalateClassification({
         ...baseFeedback,
-        complexity: "trivial"
+        complexity: "trivial",
+        routingSignals: {
+          scope: "localized",
+          literalCorrection: true,
+          runtimeBehavior: false,
+          persistentData: false,
+          securitySensitive: false,
+          requiresHumanReview: false
+        }
       })
     ).toBe(false);
     expect(shouldEscalateClassification(baseFeedback)).toBe(false);
+  });
+
+  it("escalates an unproven trivial label for confirmation", () => {
+    expect(shouldEscalateClassification({ ...baseFeedback, complexity: "trivial" })).toBe(true);
   });
 
   it("routes moderate work to sonnet", () => {

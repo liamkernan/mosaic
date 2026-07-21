@@ -19,6 +19,9 @@
     "eval:routing": "tsx scripts/eval-routing-benchmark.ts",
     "setup": "tsx scripts/setup.ts",
     "demo": "tsx scripts/demo.ts",
+    "demo:support": "bash scripts/demo-support.sh",
+    "demo:sites": "node scripts/demo-sites.mjs",
+    "demo:worker": "bash scripts/demo-worker-view.sh",
     "webhooks:dev": "node scripts/dev-webhooks.mjs"
   },
   "devDependencies": {

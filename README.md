@@ -18,7 +18,7 @@ Staged issues can be promoted by an authorized issue author or repository collab
 
 - **It understands conversational feedback.** Users can describe a problem in plain language from Slack, Discord, email, or a website form. Mosaic turns that non-technical feedback into an implementation-oriented summary, category, complexity estimate, and relevant-file search.
 - **It triages before it codes.** Mosaic does not assume every request deserves a PR. It separates quick fixes from broad product requests, low-confidence reports, risky changes, and work that needs human review.
-- **It stages unclear work instead of forcing automation.** Moderate and complex feedback becomes a GitHub issue with context and a promotion path, so maintainers can decide when to ask Mosaic for a PR.
+- **It stages unclear work instead of forcing automation.** Review-required work, complex feedback, and anything above the repository's configured automation threshold becomes a GitHub issue with context and a promotion path. Repositories may explicitly opt into direct automation for moderate-safe work.
 - **It filters bad input early.** Duplicate submissions, sender floods, obvious spam, and prompt-injection-style content are rejected before the pipeline spends tokens or touches GitHub.
 - **It validates generated work aggressively.** Mosaic checks unsafe code patterns, file-count limits, line-count limits, plan completion, verification commands, and repo policy before opening a PR.
 - **It just doesn't ship junk.** If generation is empty, too broad, unsafe, failing validation, or failing project checks, Mosaic falls back to an issue instead of publishing a low-quality PR.
@@ -171,7 +171,7 @@ Install the app, invite it to the feedback channel, and mention it with a reques
 
 - Duplicate submissions, sender floods, prompt-injection patterns, and obvious spam are rejected before queueing.
 - Generated changes are checked for blocked patterns, excessive file or line counts, and work outside the approved plan.
-- Trivial and simple feedback can become automatic PRs; moderate and complex feedback is staged for review.
+- Trivial and simple feedback can become automatic PRs. Moderate-safe feedback can do so only when the repository explicitly sets `max_complexity: moderate` (or higher); review-required moderate and all complex feedback is staged for review.
 - Promoted moderate-safe work can open a PR. Review-heavy moderate and complex work opens a draft PR.
 - Project verification must pass before PR creation.
 - Suspicious input and policy-unsafe output are quarantined.

@@ -22,7 +22,34 @@ const repoContext: RepoContext = buildRepoContext({
 });
 
 function workerDependencies(classification: Record<string, unknown>) {
-  const complete = vi.fn(async () => JSON.stringify(classification));
+  const complexity = classification.complexity ?? "simple";
+  const routingSignals = complexity === "complex"
+    ? {
+        scope: "cross-layer",
+        literalCorrection: false,
+        runtimeBehavior: true,
+        persistentData: true,
+        securitySensitive: false,
+        requiresHumanReview: true
+      }
+    : complexity === "moderate"
+      ? {
+          scope: "multi-component",
+          literalCorrection: false,
+          runtimeBehavior: true,
+          persistentData: false,
+          securitySensitive: false,
+          requiresHumanReview: classification.category === "feature_request"
+        }
+      : {
+          scope: "localized",
+          literalCorrection: false,
+          runtimeBehavior: false,
+          persistentData: false,
+          securitySensitive: false,
+          requiresHumanReview: false
+        };
+  const complete = vi.fn(async (_systemPrompt: string) => JSON.stringify({ routingSignals, ...classification }));
   const client = new LLMClient({
     mode: "platform",
     platformApiKey: "test-key",
@@ -180,5 +207,45 @@ describe("FeedbackPipelineWorker", () => {
       model: "gpt-5.6-sol",
       reasoningEffort: "high"
     }));
+  });
+
+  it("classifies with the flattened nested file tree instead of top-level directories", async () => {
+    const setup = workerDependencies({
+      category: "other",
+      complexity: "simple",
+      summary: "Inspect the reported behavior",
+      relevantFiles: ["tests/reported/trace.test.ts"],
+      confidence: 0.95
+    });
+    setup.getContext.mockResolvedValue({
+      ...repoContext,
+      fileTree: [
+        {
+          path: "tests",
+          type: "directory",
+          children: [
+            {
+              path: "tests/reported",
+              type: "directory",
+              children: [{ path: "tests/reported/trace.test.ts", type: "file" }]
+            }
+          ]
+        },
+        { path: "response-format.ts", type: "file" }
+      ]
+    });
+    setup.dependencies.repoIndexer.fileTreeToPaths = vi.fn(() => [
+      "tests",
+      "tests/reported",
+      "tests/reported/trace.test.ts",
+      "response-format.ts"
+    ]);
+
+    await new FeedbackPipelineWorker(setup.dependencies).process(feedback);
+
+    const prompts = setup.complete.mock.calls.map((call) => String(call[0]));
+    expect(prompts).toHaveLength(2);
+    expect(prompts.every((prompt) => prompt.includes("tests/reported/trace.test.ts"))).toBe(true);
+    expect(prompts.every((prompt) => !prompt.includes("\ntests\n"))).toBe(true);
   });
 });

@@ -110,13 +110,29 @@ async function cloneOrUpdateRepo(repoFullName: string, localPath: string, defaul
   const token = await getInstallationToken(installationId);
   const remoteUrl = `https://x-access-token:${encodeURIComponent(token)}@github.com/${repoFullName}.git`;
 
-  const git = simpleGit();
-  try {
-    await stat(join(localPath, ".git"));
-    await simpleGit(localPath).pull("origin", defaultBranch);
-  } catch {
-    await git.clone(remoteUrl, localPath, ["--depth", "1", "--branch", defaultBranch]);
+  const existingRepo = await stat(join(localPath, ".git")).then(
+    () => true,
+    () => false
+  );
+
+  if (existingRepo) {
+    const git = simpleGit(localPath);
+    // Installation tokens expire. Refresh the cached clone's authenticated
+    // remote before pulling instead of falling through to a second clone.
+    await git.remote(["set-url", "origin", remoteUrl]);
+    await git.pull("origin", defaultBranch);
+    return;
   }
+
+  const cachePathExists = await stat(localPath).then(
+    () => true,
+    () => false
+  );
+  if (cachePathExists) {
+    throw new Error(`Repository cache path exists but is not a Git repository: ${localPath}`);
+  }
+
+  await simpleGit().clone(remoteUrl, localPath, ["--depth", "1", "--branch", defaultBranch]);
 }
 
 function appendFileTreePaths(nodes: FileNode[], paths: string[]): void {

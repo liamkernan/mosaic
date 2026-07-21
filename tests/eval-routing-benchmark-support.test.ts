@@ -30,26 +30,40 @@ function classification(overrides: Record<string, unknown> = {}): Record<string,
     summary: "Correct the profile label",
     relevantFiles: ["src/Profile.tsx"],
     confidence: 0.99,
+    routingSignals: {
+      scope: "localized",
+      literalCorrection: false,
+      runtimeBehavior: false,
+      persistentData: false,
+      securitySensitive: false,
+      requiresHumanReview: false
+    },
     ...overrides
   };
 }
 
 function fakeFactory(responses: Record<string, unknown>[]): {
   routes: OpenAIModelSelection[];
+  prompts: string[];
   createClient: (route: OpenAIModelSelection) => {
     setUsageContext: ReturnType<typeof vi.fn>;
     complete: ReturnType<typeof vi.fn>;
   };
 } {
   const routes: OpenAIModelSelection[] = [];
+  const prompts: string[] = [];
   const pending = [...responses];
   return {
     routes,
+    prompts,
     createClient: (route) => {
       routes.push(route);
       return {
         setUsageContext: vi.fn(),
-        complete: vi.fn(async () => JSON.stringify(pending.shift()))
+        complete: vi.fn(async (systemPrompt: string) => {
+          prompts.push(systemPrompt);
+          return JSON.stringify(pending.shift());
+        })
       };
     }
   };
@@ -178,9 +192,71 @@ describe("routing benchmark support", () => {
     expect(result.classificationPasses).toHaveLength(2);
   });
 
+  it("exercises grounded routed adjudication for a Pulseboard-shaped local runtime fix", async () => {
+    const initialSignals = {
+      scope: "multi-component",
+      literalCorrection: false,
+      runtimeBehavior: true,
+      persistentData: false,
+      securitySensitive: false,
+      requiresHumanReview: false
+    };
+    const routedSignals = { ...initialSignals, scope: "localized" };
+    const factory = fakeFactory([
+      classification({
+        category: "bug_report",
+        complexity: "moderate",
+        summary: "Handle empty JSON responses across the viewer",
+        relevantFiles: ["response-format.js", "app.js"],
+        confidence: 0.92,
+        routingSignals: initialSignals
+      }),
+      classification({
+        category: "bug_report",
+        complexity: "simple",
+        summary: "Guard empty bodies in the response formatter",
+        relevantFiles: ["response-format.js"],
+        confidence: 0.96,
+        routingSignals: routedSignals
+      })
+    ]);
+
+    const result = await runUnscoredRoutingCase({
+      inputCase: {
+        ...baseInput,
+        id: "pulseboard-grounded-local-runtime",
+        rawContent: "Treat 204 and 205 responses and empty bodies as no-content before JSON parsing.",
+        fileTree: ["response-format.js", "app.js", "tests/test_response_format.py"],
+        groundingFiles: [
+          {
+            path: "response-format.js",
+            content: "return JSON.stringify(JSON.parse(response.body), null, 2);",
+            reason: "preliminary candidate"
+          },
+          {
+            path: "app.js",
+            content: "responseBody.textContent = formatInspectorResponse(trace);",
+            reason: "unchanged caller"
+          }
+        ]
+      },
+      createClient: factory.createClient
+    });
+
+    expect(result.finalClassification).toMatchObject({
+      category: "bug_report",
+      complexity: "simple",
+      routingSignals: { scope: "localized", runtimeBehavior: true }
+    });
+    expect(result.actualRouteKey).toBe("simple");
+    expect(factory.prompts[0]).not.toContain("formatInspectorResponse(trace)");
+    expect(factory.prompts[1]).toContain("formatInspectorResponse(trace)");
+    expect(factory.prompts[1]).toContain("JSON.parse(response.body)");
+  });
+
   it("scores review decisions, confusion, under-routing, and over-routing separately", () => {
     const moderateSafe = classified("moderate", {
-      category: "copy_change",
+      category: "bug_report",
       rawContent: "Correct the label text.",
       relevantFiles: ["src/Profile.tsx"],
       confidence: 0.99
@@ -203,6 +279,7 @@ describe("routing benchmark support", () => {
       underRoutingCount: 1,
       overRoutingCount: 1,
       review: { correct: 0, total: 1, accuracy: 0 },
+      category: { correct: 3, total: 3, accuracy: 1 },
       safety: { correct: 4, total: 4, accuracy: 1 }
     });
     expect(summary.confusionMatrix.rows["moderate-review-needed"]["moderate-safe"]).toBe(1);
@@ -212,5 +289,20 @@ describe("routing benchmark support", () => {
       suggestedFailureCause: "deterministic routing-policy failure",
       reviewCorrect: false
     });
+  });
+
+  it("fails an otherwise correct route when the category is wrong", () => {
+    const { results, summary } = scoreRoutingResults(
+      [unscored("wrong-category", "simple", classified("simple", { category: "copy_change" }))],
+      [expectation("wrong-category", "simple", "simple")]
+    );
+
+    expect(results[0]).toMatchObject({
+      routeCorrect: true,
+      categoryCorrect: false,
+      passed: false,
+      suggestedFailureCause: "classifier/prompt failure"
+    });
+    expect(summary.category).toEqual({ correct: 0, total: 1, accuracy: 0 });
   });
 });

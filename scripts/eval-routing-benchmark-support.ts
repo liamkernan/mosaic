@@ -3,7 +3,8 @@ import type {
   ComplexityLevel,
   FeedbackCategory,
   FeedbackItem,
-  FeedbackSource
+  FeedbackSource,
+  RelevantFile
 } from "../packages/core/src/types.js";
 import { assessFeedbackContent, type AbuseAssessment } from "../packages/intake/src/abuse-protection.js";
 import type { OpenAIReasoningEffort } from "../packages/llm/src/client.js";
@@ -37,6 +38,7 @@ export interface RoutingBenchmarkInputCase {
   senderIdentifier: string;
   rawContent: string;
   fileTree: string[];
+  groundingFiles?: RelevantFile[];
 }
 
 export interface RoutingBenchmarkInputsFile {
@@ -90,6 +92,7 @@ export interface ScoredRoutingResult extends UnscoredRoutingResult {
   expected: RoutingBenchmarkExpectation;
   safetyCorrect: boolean;
   routeCorrect: boolean;
+  categoryCorrect?: boolean;
   reviewCorrect?: boolean;
   passed: boolean;
   direction?: "under-routed" | "over-routed";
@@ -105,6 +108,7 @@ export interface RoutingBenchmarkSummary {
   outcomeAccuracy: number;
   safeRoute: { correct: number; total: number; accuracy: number };
   review: { correct: number; total: number; accuracy: number };
+  category: { correct: number; total: number; accuracy: number };
   safety: { correct: number; total: number; accuracy: number };
   underRoutingCount: number;
   overRoutingCount: number;
@@ -193,6 +197,13 @@ export async function runUnscoredRoutingCase(options: {
     fileTree: inputCase.fileTree,
     modelPreset: "quality",
     createClient: options.createClient,
+    ...(inputCase.groundingFiles
+      ? {
+          loadGroundingFiles: async (classification) => inputCase.groundingFiles?.filter((file) =>
+            classification.relevantFiles.includes(file.path)
+          ) ?? []
+        }
+      : {}),
     onPass: options.onClassificationPass
   });
   const finalClassification = routedClassification.classifiedFeedback;
@@ -235,6 +246,9 @@ function suggestedCause(
   if (result.finalClassification?.complexity !== expected.expectedComplexity) {
     return "classifier/prompt failure";
   }
+  if (expected.expectedCategory && result.finalClassification?.category !== expected.expectedCategory) {
+    return "classifier/prompt failure";
+  }
   return "deterministic routing-policy failure";
 }
 
@@ -250,16 +264,20 @@ export function scoreRoutingResults(
     }
     const safetyCorrect = result.safetyAssessment.accepted === (expected.expectedSafetyOutcome === "accepted");
     const routeCorrect = result.actualRouteKey === expected.expectedRoute.key;
+    const categoryCorrect = expected.expectedCategory
+      ? result.finalClassification?.category === expected.expectedCategory
+      : undefined;
     const reviewCorrect = expected.expectedComplexity === "moderate" && result.finalClassification
       ? reviewDecisionForClassification(result.finalClassification) === expected.expectedReview
       : undefined;
-    const passed = safetyCorrect && routeCorrect && reviewCorrect !== false;
+    const passed = safetyCorrect && routeCorrect && categoryCorrect !== false && reviewCorrect !== false;
     const direction = directionForRoutes(expected.expectedRoute.key, result.actualRouteKey);
     return {
       ...result,
       expected,
       safetyCorrect,
       routeCorrect,
+      ...(categoryCorrect === undefined ? {} : { categoryCorrect }),
       ...(reviewCorrect === undefined ? {} : { reviewCorrect }),
       passed,
       ...(direction ? { direction } : {}),
@@ -269,6 +287,7 @@ export function scoreRoutingResults(
 
   const safeResults = scoredResults.filter((result) => result.expected.expectedSafetyOutcome === "accepted");
   const reviewResults = scoredResults.filter((result) => result.expected.expectedComplexity === "moderate");
+  const categoryResults = scoredResults.filter((result) => result.expected.expectedCategory !== undefined);
   const rows = Object.fromEntries(routingOutcomeLabels.map((expected) => [
     expected,
     Object.fromEntries(routingOutcomeLabels.map((actual) => [actual, 0]))
@@ -280,6 +299,7 @@ export function scoreRoutingResults(
   const passedCases = scoredResults.filter((result) => result.passed).length;
   const safeCorrect = safeResults.filter((result) => result.routeCorrect).length;
   const reviewCorrect = reviewResults.filter((result) => result.reviewCorrect).length;
+  const categoryCorrect = categoryResults.filter((result) => result.categoryCorrect).length;
   const safetyCorrect = scoredResults.filter((result) => result.safetyCorrect).length;
   const underRoutingCount = scoredResults.filter((result) => result.direction === "under-routed").length;
   const overRoutingCount = scoredResults.filter((result) => result.direction === "over-routed").length;
@@ -299,6 +319,11 @@ export function scoreRoutingResults(
         correct: reviewCorrect,
         total: reviewResults.length,
         accuracy: reviewResults.length === 0 ? 0 : reviewCorrect / reviewResults.length
+      },
+      category: {
+        correct: categoryCorrect,
+        total: categoryResults.length,
+        accuracy: categoryResults.length === 0 ? 0 : categoryCorrect / categoryResults.length
       },
       safety: {
         correct: safetyCorrect,

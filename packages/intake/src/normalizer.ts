@@ -28,6 +28,24 @@ function truncate(input: string, maxLength: number): string {
   return input.length <= maxLength ? input : input.slice(0, maxLength);
 }
 
+function feedbackContent(payload: BaseAdapterOutput, source: FeedbackSource): string {
+  const primarySource = payload.rawContent ?? payload.message ?? payload.text ?? payload.subject ?? "";
+  const primary = stripHtml(String(primarySource));
+  if (source !== "email" || !payload.subject || primarySource === payload.subject) {
+    return primary;
+  }
+
+  const subject = stripHtml(payload.subject)
+    .replace(/\[repo:[^\]]+\]/gi, "")
+    .trim()
+    .slice(0, 500);
+  if (!subject || /^feedback submission$/i.test(subject) || primary.toLowerCase().startsWith(subject.toLowerCase())) {
+    return primary;
+  }
+
+  return `Subject: ${subject}\n\n${primary}`;
+}
+
 function resolveRepoFullName(payload: BaseAdapterOutput): string {
   const direct = payload.repoFullName?.trim();
   if (direct) {
@@ -54,8 +72,7 @@ export function normalize(adapterOutput: unknown, source: FeedbackSource): Feedb
     throw new ValidationError(`Invalid repoFullName: ${repoFullName}`);
   }
 
-  const rawContentSource = payload.rawContent ?? payload.message ?? payload.text ?? payload.subject ?? "";
-  const rawContent = truncate(stripHtml(String(rawContentSource)), 5_000);
+  const rawContent = truncate(feedbackContent(payload, source), 5_000);
   if (!rawContent) {
     throw new ValidationError("Feedback content is empty after normalization");
   }

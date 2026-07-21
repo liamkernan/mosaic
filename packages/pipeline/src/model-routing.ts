@@ -2,6 +2,7 @@ import type { ClassifiedFeedback, LLMModelPreset } from "@mosaic/core";
 import { OPENAI_MODEL_IDS, type ANTHROPIC_MODEL_IDS, type OpenAIReasoningEffort } from "@mosaic/llm";
 
 import { getModerateIssueMode } from "./staged-issues.js";
+import { routingSignalsProveTrivial } from "./routing-signals.js";
 
 export type ModelTier = keyof typeof ANTHROPIC_MODEL_IDS;
 export type ReviewMode = "moderate-safe" | "moderate-review-needed" | "complex-review-needed";
@@ -41,6 +42,13 @@ function isObviousFix(classifiedFeedback: ClassifiedFeedback): boolean {
 }
 
 export function shouldEscalateClassification(classifiedFeedback: ClassifiedFeedback): boolean {
+  if (
+    classifiedFeedback.complexity === "trivial" &&
+    (!routingSignalsProveTrivial(classifiedFeedback.routingSignals) || !hasClearRelevantFiles(classifiedFeedback))
+  ) {
+    return true;
+  }
+
   if (classifiedFeedback.complexity === "complex") {
     return true;
   }

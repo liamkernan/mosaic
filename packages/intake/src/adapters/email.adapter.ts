@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { ConfigError, getEnv, logger, repoFullNamePattern, type AppEnv } from "@mosaic/core";
+import { AbuseDetectedError, ConfigError, getEnv, logger, repoFullNamePattern, type AppEnv } from "@mosaic/core";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 
@@ -143,9 +143,8 @@ export class EmailListener {
   private interval?: NodeJS.Timeout;
 
   constructor(mailboxes = getConfiguredEmailMailboxes()) {
-    this.mailboxes = mailboxes.map((config) => ({
-      config,
-      client: new ImapFlow({
+    this.mailboxes = mailboxes.map((config) => {
+      const client = new ImapFlow({
         host: config.host,
         port: config.port,
         secure: config.secure,
@@ -153,8 +152,17 @@ export class EmailListener {
           user: config.user,
           pass: config.pass
         }
-      })
-    }));
+      });
+
+      client.on("error", (error) => {
+        logger.warn(
+          { err: error, repo: config.repoFullName, mailbox: config.mailbox },
+          "Email mailbox connection error"
+        );
+      });
+
+      return { config, client };
+    });
   }
 
   async start(): Promise<void> {
@@ -191,7 +199,23 @@ export class EmailListener {
 
   async pollOnce(): Promise<void> {
     for (const mailbox of this.mailboxes) {
-      await this.pollMailbox(mailbox.client, mailbox.config);
+      try {
+        if (!mailbox.client.usable) {
+          await mailbox.client.connect();
+          await mailbox.client.mailboxOpen(mailbox.config.mailbox);
+          logger.info(
+            { repo: mailbox.config.repoFullName, mailbox: mailbox.config.mailbox },
+            "Reconnected email mailbox"
+          );
+        }
+
+        await this.pollMailbox(mailbox.client, mailbox.config);
+      } catch (error) {
+        logger.error(
+          { err: error, repo: mailbox.config.repoFullName, mailbox: mailbox.config.mailbox },
+          "Email mailbox poll failed"
+        );
+      }
     }
   }
 
@@ -226,7 +250,24 @@ export class EmailListener {
         "email"
       );
 
-      await enqueueFeedback(feedback);
+      try {
+        await enqueueFeedback(feedback);
+      } catch (error) {
+        if (!(error instanceof AbuseDetectedError)) {
+          throw error;
+        }
+
+        logger.info(
+          {
+            repo: config.repoFullName,
+            mailbox: config.mailbox,
+            uid: message.uid,
+            reason: error.message
+          },
+          "Skipped rejected email feedback"
+        );
+      }
+
       await client.messageFlagsAdd(message.uid.toString(), ["\\Seen"]);
     }
   }

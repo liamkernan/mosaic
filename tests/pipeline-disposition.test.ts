@@ -71,7 +71,7 @@ describe("feedback disposition", () => {
     );
 
     expect(result.disposition).toBe("issue");
-    expect(result.reason).toBe("This feedback exceeds the repo's configured auto-PR complexity threshold.");
+    expect(result.reason).toBe("Complex feedback always requires a staged review before implementation.");
     expect(result.issueMode).toBe("complex-review-needed");
   });
 
@@ -106,5 +106,85 @@ describe("feedback disposition", () => {
     );
 
     expect(result.disposition).toBe("issue");
+  });
+
+  it("requires an existing implementation file before direct automation", () => {
+    const result = decideFeedbackDisposition(
+      { ...baseFeedback, relevantFiles: [] },
+      { repoFullName: "owner/repo", ...defaultRuntimeConfig }
+    );
+
+    expect(result).toEqual({
+      disposition: "issue",
+      reason: "The classifier could not ground this request in an existing repository file.",
+      issueMode: undefined
+    });
+  });
+
+  it("allows moderate-safe work only when the repo explicitly opts into it", () => {
+    const result = decideFeedbackDisposition(
+      {
+        ...baseFeedback,
+        complexity: "moderate",
+        routingSignals: {
+          scope: "multi-component",
+          literalCorrection: false,
+          runtimeBehavior: true,
+          persistentData: false,
+          securitySensitive: false,
+          requiresHumanReview: false
+        }
+      },
+      {
+        repoFullName: "owner/repo",
+        ...defaultRuntimeConfig,
+        maxComplexity: "moderate"
+      }
+    );
+
+    expect(result).toEqual({
+      disposition: "pr",
+      reason: "Moderate-safe feedback is explicitly allowed by the repo's PR automation policy."
+    });
+  });
+
+  it("never auto-implements explicit review risk even when the declared tier is simple", () => {
+    const result = decideFeedbackDisposition(
+      {
+        ...baseFeedback,
+        routingSignals: {
+          scope: "localized",
+          literalCorrection: false,
+          runtimeBehavior: true,
+          persistentData: false,
+          securitySensitive: false,
+          requiresHumanReview: true
+        }
+      },
+      {
+        repoFullName: "owner/repo",
+        ...defaultRuntimeConfig,
+        maxComplexity: "complex"
+      }
+    );
+
+    expect(result.disposition).toBe("issue");
+    expect(result.reason).toContain("require human review");
+  });
+
+  it("never auto-implements complex work even when max complexity is complex", () => {
+    const result = decideFeedbackDisposition(
+      {
+        ...baseFeedback,
+        complexity: "complex"
+      },
+      {
+        repoFullName: "owner/repo",
+        ...defaultRuntimeConfig,
+        maxComplexity: "complex"
+      }
+    );
+
+    expect(result).toMatchObject({ disposition: "issue", issueMode: "complex-review-needed" });
   });
 });

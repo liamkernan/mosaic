@@ -366,6 +366,7 @@ async function main(): Promise<void> {
     passedCases: scored.summary.passedCases,
     totalCases: scored.summary.totalCases,
     safeRouteAccuracy: scored.summary.safeRoute.accuracy,
+    categoryAccuracy: scored.summary.category.accuracy,
     reviewAccuracy: scored.summary.review.accuracy,
     underRoutingCount: scored.summary.underRoutingCount,
     overRoutingCount: scored.summary.overRoutingCount,

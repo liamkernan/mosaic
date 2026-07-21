@@ -20,6 +20,34 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain('"persistentData": false');
     expect(prompt).toContain('"securitySensitive": false');
     expect(prompt).toContain('"requiresHumanReview": false');
+    expect(prompt).toContain("Focused regression tests, documentation, fixtures");
+    expect(prompt).toContain("localized parser, formatter, validation guard");
+    expect(prompt).toContain("Tests are verification footprint, not implementation scope");
+    expect(prompt).toContain("localized runtime behavior");
+  });
+
+  it("grounds routed classification in candidate source without counting tests as components", () => {
+    const prompt = buildClassificationPrompt(
+      "Treat 204 responses and empty bodies as no-content before JSON parsing.",
+      ["response-format.js", "app.js", "tests/test_response_format.py"],
+      [
+        {
+          path: "response-format.js",
+          content: "return JSON.stringify(JSON.parse(response.body), null, 2);",
+          reason: "preliminary classifier candidate"
+        },
+        {
+          path: "tests/test_response_format.py",
+          content: "def test_pretty_prints_json_responses(): pass",
+          reason: "focused regression"
+        }
+      ]
+    );
+
+    expect(prompt).toContain('<CANDIDATE_FILE path="response-format.js">');
+    expect(prompt).toContain("JSON.parse(response.body)");
+    expect(prompt).toContain('<CANDIDATE_FILE path="tests/test_response_format.py">');
+    expect(prompt).toContain("tests or unchanged callers that are context only");
   });
 
   it("compacts large classification file trees while keeping likely relevant paths", () => {
@@ -157,6 +185,7 @@ describe("pipeline prompts", () => {
 
     expect(prompt).toContain("scripts/state files");
     expect(prompt).toContain("clickable UI");
+    expect(prompt).toContain("unit test of a helper function alone is not sufficient");
     expect(prompt).toContain("Extract every explicit acceptance criterion");
     expect(prompt).toContain("Translate loaded tests into acceptance criteria");
     expect(prompt).toContain("adversarial cases");
@@ -253,6 +282,7 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("one reusable modal/dialog/overlay");
     expect(prompt).toContain("data-driven behavior");
     expect(prompt).toContain("interactive UI as atomic");
+    expect(prompt).toContain("Helper-only unit tests");
     expect(prompt).toContain("connects a UI action to server, API, persistence, or database behavior");
     expect(prompt).toContain("planned backing handler/service/data change");
     expect(prompt).toContain("<edit>");

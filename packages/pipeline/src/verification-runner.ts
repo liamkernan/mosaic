@@ -28,6 +28,7 @@ const maxOutputBytes = 1024 * 1024 * 10;
 const defaultDockerImage = "mosaic-verify:local";
 const dockerWorkdir = "/workspace";
 const dockerSmokePackageJson = "/opt/mosaic-verify/package.json";
+const frontendSmokeMetadataFile = ".mosaic-frontend-smoke.json";
 const frontendFilePattern = /\.(?:html?|[cm]?jsx?|tsx?)$/i;
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const rootPackageJson = join(repoRoot, "package.json");
@@ -42,6 +43,7 @@ import { createRequire } from "node:module";
 const require = createRequire(process.argv[1]);
 const { JSDOM, VirtualConsole } = require("jsdom");
 const tempRepo = process.argv[2];
+const metadataFile = ".mosaic-frontend-smoke.json";
 
 function truncateOutput(output) {
   const trimmed = output.trim();
@@ -54,6 +56,7 @@ async function readOptionalFile(path) {
 
 const html = await readOptionalFile(join(tempRepo, "index.html"));
 const runtimeErrors = [];
+const interactionErrors = [];
 
 function recordRuntimeError(message) {
   if (message.length > 0 && !runtimeErrors.includes(message)) {
@@ -61,7 +64,127 @@ function recordRuntimeError(message) {
   }
 }
 
+function normalizedText(value) {
+  return String(value ?? "").replace(/\\s+/g, " ").trim();
+}
+
+function controlLabel(element) {
+  const labels = "labels" in element && element.labels
+    ? [...element.labels].map((label) => normalizedText(label.textContent)).filter(Boolean)
+    : [];
+  return labels.join(" ");
+}
+
+function controlIdentity(element) {
+  const tag = element.tagName.toLowerCase();
+  const type = normalizedText(element.getAttribute("type")).toLowerCase();
+  const id = normalizedText(element.id);
+  const name = normalizedText(element.getAttribute("name"));
+  const value = normalizedText(element.getAttribute("value"));
+  const ariaLabel = normalizedText(element.getAttribute("aria-label"));
+  const label = controlLabel(element);
+  const text = normalizedText(element.textContent);
+  return [tag, type, id, name, value, ariaLabel, label, text].join("|");
+}
+
+function describeControl(element) {
+  const tag = element.tagName.toLowerCase();
+  const type = normalizedText(element.getAttribute("type"));
+  const id = normalizedText(element.id);
+  const name = normalizedText(element.getAttribute("name"));
+  const label = controlLabel(element) || normalizedText(element.getAttribute("aria-label")) || normalizedText(element.textContent);
+  const attributes = [
+    type ? ' type="' + type + '"' : "",
+    id ? ' id="' + id + '"' : "",
+    name ? ' name="' + name + '"' : ""
+  ].join("");
+  return "<" + tag + attributes + ">" + (label ? ' labeled "' + label + '"' : "");
+}
+
+function isBehavioralControl(element) {
+  const hint = [
+    element.id,
+    element.getAttribute("name"),
+    element.getAttribute("aria-label"),
+    controlLabel(element),
+    element.textContent
+  ].map(normalizedText).join(" ");
+  return /(?:filter|view|search|sort)/i.test(hint);
+}
+
+function observableSnapshot(window) {
+  return JSON.stringify({
+    href: window.location.href,
+    markup: window.document.documentElement.innerHTML
+  });
+}
+
+async function exerciseControl(window, element) {
+  if (element.disabled) {
+    return false;
+  }
+
+  const tag = element.tagName.toLowerCase();
+  const type = normalizedText(element.getAttribute("type")).toLowerCase();
+
+  if (tag === "select") {
+    if (element.options.length < 2) {
+      return false;
+    }
+    element.selectedIndex = element.selectedIndex === 0 ? 1 : 0;
+    element.dispatchEvent(new window.Event("input", { bubbles: true }));
+    element.dispatchEvent(new window.Event("change", { bubbles: true }));
+  } else if (tag === "input" && type === "radio") {
+    if (element.checked) {
+      return false;
+    }
+    element.click();
+  } else if (tag === "input" && type === "checkbox") {
+    element.click();
+  } else if (tag === "input" && (type === "search" || type === "text" || type === "")) {
+    element.value = element.value ? element.value + " mosaic-smoke" : "mosaic-smoke";
+    element.dispatchEvent(new window.Event("input", { bubbles: true }));
+    element.dispatchEvent(new window.Event("change", { bubbles: true }));
+  } else if (tag === "button" || (tag === "input" && (type === "button" || type === "submit"))) {
+    element.click();
+  } else {
+    return false;
+  }
+
+  await new Promise((resolve) => window.setTimeout(resolve, 0));
+  return true;
+}
+
 if (html) {
+  const metadataText = await readOptionalFile(join(tempRepo, metadataFile));
+  let originalHtml = null;
+  if (metadataText) {
+    try {
+      const metadata = JSON.parse(metadataText);
+      originalHtml = typeof metadata.originalHtml === "string" ? metadata.originalHtml : null;
+    } catch {
+      recordRuntimeError("Frontend smoke metadata could not be parsed");
+    }
+  }
+
+  const controlSelector = "button, input, select";
+  const addedControlIdentities = new Set();
+  if (originalHtml !== null) {
+    const originalStaticDom = new JSDOM(originalHtml);
+    const currentStaticDom = new JSDOM(html);
+    const originalIdentities = new Set(
+      [...originalStaticDom.window.document.querySelectorAll(controlSelector)].map(controlIdentity)
+    );
+    for (const element of currentStaticDom.window.document.querySelectorAll(controlSelector)) {
+      const identity = controlIdentity(element);
+      if (!originalIdentities.has(identity)) {
+        addedControlIdentities.add(identity);
+      }
+    }
+    originalStaticDom.window.close();
+    currentStaticDom.window.close();
+  }
+
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("jsdomError", (error) => recordRuntimeError(error.message));
   const dom = new JSDOM(html, {
@@ -101,12 +224,36 @@ if (html) {
       dom.window.document.body.appendChild(scriptElement);
     }
     await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+
+    if (addedControlIdentities.size > 0) {
+      const addedControls = [...dom.window.document.querySelectorAll(controlSelector)]
+        .filter((element) => addedControlIdentities.has(controlIdentity(element)))
+        .filter(isBehavioralControl);
+
+      for (const control of addedControls) {
+        const before = observableSnapshot(dom.window);
+        let exercised = false;
+        try {
+          exercised = await exerciseControl(dom.window, control);
+        } catch (error) {
+          recordRuntimeError(error instanceof Error ? error.message : String(error));
+        }
+        if (exercised && observableSnapshot(dom.window) === before) {
+          interactionErrors.push(
+            describeControl(control) + " did not produce an observable page or URL change when exercised"
+          );
+        }
+      }
+    }
   } finally {
     dom.window.close();
   }
 }
 
-process.stdout.write(JSON.stringify(runtimeErrors.map((error) => \`Frontend runtime smoke failed: \${truncateOutput(error)}\`)));
+process.stdout.write(JSON.stringify([
+  ...runtimeErrors.map((error) => \`Frontend runtime smoke failed: \${truncateOutput(error)}\`),
+  ...interactionErrors.map((error) => \`Frontend interaction smoke failed: \${truncateOutput(error)}\`)
+]));
 `;
 
 export interface VerificationResult {
@@ -645,6 +792,15 @@ async function runFrontendSmoke(
   const html = await readOptionalFile(join(tempRepo, "index.html"));
   if (!html) {
     return [];
+  }
+
+  const indexChange = changes.find((change) => change.filePath.replace(/^\.\//, "") === "index.html");
+  if (indexChange) {
+    await writeFile(
+      join(tempRepo, frontendSmokeMetadataFile),
+      JSON.stringify({ originalHtml: indexChange.originalContent }),
+      "utf8"
+    );
   }
 
   try {

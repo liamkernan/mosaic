@@ -701,6 +701,93 @@ describe("runVerificationCommands", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("rejects a newly added frontend view control that does not change the application", async () => {
+    const localPath = await createStaticSiteRepo();
+    const originalHtml = await readFile(join(localPath, "index.html"), "utf8");
+    const modifiedHtml = [
+      "<!doctype html><html><body>",
+      '<input id="needsVolunteerView" name="deliveryView" type="radio" value="needs-volunteer">',
+      '<label for="needsVolunteerView">Needs volunteer</label>',
+      '<div id="target"></div>',
+      '<script src="script.js"></script>',
+      "</body></html>\n"
+    ].join("");
+
+    const result = await runVerificationCommands(
+      [
+        {
+          filePath: "index.html",
+          originalContent: originalHtml,
+          modifiedContent: modifiedHtml,
+          explanation: "add a delivery view without implementing its behavior"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      undefined,
+      fallbackOptions
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("Frontend interaction smoke failed");
+    expect(result.errors.join("\n")).toContain("needsVolunteerView");
+  });
+
+  it("accepts a newly added frontend view control that changes the rendered application", async () => {
+    const localPath = await createStaticSiteRepo();
+    const originalHtml = await readFile(join(localPath, "index.html"), "utf8");
+    const originalScript = await readFile(join(localPath, "script.js"), "utf8");
+    const modifiedHtml = [
+      "<!doctype html><html><body>",
+      '<input id="needsVolunteerView" name="deliveryView" type="radio" value="needs-volunteer">',
+      '<label for="needsVolunteerView">Needs volunteer</label>',
+      '<div id="target"></div>',
+      '<script src="script.js"></script>',
+      "</body></html>\n"
+    ].join("");
+    const modifiedScript = [
+      "document.querySelector('#target').textContent = 'ready';",
+      "document.querySelector('#needsVolunteerView').addEventListener('change', function () {",
+      "  document.querySelector('#target').textContent = '3 deliveries shown';",
+      "});",
+      ""
+    ].join("\n");
+
+    const result = await runVerificationCommands(
+      [
+        {
+          filePath: "index.html",
+          originalContent: originalHtml,
+          modifiedContent: modifiedHtml,
+          explanation: "add a delivery view control"
+        },
+        {
+          filePath: "script.js",
+          originalContent: originalScript,
+          modifiedContent: modifiedScript,
+          explanation: "make the delivery view update the rendered application"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      undefined,
+      fallbackOptions
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
   it("rejects static site changes with frontend runtime errors", async () => {
     const localPath = await createStaticSiteRepo();
 

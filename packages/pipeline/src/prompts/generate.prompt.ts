@@ -55,6 +55,7 @@ INSTRUCTIONS:
 - For moderate or complex requests, prefer coherent complete behavior over the smallest possible diff, while still avoiding unrelated refactors.
 - If you add a new static JS or CSS file to an HTML site, update the HTML to load it with a matching <script src> or <link rel="stylesheet"> tag in the same response.
 - Add or update focused tests when the repository has a relevant test pattern and the request changes behavior.
+- For interactive frontend behavior such as filters, views, search, sort controls, tabs, or forms, add a repository-native integration test that loads the real page or application entry script, performs the user interaction, and asserts the visible state or URL outcome. Helper-only unit tests are useful but are not sufficient proof that the control is wired into the application.
 - If the implementation plan required files include a test/spec/reported file for a behavioral request, the response must modify at least one matching test file in the same change set.
 - If a reported/regression test is loaded for a behavioral bug, do not rely on it unchanged in complete-solution mode; extend it with a missing edge case or add a repository-native companion test, and return that test edit with the implementation.
 - For sort/order/filter/ranking changes, cover the primary behavior and every stated tie-breaker with adversarial tests. A single happy-path example is not enough.

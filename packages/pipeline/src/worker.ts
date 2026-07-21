@@ -1,4 +1,4 @@
-import { getEnv, LLMError, logger, RateLimitError, type ClassifiedFeedback, type FeedbackItem, type GeneratedChange, type LLMProvider } from "@mosaic/core";
+import { getEnv, LLMError, logger, RateLimitError, type ClassifiedFeedback, type FeedbackItem, type FileNode, type GeneratedChange, type LLMProvider } from "@mosaic/core";
 import { getOctokit } from "@mosaic/github-app";
 import {
   ANTHROPIC_ADVISOR_MAX_TOKENS,
@@ -13,7 +13,7 @@ import { Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
 
 import { FeedbackClassifier } from "./classifier.js";
-import { classifyFeedbackWithOpenAIRouting } from "./classification-routing.js";
+import { classifyFeedbackWithOpenAIRouting, reconcileClassifications } from "./classification-routing.js";
 import { ArtifactStore } from "./artifact-store.js";
 import { mergeGeneratedChanges } from "./change-set.js";
 import { CodeGenerator, scopeValidationPattern } from "./code-generator.js";
@@ -81,6 +81,19 @@ function mergeRelevantFiles(existingFiles: Array<{ path: string; content: string
   }
 
   return [...merged.values()];
+}
+
+function collectDirectoryPaths(nodes: FileNode[], paths = new Set<string>()): Set<string> {
+  for (const node of nodes) {
+    if (node.type !== "directory") {
+      continue;
+    }
+
+    paths.add(node.path);
+    collectDirectoryPaths(node.children ?? [], paths);
+  }
+
+  return paths;
 }
 
 function stripMosaicMetadataComments(body: string): string {
@@ -725,12 +738,24 @@ export class FeedbackPipelineWorker {
       };
     }
 
-    const topLevelFileTree = repoContext.fileTree.map((node) => node.path);
+    const directoryPaths = collectDirectoryPaths(repoContext.fileTree);
+    const classificationFileTree = this.repoIndexer
+      .fileTreeToPaths(repoContext)
+      .filter((filePath) => !directoryPaths.has(filePath));
+    const classificationPasses: Array<{
+      model: string;
+      reasoningEffort?: OpenAIReasoningEffort;
+      complexity: ClassifiedFeedback["complexity"];
+      confidence: number;
+      routingSignals: ClassifiedFeedback["routingSignals"];
+      relevantFiles: string[];
+    }> = [];
+    let groundingFilePaths: string[] = [];
     let classifiedFeedback: ClassifiedFeedback;
     if (repoConfig.llmProvider === "openai") {
       const routedClassification = await classifyFeedbackWithOpenAIRouting({
         feedbackItem,
-        fileTree: topLevelFileTree,
+        fileTree: classificationFileTree,
         modelPreset: repoConfig.llmModelPreset,
         createClient: (selection) => this.createLlmClient(
           "openai",
@@ -738,18 +763,65 @@ export class FeedbackPipelineWorker {
           repoConfig.llmApiKey,
           selection.model,
           selection.reasoningEffort
-        )
+        ),
+        loadGroundingFiles: async (classification) => {
+          const files = await this.repoIndexer.findRelevantFiles(repoContext, classification);
+          groundingFilePaths = files.map((file) => file.path);
+          return files;
+        },
+        onPass: (pass) => classificationPasses.push({
+          model: pass.route.model,
+          reasoningEffort: pass.route.reasoningEffort,
+          complexity: pass.classifiedFeedback.complexity,
+          confidence: pass.classifiedFeedback.confidence,
+          routingSignals: pass.classifiedFeedback.routingSignals,
+          relevantFiles: pass.classifiedFeedback.relevantFiles
+        })
       });
       classifiedFeedback = routedClassification.classifiedFeedback;
     } else {
       const haikuClient = this.createLlmClient("anthropic", repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.haiku);
       const sonnetClient = this.createLlmClient("anthropic", repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.sonnet);
-      classifiedFeedback = await new FeedbackClassifier(haikuClient).classify(feedbackItem, topLevelFileTree);
-      if (shouldEscalateClassification(classifiedFeedback)) {
-        classifiedFeedback = await new FeedbackClassifier(sonnetClient).classify(feedbackItem, topLevelFileTree);
+      const initialClassification = await new FeedbackClassifier(haikuClient).classify(feedbackItem, classificationFileTree);
+      classificationPasses.push({
+        model: ANTHROPIC_MODEL_IDS.haiku,
+        complexity: initialClassification.complexity,
+        confidence: initialClassification.confidence,
+        routingSignals: initialClassification.routingSignals,
+        relevantFiles: initialClassification.relevantFiles
+      });
+      classifiedFeedback = initialClassification;
+      if (shouldEscalateClassification(initialClassification)) {
+        const groundingFiles = await this.repoIndexer.findRelevantFiles(repoContext, initialClassification);
+        groundingFilePaths = groundingFiles.map((file) => file.path);
+        const routedClassification = await new FeedbackClassifier(sonnetClient)
+          .classify(feedbackItem, classificationFileTree, groundingFiles);
+        classificationPasses.push({
+          model: ANTHROPIC_MODEL_IDS.sonnet,
+          complexity: routedClassification.complexity,
+          confidence: routedClassification.confidence,
+          routingSignals: routedClassification.routingSignals,
+          relevantFiles: routedClassification.relevantFiles
+        });
+        classifiedFeedback = reconcileClassifications(initialClassification, routedClassification);
       }
     }
     const decision = this.dispositionDecider(classifiedFeedback, repoConfig);
+    logger.info({
+      feedbackId: classifiedFeedback.id,
+      repoFullName: classifiedFeedback.repoFullName,
+      category: classifiedFeedback.category,
+      complexity: classifiedFeedback.complexity,
+      confidence: classifiedFeedback.confidence,
+      routingSignals: classifiedFeedback.routingSignals,
+      relevantFiles: classifiedFeedback.relevantFiles,
+      classificationFileCount: classificationFileTree.length,
+      groundingFilePaths,
+      classificationPasses,
+      disposition: decision.disposition,
+      dispositionReason: decision.reason,
+      issueMode: decision.issueMode
+    }, "Classified feedback and selected disposition");
 
     if (decision.disposition === "quarantine") {
       await this.quarantineStore.quarantine(classifiedFeedback, decision.reason);

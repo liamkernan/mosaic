@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyRoutingSignalComplexityFloor,
+  resolveRoutingSignalComplexity,
   routingSignalsRequireReview
 } from "../packages/pipeline/src/routing-signals.js";
 
@@ -24,16 +25,34 @@ describe("structured classification routing signals", () => {
     expect(applyRoutingSignalComplexityFloor(classified, signals)).toBe(expected);
   });
 
-  it("never lowers the model's classified complexity", () => {
+  it("keeps the conservative floor API upward-only", () => {
     expect(applyRoutingSignalComplexityFloor("complex", localizedSignals)).toBe("complex");
     expect(applyRoutingSignalComplexityFloor("moderate", { ...localizedSignals, scope: "coordinated" }))
       .toBe("moderate");
   });
 
-  it("keeps an isolated literal correction trivial and preserves legacy signals", () => {
+  it("requires explicit literal evidence for trivial routing", () => {
     expect(applyRoutingSignalComplexityFloor("trivial", { ...localizedSignals, literalCorrection: true }))
       .toBe("trivial");
-    expect(applyRoutingSignalComplexityFloor("trivial", localizedSignals)).toBe("trivial");
+    expect(applyRoutingSignalComplexityFloor("trivial", localizedSignals)).toBe("simple");
+  });
+
+  it("canonicalizes declared tiers from complete structured signals", () => {
+    expect(resolveRoutingSignalComplexity("moderate", {
+      ...localizedSignals,
+      literalCorrection: false,
+      runtimeBehavior: true
+    })).toBe("simple");
+    expect(resolveRoutingSignalComplexity("simple", {
+      ...localizedSignals,
+      literalCorrection: false,
+      requiresHumanReview: true
+    })).toBe("moderate");
+    expect(resolveRoutingSignalComplexity("moderate", {
+      ...localizedSignals,
+      literalCorrection: false,
+      scope: "cross-layer"
+    })).toBe("complex");
   });
 
   it("requires review only for explicit, persistent, security, or cross-layer risk", () => {

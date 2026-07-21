@@ -21,6 +21,11 @@ export function isClassificationRoutingSignals(value: unknown): value is Classif
     typeof signals.requiresHumanReview === "boolean";
 }
 
+export function isCompleteClassificationRoutingSignals(value: unknown): value is ClassificationRoutingSignals {
+  return isClassificationRoutingSignals(value) &&
+    typeof (value as ClassificationRoutingSignals).literalCorrection === "boolean";
+}
+
 function minimumComplexity(signals: ClassificationRoutingSignals): ComplexityLevel {
   if (signals.scope === "cross-layer") {
     return "complex";
@@ -30,6 +35,7 @@ function minimumComplexity(signals: ClassificationRoutingSignals): ComplexityLev
     signals.scope === "multi-component" ||
     signals.persistentData ||
     signals.securitySensitive ||
+    signals.requiresHumanReview ||
     (signals.runtimeBehavior && signals.scope === "coordinated")
   ) {
     return "moderate";
@@ -39,11 +45,27 @@ function minimumComplexity(signals: ClassificationRoutingSignals): ComplexityLev
     return "simple";
   }
 
-  if (signals.literalCorrection === false) {
+  if (signals.literalCorrection !== true) {
     return "simple";
   }
 
   return "trivial";
+}
+
+/**
+ * Resolve a model-supplied tier from the more explicit routing signals. The
+ * signals describe the implementation boundary that the tier is meant to
+ * summarize, so they are authoritative when they are complete and valid.
+ */
+export function resolveRoutingSignalComplexity(
+  classifiedComplexity: ComplexityLevel,
+  signals: ClassificationRoutingSignals | undefined
+): ComplexityLevel {
+  return signals ? minimumComplexity(signals) : classifiedComplexity;
+}
+
+export function routingSignalsProveTrivial(signals: ClassificationRoutingSignals | undefined): boolean {
+  return signals !== undefined && minimumComplexity(signals) === "trivial";
 }
 
 export function applyRoutingSignalComplexityFloor(

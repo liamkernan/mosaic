@@ -113,10 +113,18 @@ export async function runDemo(write: DemoWriter = console.log): Promise<DemoResu
 
   const classifiedFeedback = await new FeedbackClassifier(new FixedResponseClient(JSON.stringify({
     category: "copy_change",
-    complexity: "simple",
+    complexity: "trivial",
     summary: "Correct the homepage hero typo.",
     relevantFiles: ["src/hero.ts"],
-    confidence: 0.99
+    confidence: 0.99,
+    routingSignals: {
+      scope: "localized",
+      literalCorrection: true,
+      runtimeBehavior: false,
+      persistentData: false,
+      securitySensitive: false,
+      requiresHumanReview: false
+    }
   }))).classify(safeFeedback, demoFileTree);
 
   const plan = await new ImplementationPlanner(new FixedResponseClient(JSON.stringify({

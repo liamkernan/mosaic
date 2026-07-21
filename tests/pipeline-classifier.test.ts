@@ -21,16 +21,27 @@ describe("FeedbackClassifier", () => {
       complexity: "moderate",
       summary: "Fix checkout button",
       relevantFiles: ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts", "src/e.ts", "src/f.ts"],
-      confidence: 0.9
+      confidence: 0.9,
+      routingSignals: {
+        scope: "multi-component",
+        literalCorrection: false,
+        runtimeBehavior: true,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      }
     }));
 
-    const result = await new FeedbackClassifier({ setUsageContext, complete }).classify(feedback, ["src/a.ts"]);
+    const result = await new FeedbackClassifier({ setUsageContext, complete }).classify(
+      feedback,
+      ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts", "src/e.ts", "src/f.ts"]
+    );
 
     expect(setUsageContext).toHaveBeenCalledWith({ repoFullName: "owner/repo", feedbackId: "01CLASSIFY" });
     expect(complete).toHaveBeenCalledWith(
       expect.stringContaining("The checkout button is broken."),
       "Return only the JSON classification.",
-      { temperature: 0.2, maxTokens: 1_024, requestPhase: "classification" }
+      { temperature: 0, maxTokens: 1_024, requestPhase: "classification" }
     );
     expect(result).toMatchObject({
       category: "bug_report",
@@ -64,6 +75,7 @@ describe("FeedbackClassifier", () => {
       "trivial",
       {
         scope: "coordinated",
+        literalCorrection: false,
         runtimeBehavior: false,
         persistentData: false,
         securitySensitive: false,
@@ -76,6 +88,7 @@ describe("FeedbackClassifier", () => {
       "simple",
       {
         scope: "multi-component",
+        literalCorrection: false,
         runtimeBehavior: true,
         persistentData: false,
         securitySensitive: false,
@@ -113,5 +126,104 @@ describe("FeedbackClassifier", () => {
 
     expect(result.complexity).toBe(expected);
     expect(result.routingSignals).toEqual(routingSignals);
+  });
+
+  it("canonicalizes a declared moderate local runtime fix to simple", async () => {
+    const routingSignals = {
+      scope: "localized" as const,
+      literalCorrection: false,
+      runtimeBehavior: true,
+      persistentData: false,
+      securitySensitive: false,
+      requiresHumanReview: false
+    };
+    const complete = vi.fn(async () => JSON.stringify({
+      category: "bug_report",
+      complexity: "moderate",
+      summary: "Guard empty response bodies before parsing",
+      relevantFiles: ["response-format.js", "tests/test_response_format.py"],
+      confidence: 0.93,
+      routingSignals
+    }));
+
+    const result = await new FeedbackClassifier({ setUsageContext: vi.fn(), complete }).classify(
+      feedback,
+      ["response-format.js", "tests/test_response_format.py"]
+    );
+
+    expect(result.complexity).toBe("simple");
+    expect(result.routingSignals).toEqual(routingSignals);
+  });
+
+  it("drops hallucinated relevant paths that are absent from the repository tree", async () => {
+    const complete = vi.fn(async () => JSON.stringify({
+      category: "bug_report",
+      complexity: "simple",
+      summary: "Fix the response formatter",
+      relevantFiles: ["src/response-format.ts", "src/invented-file.ts", "tests"],
+      confidence: 0.9,
+      routingSignals: {
+        scope: "localized",
+        literalCorrection: false,
+        runtimeBehavior: true,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      }
+    }));
+
+    const result = await new FeedbackClassifier({ setUsageContext: vi.fn(), complete }).classify(
+      feedback,
+      ["src/response-format.ts", "tests/test_response-format.ts"]
+    );
+
+    expect(result.relevantFiles).toEqual(["src/response-format.ts"]);
+  });
+
+  it("retries schema-invalid JSON and accepts a complete corrected response", async () => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({
+        category: "bug",
+        complexity: "tiny",
+        summary: "Invalid enum values",
+        relevantFiles: "src/a.ts",
+        confidence: 2
+      }))
+      .mockResolvedValueOnce(JSON.stringify({
+        category: "bug_report",
+        complexity: "simple",
+        summary: "Fix the reported behavior",
+        relevantFiles: ["src/a.ts"],
+        confidence: 0.91,
+        routingSignals: {
+          scope: "localized",
+          literalCorrection: false,
+          runtimeBehavior: true,
+          persistentData: false,
+          securitySensitive: false,
+          requiresHumanReview: false
+        }
+      }));
+
+    const result = await new FeedbackClassifier({ setUsageContext: vi.fn(), complete }).classify(feedback, ["src/a.ts"]);
+
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1]?.[1]).toContain("previous response was malformed");
+    expect(result).toMatchObject({ category: "bug_report", complexity: "simple", confidence: 0.91 });
+  });
+
+  it("fails closed when valid JSON remains schema-invalid", async () => {
+    const complete = vi.fn(async () => JSON.stringify({
+      category: "bug_report",
+      complexity: "not-a-tier",
+      summary: "Invalid complexity must not bypass policy",
+      relevantFiles: [],
+      confidence: 0.99
+    }));
+
+    const result = await new FeedbackClassifier({ setUsageContext: vi.fn(), complete }).classify(feedback, []);
+
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ category: "other", complexity: "complex", confidence: 0 });
   });
 });
