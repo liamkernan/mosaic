@@ -760,8 +760,18 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
   if (requiredRuntimePaths.size > 0 && runtimeChanges.length === 0) {
     errors.push("Implementation plan requires runtime/source changes, but the generated change only modifies tests or documentation");
   }
-  if (requiredRuntimePaths.size > 0 && !changes.some((change) => requiredRuntimePaths.has(normalizeRepoPath(change.filePath)))) {
+  const changedPaths = new Set(changes.map((change) => normalizeRepoPath(change.filePath)));
+  const missingRequiredRuntimePaths = [...requiredRuntimePaths].filter((path) => !changedPaths.has(path));
+  if (
+    requiredRuntimePaths.size > 0 &&
+    missingRequiredRuntimePaths.length === requiredRuntimePaths.size
+  ) {
     errors.push("Implementation plan requires a change to at least one planned runtime/source file, but generated changes only add companion files");
+  }
+  if (missingRequiredRuntimePaths.length > 0) {
+    errors.push(
+      `Implementation plan requires changes to every mutation-required runtime/source file, but generated changes omit: ${missingRequiredRuntimePaths.join(", ")}`
+    );
   }
 
   const requiredEndpointPaths = extractEndpointPaths(sourceText);

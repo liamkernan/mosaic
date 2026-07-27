@@ -390,6 +390,88 @@ describe("validatePlanCompletion", () => {
     );
   });
 
+  it("requires every mutation-required runtime file in a multi-file plan", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "src/service.ts",
+          originalContent: "export const fields = ['id'];\n",
+          modifiedContent: "export const fields = ['id', 'status'];\n",
+          explanation: "expose the new status"
+        },
+        {
+          filePath: "tests/service.test.ts",
+          originalContent: "",
+          modifiedContent: "it('returns status', () => expect(getStatus()).toBe('ready'));\n",
+          explanation: "cover the response status"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "src/service.ts", reason: "Update the service response." },
+          { path: "src/registry.ts", reason: "Register the expanded service response." },
+          { path: "db/schema.sql", reason: "Persist the response status." },
+          {
+            path: "src/cache.ts",
+            reason: "Verify the existing cache behavior remains unchanged."
+          },
+          { path: "tests/service.test.ts", reason: "Add regression coverage." }
+        ],
+        acceptanceCriteria: ["The status is persisted and returned through the registered service."],
+        implementationChecklist: [
+          "Update the service response.",
+          "Register the response field.",
+          "Persist the status."
+        ]
+      }
+    );
+
+    expect(errors.join("\n")).toContain("src/registry.ts");
+    expect(errors.join("\n")).toContain("db/schema.sql");
+    expect(errors.join("\n")).not.toContain("src/cache.ts");
+  });
+
+  it("accepts a multi-file plan when every mutation-required runtime path is changed", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "src/service.ts",
+          originalContent: "export const fields = ['id'];\n",
+          modifiedContent: "export const fields = ['id', 'status'];\n",
+          explanation: "expose status"
+        },
+        {
+          filePath: "src/registry.ts",
+          originalContent: "register(['id']);\n",
+          modifiedContent: "register(['id', 'status']);\n",
+          explanation: "register status"
+        },
+        {
+          filePath: "db/schema.sql",
+          originalContent: "CREATE TABLE records (id TEXT);\n",
+          modifiedContent: "CREATE TABLE records (id TEXT, status TEXT);\n",
+          explanation: "persist status"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "src/service.ts", reason: "Update the service response." },
+          { path: "src/registry.ts", reason: "Register the expanded service response." },
+          { path: "db/schema.sql", reason: "Persist the response status." },
+          {
+            path: "src/cache.ts",
+            reason: "Verify the existing cache behavior remains unchanged."
+          }
+        ],
+        acceptanceCriteria: ["The status is persisted and returned through the registered service."]
+      }
+    );
+
+    expect(errors).toEqual([]);
+  });
+
   it("rejects generated changes outside the planned file scope", () => {
     const changes = [
       {
