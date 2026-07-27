@@ -15,7 +15,7 @@ export function buildImplementationPlanPrompt(
     relevantPaths: promptFilePaths(relevantFiles)
   });
 
-  return `You are planning a complete implementation for a moderate/high-complexity software change.
+  return `You are planning a complete implementation for a non-trivial software change.
 
 USER REQUEST:
 ${feedback.rawContent}

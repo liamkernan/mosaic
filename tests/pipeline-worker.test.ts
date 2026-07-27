@@ -1,3 +1,6 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { resetEnvForTests } from "../packages/core/src/config.js";
@@ -7,9 +10,11 @@ import type { ArtifactRecord } from "../packages/pipeline/src/artifact-store.js"
 import { defaultRuntimeConfig } from "../packages/pipeline/src/repo-config.js";
 import {
   FeedbackPipelineWorker,
+  shouldUseImplementationPlanning,
   type FeedbackPipelineWorkerDependencies
 } from "../packages/pipeline/src/worker.js";
-import { buildFeedbackItem, buildRepoContext } from "./helpers/pipeline.js";
+import { buildClassifiedFeedback, buildFeedbackItem, buildRepoContext } from "./helpers/pipeline.js";
+import { createTempDirTracker } from "./helpers/temp-dirs.js";
 
 const feedback: FeedbackItem = buildFeedbackItem({
   id: "01WORKER",
@@ -49,7 +54,11 @@ function workerDependencies(classification: Record<string, unknown>) {
           securitySensitive: false,
           requiresHumanReview: false
         };
-  const complete = vi.fn(async (_systemPrompt: string) => JSON.stringify({ routingSignals, ...classification }));
+  const complete = vi.fn(async (
+    _systemPrompt: string,
+    _userMessage?: string,
+    _options?: { requestPhase?: string }
+  ) => JSON.stringify({ routingSignals, ...classification }));
   const client = new LLMClient({
     mode: "platform",
     platformApiKey: "test-key",
@@ -94,9 +103,24 @@ function workerDependencies(classification: Record<string, unknown>) {
 }
 
 describe("FeedbackPipelineWorker", () => {
-  afterEach(() => {
+  const tempDirs = createTempDirTracker();
+
+  afterEach(async () => {
     vi.unstubAllEnvs();
     resetEnvForTests();
+    await tempDirs.cleanup();
+  });
+
+  it.each([
+    ["a proven trivial direct correction", "trivial", undefined, false],
+    ["a simple direct change", "simple", undefined, true],
+    ["an opted-in moderate-safe promotion", "moderate", "moderate-safe", true],
+    ["a staged correction with conservative metadata", "trivial", "moderate-review-needed", true]
+  ] as const)("selects implementation planning for %s", (_name, complexity, issueMode, expected) => {
+    expect(shouldUseImplementationPlanning(
+      buildClassifiedFeedback({ complexity }),
+      issueMode
+    )).toBe(expected);
   });
 
   it("skips feedback that already has a recorded artifact", async () => {
@@ -141,6 +165,110 @@ describe("FeedbackPipelineWorker", () => {
       artifactValue: "42"
     }));
     expect(result).toMatchObject({ outcome: "succeeded", reason: expect.stringContaining("Created issue #42") });
+  });
+
+  it("plans a direct simple behavioral PR before generation", async () => {
+    const localPath = await tempDirs.create("mosaic-worker-planning-");
+    await mkdir(join(localPath, "src"));
+    const originalContent = [
+      "def show_schedule(selected_day):",
+      "    return selected_day or 'all'",
+      ""
+    ].join("\n");
+    await writeFile(join(localPath, "src", "schedule.py"), originalContent, "utf8");
+
+    const setup = workerDependencies({
+      category: "bug_report",
+      complexity: "simple",
+      summary: "Reset the schedule when All days is selected",
+      relevantFiles: ["src/schedule.py"],
+      confidence: 0.95,
+      routingSignals: {
+        scope: "localized",
+        literalCorrection: false,
+        runtimeBehavior: true,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      }
+    });
+    const directRepoContext = buildRepoContext({
+      localPath,
+      fileTree: [
+        {
+          path: "src",
+          type: "directory",
+          children: [{ path: "src/schedule.py", type: "file", language: "python" }]
+        }
+      ],
+      installationId: 7
+    });
+    setup.getContext.mockResolvedValue(directRepoContext);
+    setup.dependencies.repoIndexer.fileTreeToPaths = vi.fn(() => ["src", "src/schedule.py"]);
+    setup.dependencies.repoIndexer.findRelevantFiles = vi.fn(async () => [{
+      path: "src/schedule.py",
+      content: originalContent,
+      reason: "Classifier selected the schedule behavior"
+    }]);
+    setup.complete.mockImplementation(async (_systemPrompt, _userMessage, options) => {
+      if (options?.requestPhase === "initial-planning") {
+        return JSON.stringify({
+          requiredFiles: [{
+            path: "src/schedule.py",
+            reason: "Update the All days state transition"
+          }],
+          acceptanceCriteria: ["Selecting All days restores the complete schedule."],
+          implementationChecklist: ["Update src/schedule.py to reset the selected-day filter."],
+          verificationChecklist: [],
+          verificationCommands: []
+        });
+      }
+
+      if (options?.requestPhase === "generation") {
+        return `<changes>
+  <edit>
+    <filePath>src/schedule.py</filePath>
+    <search><![CDATA[    return selected_day or 'all']]></search>
+    <replace><![CDATA[    return 'all' if selected_day == 'all' else selected_day or 'all']]></replace>
+    <explanation>Reset the schedule when All days is selected.</explanation>
+  </edit>
+</changes>`;
+      }
+
+      return JSON.stringify({
+        category: "bug_report",
+        complexity: "simple",
+        summary: "Reset the schedule when All days is selected",
+        relevantFiles: ["src/schedule.py"],
+        confidence: 0.95,
+        routingSignals: {
+          scope: "localized",
+          literalCorrection: false,
+          runtimeBehavior: true,
+          persistentData: false,
+          securitySensitive: false,
+          requiresHumanReview: false
+        }
+      });
+    });
+
+    const result = await new FeedbackPipelineWorker(setup.dependencies).process({
+      ...feedback,
+      rawContent: "After Tuesday, choosing All days must restore the complete schedule."
+    });
+
+    const phases = setup.complete.mock.calls.map((call) => call[2]?.requestPhase);
+    expect(phases).toContain("initial-planning");
+    expect(phases.indexOf("initial-planning")).toBeLessThan(phases.indexOf("generation"));
+    expect(setup.dependencies.prCreator.createPR).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changes: [expect.objectContaining({ filePath: "src/schedule.py" })]
+      }),
+      directRepoContext,
+      expect.anything(),
+      expect.anything()
+    );
+    expect(result.reason).toContain("Created pull request");
   });
 
   it("persists quarantine decisions without creating an issue", async () => {

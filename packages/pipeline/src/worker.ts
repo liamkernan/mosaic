@@ -69,8 +69,14 @@ export interface FeedbackJobResult {
   reason: string;
 }
 
-function shouldUseImplementationPlanning(issueMode: StagedIssueMode | undefined): boolean {
-  return issueMode === "moderate-review-needed" || issueMode === "complex-review-needed";
+export function shouldUseImplementationPlanning(
+  classifiedFeedback: ClassifiedFeedback,
+  issueMode: StagedIssueMode | undefined
+): boolean {
+  // Planning is a completeness safeguard, not a side effect of first routing
+  // through a staged issue. Only a proven trivial correction may use the
+  // bounded direct-generation path.
+  return classifiedFeedback.complexity !== "trivial" || issueMode !== undefined;
 }
 
 function mergeRelevantFiles(existingFiles: Array<{ path: string; content: string; reason: string }>, plannedFiles: Array<{ path: string; content: string; reason: string }>) {
@@ -304,7 +310,7 @@ export class FeedbackPipelineWorker {
       openAISelection?.reasoningEffort,
       advisorTool
     ));
-    const completeSolution = shouldUseImplementationPlanning(options.issueMode);
+    const completeSolution = shouldUseImplementationPlanning(classifiedFeedback, options.issueMode);
     let implementationPlan: ImplementationPlan | undefined;
     const feedbackText = `${classifiedFeedback.summary}\n${classifiedFeedback.rawContent}`;
 
