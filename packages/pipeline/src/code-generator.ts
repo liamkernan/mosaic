@@ -750,10 +750,20 @@ export class CodeGenerator {
     fileTree: string[]
   ): GeneratedChange[] {
     const originals = new Map<string, string>();
+    const excerptedPaths = new Set<string>();
+    const uneditableExcerptedPaths = new Set<string>();
     for (const file of relevantFiles) {
       const filePath = normalizeRepoRelativePath(file.path);
       if (filePath) {
-        originals.set(filePath, file.content);
+        if (file.contentTruncated) {
+          excerptedPaths.add(filePath);
+          if (file.authoritativeContent === undefined) {
+            uneditableExcerptedPaths.add(filePath);
+            continue;
+          }
+        }
+
+        originals.set(filePath, file.authoritativeContent ?? file.content);
       }
     }
     const knownExistingPaths = new Set(fileTree
@@ -771,12 +781,22 @@ export class CodeGenerator {
       if (!filePath) {
         throw new LLMError(`Change used an unsafe file path: ${change.filePath}`);
       }
+      if (uneditableExcerptedPaths.has(filePath)) {
+        throw new LLMError(
+          `Cannot safely modify excerpted existing file ${filePath} because its authoritative content exceeds the editable size limit`
+        );
+      }
 
       const existing = workingFiles.get(filePath);
       const originalContent = existing?.originalContent ?? originals.get(filePath) ?? "";
       const currentContent = existing?.modifiedContent ?? originalContent;
       let nextContent: string;
       if (change.modifiedContent !== undefined) {
+        if (excerptedPaths.has(filePath)) {
+          throw new LLMError(
+            `Full-file change cannot replace excerpted existing file ${filePath}; use an exact localized edit`
+          );
+        }
         if (!existing && !originals.has(filePath) && knownExistingPaths.has(filePath)) {
           throw new LLMError(`Full-file change cannot replace unloaded existing file ${filePath}`);
         }

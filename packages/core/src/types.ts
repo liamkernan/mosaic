@@ -58,6 +58,12 @@ export interface RelevantFile {
   path: string;
   content: string;
   reason: string;
+  /**
+   * Complete repository content used as the diff base when `content` is only
+   * a prompt-safe excerpt.
+   */
+  authoritativeContent?: string;
+  contentTruncated?: boolean;
 }
 
 // === CODE GENERATION TYPES ===

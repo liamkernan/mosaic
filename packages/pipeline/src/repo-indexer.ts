@@ -13,6 +13,7 @@ const flattenedFileTreeCache = new WeakMap<FileNode[], string[]>();
 const fileSizeCache = new WeakMap<FileNode[], Map<string, number>>();
 const largeFileTruncationBytes = 100 * 1024;
 const largeFileTruncationLines = 200;
+const maxAuthoritativeFileBytes = 2 * 1024 * 1024;
 const referenceFilePattern = /\.(?:md|mdx|rst|txt|ya?ml|json|py|[cm]?[jt]sx?|html|css)$/i;
 const referenceDirectoryPattern = /(?:^|\/)(?:test|tests|spec|specs|__tests__|reported)(?:\/|$)/;
 const repoReferenceNames = new Set([
@@ -197,6 +198,25 @@ async function readLargeFilePrefix(filePath: string): Promise<string> {
   return truncateLargeFile(content);
 }
 
+async function readLargeFile(
+  filePath: string,
+  sizeBytes: number
+): Promise<Pick<RelevantFile, "content" | "authoritativeContent" | "contentTruncated">> {
+  if (sizeBytes <= maxAuthoritativeFileBytes) {
+    const authoritativeContent = await readFile(filePath, "utf8");
+    return {
+      content: truncateLargeFile(authoritativeContent),
+      authoritativeContent,
+      contentTruncated: true
+    };
+  }
+
+  return {
+    content: await readLargeFilePrefix(filePath),
+    contentTruncated: true
+  };
+}
+
 function buildFileSizeMap(nodes: FileNode[], sizes = new Map<string, number>()): Map<string, number> {
   for (const node of nodes) {
     if (node.type === "directory") {
@@ -366,7 +386,13 @@ async function readContainedRepoFile(
   context: RepoContext,
   filePath: string,
   missingMessage: string
-): Promise<{ path: string; content: string; sizeBytes: number } | null> {
+): Promise<{
+  path: string;
+  content: string;
+  sizeBytes: number;
+  authoritativeContent?: string;
+  contentTruncated?: boolean;
+} | null> {
   try {
     const resolvedPath = await resolveExistingRepoPath(context.localPath, filePath);
     if (!resolvedPath) {
@@ -376,11 +402,11 @@ async function readContainedRepoFile(
 
     const expectedSize = knownFileSize(context, resolvedPath.repoPath);
     if (expectedSize !== undefined && expectedSize > largeFileTruncationBytes) {
-      const content = await readLargeFilePrefix(resolvedPath.absolutePath);
+      const largeFile = await readLargeFile(resolvedPath.absolutePath, expectedSize);
 
       return {
         path: resolvedPath.repoPath,
-        content,
+        ...largeFile,
         sizeBytes: expectedSize
       };
     }
@@ -395,11 +421,11 @@ async function readContainedRepoFile(
 
     const fileStat = await stat(resolvedPath.absolutePath);
     if (fileStat.size > largeFileTruncationBytes) {
-      const content = await readLargeFilePrefix(resolvedPath.absolutePath);
+      const largeFile = await readLargeFile(resolvedPath.absolutePath, fileStat.size);
 
       return {
         path: resolvedPath.repoPath,
-        content,
+        ...largeFile,
         sizeBytes: fileStat.size
       };
     }
@@ -413,6 +439,21 @@ async function readContainedRepoFile(
     logger.warn({ repo: context.fullName, filePath }, missingMessage);
     return null;
   }
+}
+
+function toRelevantFile(
+  loadedFile: NonNullable<Awaited<ReturnType<typeof readContainedRepoFile>>>,
+  reason: string
+): RelevantFile {
+  return {
+    path: loadedFile.path,
+    content: loadedFile.content,
+    reason,
+    ...(loadedFile.authoritativeContent !== undefined
+      ? { authoritativeContent: loadedFile.authoritativeContent }
+      : {}),
+    ...(loadedFile.contentTruncated ? { contentTruncated: true } : {})
+  };
 }
 
 export class RepoIndexer {
@@ -453,11 +494,10 @@ export class RepoIndexer {
       );
 
       if (loadedFile) {
-        return {
-          path: loadedFile.path,
-          content: loadedFile.content,
-          reason: `Classifier ranked this file as #${index + 1} relevant`
-        };
+        return toRelevantFile(
+          loadedFile,
+          `Classifier ranked this file as #${index + 1} relevant`
+        );
       }
 
       return null;
@@ -482,11 +522,7 @@ export class RepoIndexer {
       );
 
       if (loadedFile) {
-        return {
-          path: loadedFile.path,
-          content: loadedFile.content,
-          reason: requestedFile.reason
-        };
+        return toRelevantFile(loadedFile, requestedFile.reason);
       }
 
       return null;
@@ -563,11 +599,10 @@ export class RepoIndexer {
         }
 
         totalBytes += Buffer.byteLength(loadedFile.content);
-        references.push({
-          path: loadedFile.path,
-          content: loadedFile.content,
-          reason: referenceReason(candidate.path, options.issueNumber, issuePattern)
-        });
+        references.push(toRelevantFile(
+          loadedFile,
+          referenceReason(candidate.path, options.issueNumber, issuePattern)
+        ));
       }
     }
 

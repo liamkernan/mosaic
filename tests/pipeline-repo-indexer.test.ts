@@ -3,7 +3,9 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { CodeGenerator } from "../packages/pipeline/src/code-generator.js";
 import { RepoIndexer } from "../packages/pipeline/src/repo-indexer.js";
+import { buildClassifiedFeedback, createPipelineLlmClient } from "./helpers/pipeline.js";
 import { createTempDirTracker } from "./helpers/temp-dirs.js";
 
 describe("RepoIndexer repository references", () => {
@@ -350,6 +352,127 @@ describe("RepoIndexer repository references", () => {
     expect(files[0]?.path).toBe("src/large.ts");
     expect(files[0]?.reason).toBe("large file");
     expect(files[0]?.content).toBe(content.split("\n").slice(0, 200).join("\n"));
+    expect(files[0]?.contentTruncated).toBe(true);
+    expect(files[0]?.authoritativeContent).toBe(content);
+  });
+
+  it("applies localized edits to authoritative large-file content without deleting the unseen tail", async () => {
+    const localPath = await tempDirs.create("mosaic-repo-indexer-");
+    await mkdir(join(localPath, "src"));
+
+    const targetLine = 'export const target = "old";';
+    const tailSentinel = 'export const tailSentinel = "preserve-me";';
+    const content = [
+      "export const first = true;",
+      targetLine,
+      ...Array.from({ length: 230 }, (_, index) => `export const filler${index} = "${"x".repeat(500)}";`),
+      tailSentinel,
+      ""
+    ].join("\n");
+    await writeFile(join(localPath, "src", "large.ts"), content, "utf8");
+
+    const context = {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath,
+      installationId: 1,
+      fileTree: [{
+        path: "src/large.ts",
+        type: "file" as const,
+        language: "typescript",
+        sizeBytes: Buffer.byteLength(content)
+      }]
+    };
+    const relevantFiles = await new RepoIndexer().findRelevantFiles(
+      context,
+      buildClassifiedFeedback({ relevantFiles: ["src/large.ts"] })
+    );
+    const generator = new CodeGenerator(createPipelineLlmClient(async () => `<changes>
+  <edit>
+    <filePath>src/large.ts</filePath>
+    <search><![CDATA[${targetLine}]]></search>
+    <replace><![CDATA[export const target = "new";]]></replace>
+    <explanation>Update the localized target.</explanation>
+  </edit>
+</changes>`));
+
+    const changes = await generator.generate(
+      buildClassifiedFeedback({ relevantFiles: ["src/large.ts"] }),
+      relevantFiles,
+      ["src/large.ts"]
+    );
+
+    expect(relevantFiles[0]?.content).not.toContain(tailSentinel);
+    expect(changes[0]?.originalContent).toBe(content);
+    expect(changes[0]?.modifiedContent).toContain(tailSentinel);
+    expect(changes[0]?.modifiedContent).toContain('export const target = "new";');
+
+    const fullReplacementGenerator = new CodeGenerator(createPipelineLlmClient(async () => `<changes>
+  <edit>
+    <filePath>src/large.ts</filePath>
+    <search><![CDATA[${targetLine}]]></search>
+    <replace><![CDATA[export const target = "intermediate";]]></replace>
+    <explanation>Apply one localized edit first.</explanation>
+  </edit>
+  <change>
+    <filePath>src/large.ts</filePath>
+    <modifiedContent><![CDATA[export const target = "new";]]></modifiedContent>
+    <explanation>Replace the excerpt.</explanation>
+  </change>
+</changes>`));
+    await expect(fullReplacementGenerator.generate(
+      buildClassifiedFeedback({ relevantFiles: ["src/large.ts"] }),
+      relevantFiles,
+      ["src/large.ts"]
+    )).rejects.toThrow("Full-file change cannot replace excerpted existing file src/large.ts");
+  });
+
+  it("fails closed when an excerpted file exceeds the authoritative edit limit", async () => {
+    const localPath = await tempDirs.create("mosaic-repo-indexer-");
+    await mkdir(join(localPath, "src"));
+
+    const targetLine = 'export const target = "old";';
+    const content = [
+      targetLine,
+      ...Array.from({ length: 4_200 }, (_, index) => `export const filler${index} = "${"x".repeat(500)}";`),
+      'export const tailSentinel = "preserve-me";',
+      ""
+    ].join("\n");
+    await writeFile(join(localPath, "src", "too-large.ts"), content, "utf8");
+
+    const context = {
+      fullName: "owner/repo",
+      defaultBranch: "main",
+      localPath,
+      installationId: 1,
+      fileTree: [{
+        path: "src/too-large.ts",
+        type: "file" as const,
+        language: "typescript",
+        sizeBytes: Buffer.byteLength(content)
+      }]
+    };
+    const files = await new RepoIndexer().readFiles(
+      context,
+      [{ path: "src/too-large.ts", reason: "large generated source" }]
+    );
+
+    expect(files[0]?.contentTruncated).toBe(true);
+    expect(files[0]?.authoritativeContent).toBeUndefined();
+
+    const generator = new CodeGenerator(createPipelineLlmClient(async () => `<changes>
+  <edit>
+    <filePath>src/too-large.ts</filePath>
+    <search><![CDATA[${targetLine}]]></search>
+    <replace><![CDATA[export const target = "new";]]></replace>
+    <explanation>Update the localized target.</explanation>
+  </edit>
+</changes>`));
+    await expect(generator.generate(
+      buildClassifiedFeedback({ relevantFiles: ["src/too-large.ts"] }),
+      files,
+      ["src/too-large.ts"]
+    )).rejects.toThrow("authoritative content exceeds the editable size limit");
   });
 
   it("truncates large files when the file tree has no eager size metadata", async () => {
@@ -379,5 +502,7 @@ describe("RepoIndexer repository references", () => {
 
     expect(files).toHaveLength(1);
     expect(files[0]?.content).toBe(content.split("\n").slice(0, 200).join("\n"));
+    expect(files[0]?.contentTruncated).toBe(true);
+    expect(files[0]?.authoritativeContent).toBe(content);
   });
 });
