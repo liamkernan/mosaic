@@ -40,9 +40,33 @@ export interface OpenAIRoutedClassification {
 }
 
 const complexityRanking: ComplexityLevel[] = ["trivial", "simple", "moderate", "complex"];
+const maxReconciledRelevantFiles = 10;
 
 function higherComplexity(left: ComplexityLevel, right: ComplexityLevel): ComplexityLevel {
   return complexityRanking.indexOf(left) >= complexityRanking.indexOf(right) ? left : right;
+}
+
+function mergeRelevantFileEvidence(initial: string[], routed: string[]): string[] {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+
+  // Keep the grounded pass's ranking, then retain unique candidates discovered
+  // by the preliminary pass. Each classifier pass is capped at five files, so
+  // this preserves all production evidence while keeping downstream context
+  // bounded to ten paths.
+  for (const filePath of [...routed, ...initial]) {
+    if (seen.has(filePath)) {
+      continue;
+    }
+
+    seen.add(filePath);
+    merged.push(filePath);
+    if (merged.length >= maxReconciledRelevantFiles) {
+      break;
+    }
+  }
+
+  return merged;
 }
 
 function reconcileRoutingSignals(
@@ -75,6 +99,7 @@ export function reconcileClassifications(
     return {
       ...routed,
       complexity: resolveRoutingSignalComplexity(routed.complexity, routingSignals),
+      relevantFiles: mergeRelevantFileEvidence(initial.relevantFiles, routed.relevantFiles),
       routingSignals
     };
   }
@@ -83,6 +108,7 @@ export function reconcileClassifications(
   return {
     ...routed,
     complexity: higherComplexity(initial.complexity, routed.complexity),
+    relevantFiles: mergeRelevantFileEvidence(initial.relevantFiles, routed.relevantFiles),
     ...(routed.routingSignals
       ? { routingSignals: routed.routingSignals }
       : initial.routingSignals

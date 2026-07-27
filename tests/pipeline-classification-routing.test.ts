@@ -213,6 +213,11 @@ describe("OpenAI production classification routing", () => {
     expect(result.classifiedFeedback).toMatchObject({
       complexity: "simple",
       summary: "Guard empty response bodies in the response formatter",
+      relevantFiles: [
+        "response-format.js",
+        "tests/test_response_format.py",
+        "app.js"
+      ],
       routingSignals: {
         scope: "localized",
         runtimeBehavior: true,
@@ -225,6 +230,76 @@ describe("OpenAI production classification routing", () => {
       repoFullName: "owner/repo",
       ...defaultRuntimeConfig
     }).disposition).toBe("pr");
+  });
+
+  it("retains unique file evidence from both passes when structured signals are unavailable", () => {
+    const initial = {
+      ...feedbackItem,
+      category: "bug_report" as const,
+      complexity: "moderate" as const,
+      summary: "Update the handler, service, and registration",
+      relevantFiles: ["src/handler.ts", "src/service.ts", "src/registry.ts"],
+      confidence: 0.72
+    };
+    const routed = {
+      ...initial,
+      complexity: "simple" as const,
+      summary: "Update the service",
+      relevantFiles: ["src/service.ts", "tests/service.test.ts"],
+      confidence: 0.94
+    };
+
+    const result = reconcileClassifications(initial, routed);
+
+    expect(result.relevantFiles).toEqual([
+      "src/service.ts",
+      "tests/service.test.ts",
+      "src/handler.ts",
+      "src/registry.ts"
+    ]);
+    expect(result.complexity).toBe("moderate");
+  });
+
+  it("bounds reconciled file evidence while preserving routed rank and removing duplicates", () => {
+    const initial = {
+      ...feedbackItem,
+      category: "bug_report" as const,
+      complexity: "moderate" as const,
+      summary: "Coordinate a broad implementation",
+      relevantFiles: [
+        "src/shared.ts",
+        "src/initial-a.ts",
+        "src/initial-b.ts",
+        "src/initial-c.ts",
+        "src/initial-d.ts",
+        "src/initial-e.ts"
+      ],
+      confidence: 0.8
+    };
+    const routed = {
+      ...initial,
+      relevantFiles: [
+        "src/routed-a.ts",
+        "src/shared.ts",
+        "src/routed-b.ts",
+        "src/routed-c.ts",
+        "src/routed-d.ts",
+        "src/routed-e.ts"
+      ]
+    };
+
+    expect(reconcileClassifications(initial, routed).relevantFiles).toEqual([
+      "src/routed-a.ts",
+      "src/shared.ts",
+      "src/routed-b.ts",
+      "src/routed-c.ts",
+      "src/routed-d.ts",
+      "src/routed-e.ts",
+      "src/initial-a.ts",
+      "src/initial-b.ts",
+      "src/initial-c.ts",
+      "src/initial-d.ts"
+    ]);
   });
 
   it("retains hard risk while allowing ordinary scope to be corrected", () => {
