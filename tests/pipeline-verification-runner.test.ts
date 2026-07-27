@@ -426,7 +426,297 @@ describe("runVerificationCommands", () => {
     }])).toEqual(['python3 -m pytest "tests/generated/test_panel.py"']);
   });
 
-  it("replaces an incompatible planned runner with the inferred generated-test runner", async () => {
+  it("infers safe targeted commands for alternate Python and Node test paths", () => {
+    expect(inferredChangedTestCommands([
+      {
+        filePath: "test/test_schedule.py",
+        originalContent: "",
+        modifiedContent: "import unittest\n\nclass ScheduleTest(unittest.TestCase):\n    def test_all_days(self):\n        self.assertEqual('all', 'all')\n",
+        explanation: "cover the schedule"
+      },
+      {
+        filePath: "test/schedule.js",
+        originalContent: "",
+        modifiedContent: "import test from 'node:test';\nimport assert from 'node:assert/strict';\ntest('restores all days', () => assert.equal('all', 'all'));\n",
+        explanation: "cover the schedule state"
+      },
+      {
+        filePath: "__tests__/routing.ts",
+        originalContent: "",
+        modifiedContent: "import { expect, it } from 'vitest';\nit('routes safely', () => expect('issue').toBe('issue'));\n",
+        explanation: "unsupported framework tests must fail closed at verification"
+      }
+    ])).toEqual([
+      'python3 -m unittest "test.test_schedule"',
+      'node --test "test/schedule.js"'
+    ]);
+    expect(inferredChangedTestCommands([
+      {
+        filePath: "src/schedule.ts",
+        originalContent: "",
+        modifiedContent: "export const schedule = [];\n",
+        explanation: "change production behavior"
+      },
+      {
+        filePath: "tests/fixtures/schedule.json",
+        originalContent: "{}\n",
+        modifiedContent: "{\"day\":\"all\"}\n",
+        explanation: "update a test fixture"
+      },
+      {
+        filePath: "tests/helpers.py",
+        originalContent: "",
+        modifiedContent: "def build_schedule():\n    return []\n",
+        explanation: "update test support without pretending it is an executable test"
+      },
+      {
+        filePath: "tests/conftest.py",
+        originalContent: "",
+        modifiedContent: "SCHEDULE = []\n",
+        explanation: "update pytest support"
+      }
+    ])).toEqual([]);
+  });
+
+  it("executes changed Node tests independently and rejects their failures", async () => {
+    const localPath = await tempDirs.create("mosaic-verify-node-test-");
+    const result = await runVerificationCommands(
+      [{
+        filePath: "tests/generated/schedule.test.js",
+        originalContent: "",
+        modifiedContent: [
+          "import test from 'node:test';",
+          "import assert from 'node:assert/strict';",
+          "test('restores all days', () => assert.equal('tuesday', 'all'));",
+          ""
+        ].join("\n"),
+        explanation: "cover the generated schedule behavior"
+      }],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      undefined,
+      fallbackOptions
+    );
+
+    expect(result.commands).toEqual(['node --test "tests/generated/schedule.test.js"']);
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("Generated test failed independently");
+  });
+
+  it("accepts a changed Node test only after that exact file passes", async () => {
+    const localPath = await tempDirs.create("mosaic-verify-node-pass-");
+    const result = await runVerificationCommands(
+      [{
+        filePath: "tests/generated/schedule.test.mjs",
+        originalContent: "",
+        modifiedContent: [
+          "import test from 'node:test';",
+          "import assert from 'node:assert/strict';",
+          "test('restores all days', () => assert.equal('all', 'all'));",
+          ""
+        ].join("\n"),
+        explanation: "cover the generated schedule behavior"
+      }],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      undefined,
+      fallbackOptions
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.commands).toEqual(['node --test "tests/generated/schedule.test.mjs"']);
+  });
+
+  it("rejects changed Node tests when every selected test is skipped or deferred", async () => {
+    const localPath = await tempDirs.create("mosaic-verify-node-skipped-");
+    const result = await runVerificationCommands(
+      [
+        {
+          filePath: "tests/generated/skipped.test.mjs",
+          originalContent: "",
+          modifiedContent: "import test from 'node:test';\ntest('skipped case', { skip: true }, () => {});\n",
+          explanation: "cover a skipped generated test"
+        },
+        {
+          filePath: "tests/generated/todo.test.mjs",
+          originalContent: "",
+          modifiedContent: "import test from 'node:test';\ntest('deferred case', { todo: true }, () => {});\n",
+          explanation: "cover a deferred generated test"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      undefined,
+      fallbackOptions
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain(
+      "Generated test did not execute independently (tests/generated/skipped.test.mjs): the runner skipped or deferred every selected test"
+    );
+    expect(result.errors).toContain(
+      "Generated test did not execute independently (tests/generated/todo.test.mjs): the runner skipped or deferred every selected test"
+    );
+  });
+
+  it("does not mistake a passing test with a longer path for the changed test", async () => {
+    const localPath = await tempDirs.create("mosaic-verify-node-decoy-");
+    await mkdir(join(localPath, "tests", "generated"), { recursive: true });
+    const decoyPath = "tests/generated/schedule.test.js-extra.test.js";
+    await writeFile(
+      join(localPath, decoyPath),
+      [
+        "const test = require('node:test');",
+        "const assert = require('node:assert/strict');",
+        "test('unrelated decoy passes', () => assert.equal('decoy', 'decoy'));",
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+
+    const changedPath = "tests/generated/schedule.test.js";
+    const result = await runVerificationCommands(
+      [{
+        filePath: changedPath,
+        originalContent: "",
+        modifiedContent: [
+          "const test = require('node:test');",
+          "const assert = require('node:assert/strict');",
+          "test('changed behavior', () => assert.equal('tuesday', 'all'));",
+          ""
+        ].join("\n"),
+        explanation: "cover the changed behavior"
+      }],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      {
+        requiredFiles: [],
+        acceptanceCriteria: [],
+        implementationChecklist: [],
+        verificationChecklist: [],
+        verificationCommands: [`node --test "${decoyPath}"`]
+      },
+      fallbackOptions
+    );
+
+    expect(result.commands).toContain(`node --test "${changedPath}"`);
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain(
+      `Generated test failed independently (${changedPath})`
+    );
+  });
+
+  it("fails closed when a changed test has no safe supported runner", async () => {
+    const localPath = await tempDirs.create("mosaic-verify-unsupported-test-");
+    const result = await runVerificationCommands(
+      [
+        {
+          filePath: "spec/generated/schedule_spec.rb",
+          originalContent: "",
+          modifiedContent: "raise 'this test must execute'\n",
+          explanation: "add unsupported generated coverage"
+        },
+        {
+          filePath: "packages/calendar/schedule_test.go",
+          originalContent: "",
+          modifiedContent: "package calendar\n\nfunc TestSchedule(t *testing.T) {}\n",
+          explanation: "add unsupported Go coverage outside a test directory"
+        },
+        {
+          filePath: "src/schedule.test.ts",
+          originalContent: "",
+          modifiedContent: "import { expect, test } from '@jest/globals';\ntest('schedule', () => expect('all').toBe('all'));\n",
+          explanation: "require an explicit supported runner for Jest coverage"
+        },
+        {
+          filePath: "tests/integration.rs",
+          originalContent: "",
+          modifiedContent: "#[test]\nfn integration_fails() { panic!(\"must execute\"); }\n",
+          explanation: "fail closed for an unsupported canonical Rust integration test"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      undefined,
+      fallbackOptions
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.commands).toEqual([]);
+    expect(result.errors).toContain(
+      "Changed test was not mapped to a safe independent verification command: spec/generated/schedule_spec.rb"
+    );
+    expect(result.errors).toContain(
+      "Changed test was not mapped to a safe independent verification command: packages/calendar/schedule_test.go"
+    );
+    expect(result.errors).toContain(
+      "Changed test was not mapped to a safe independent verification command: src/schedule.test.ts"
+    );
+    expect(result.errors).toContain(
+      "Changed test was not mapped to a safe independent verification command: tests/integration.rs"
+    );
+  });
+
+  it("rejects test commands that escape the verification repository", async () => {
+    const localPath = await tempDirs.create("mosaic-verify-unsafe-node-test-");
+    const result = await runVerificationCommands(
+      [],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      {
+        requiredFiles: [],
+        acceptanceCriteria: [],
+        implementationChecklist: [],
+        verificationChecklist: [],
+        verificationCommands: [
+          "node --test ../../outside.test.js",
+          "pnpm vitest run ../../outside.test.ts"
+        ]
+      },
+      fallbackOptions
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.commands).toEqual([]);
+    expect(result.errors).toContain(
+      "Unsupported verification command was not run: node --test ../../outside.test.js"
+    );
+    expect(result.errors).toContain(
+      "Unsupported verification command was not run: pnpm vitest run ../../outside.test.ts"
+    );
+  });
+
+  it("runs the inferred exact runner before an incompatible planned check", async () => {
     const localPath = await createPythonRepo();
     const result = await runVerificationCommands(
       [{
@@ -452,7 +742,10 @@ describe("runVerificationCommands", () => {
       fallbackOptions
     );
 
-    expect(result.commands).toEqual(['python3 -m pytest "tests/generated/test_panel.py"']);
+    expect(result.commands).toEqual([
+      'python3 -m pytest "tests/generated/test_panel.py"',
+      "python3 -m unittest tests.generated.test_panel"
+    ]);
   });
 
   it("executes a generated frontend test with a complete DOM fixture independently", async () => {
@@ -531,6 +824,77 @@ describe("runVerificationCommands", () => {
     );
   });
 
+  it("executes each changed test file separately so a passing file cannot mask an empty one", async () => {
+    const localPath = await createPythonRepo();
+    const result = await runVerificationCommands(
+      [
+        {
+          filePath: "tests/generated/test_empty.py",
+          originalContent: "",
+          modifiedContent: "import unittest\n",
+          explanation: "add an empty generated test file"
+        },
+        {
+          filePath: "tests/generated/test_passing.py",
+          originalContent: "",
+          modifiedContent: "import unittest\n\nclass PassingTest(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n",
+          explanation: "add a passing generated test file"
+        }
+      ],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      undefined,
+      fallbackOptions
+    );
+
+    expect(result.commands).toEqual([
+      'python3 -m unittest "tests.generated.test_empty"',
+      'python3 -m unittest "tests.generated.test_passing"'
+    ]);
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain(
+      "Generated test did not execute independently (tests/generated/test_empty.py): the runner reported zero executed tests"
+    );
+  });
+
+  it("runs the exact changed test even when a planned filter would exclude it", async () => {
+    const localPath = await createPythonRepo();
+    const result = await runVerificationCommands(
+      [{
+        filePath: "tests/generated/test_target.py",
+        originalContent: "",
+        modifiedContent: "import unittest\n\nclass TargetTest(unittest.TestCase):\n    def test_failure(self):\n        self.fail('target executed independently')\n",
+        explanation: "add generated regression coverage"
+      }],
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        fileTree: [],
+        installationId: 1
+      },
+      {
+        requiredFiles: [],
+        acceptanceCriteria: [],
+        implementationChecklist: [],
+        verificationChecklist: [],
+        verificationCommands: [
+          "python3 -m unittest tests.generated.test_target tests.reported.test_example -k ok"
+        ]
+      },
+      fallbackOptions
+    );
+
+    expect(result.commands).toContain('python3 -m unittest "tests.generated.test_target"');
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain("target executed independently");
+  });
+
   it("reserves a verification slot for candidate-added tests", async () => {
     const localPath = await createPythonRepo();
     await writeFile(join(localPath, "tests", "reported", "test_second.py"), "import unittest\n\nclass SecondTest(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n", "utf8");
@@ -567,6 +931,9 @@ describe("runVerificationCommands", () => {
     expect(result.commands).toContain('python3 -m unittest "tests.generated.test_candidate"');
     expect(result.valid).toBe(false);
     expect(result.errors.join("\n")).toContain("candidate executed");
+    expect(result.errors).toContain(
+      "Safe verification command was not run because the 3-command limit was reached: python3 -m unittest tests.reported.test_third"
+    );
   });
 
   it("rejects generated change paths that escape the verification repo", async () => {
