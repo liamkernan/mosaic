@@ -224,11 +224,18 @@ export class EmailListener {
       return;
     }
 
-    for await (const message of client.fetch("1:*", {
+    const unseenUids = await client.search({ seen: false }, { uid: true });
+    if (!unseenUids || unseenUids.length === 0) {
+      return;
+    }
+
+    const messages = await client.fetchAll(unseenUids, {
       uid: true,
       flags: true,
       source: true
-    })) {
+    }, { uid: true });
+
+    for (const message of messages) {
       if (message.flags?.has("\\Seen")) {
         continue;
       }
@@ -268,7 +275,7 @@ export class EmailListener {
         );
       }
 
-      await client.messageFlagsAdd(message.uid.toString(), ["\\Seen"]);
+      await client.messageFlagsAdd(message.uid.toString(), ["\\Seen"], { uid: true });
     }
   }
 }
