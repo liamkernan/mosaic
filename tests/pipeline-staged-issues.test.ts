@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  buildIssueSpecDigest,
   buildStagedIssueMetadata,
   buildStagedIssueMetadataComment,
+  getStagedIssueEditState,
   getPromotionDescription,
   getModerateIssueMode,
   isFixThisCommand,
@@ -66,6 +68,58 @@ describe("staged issues", () => {
     const comment = buildStagedIssueMetadataComment(metadata, stagedIssueSecret);
 
     expect(parseStagedIssueMetadata(comment, stagedIssueSecret)).toEqual(metadata);
+  });
+
+  it("binds signed metadata to the visible issue specification", () => {
+    const title = "[Feedback] Fix settings alignment";
+    const body = "## Requested change\n\nAlign the settings action.";
+    const metadata = buildStagedIssueMetadata(baseFeedback, "moderate-safe", {
+      title,
+      body
+    });
+    const comment = buildStagedIssueMetadataComment(metadata, stagedIssueSecret);
+
+    expect(metadata.issueSpecDigest).toBe(buildIssueSpecDigest(title, body));
+    expect(getStagedIssueEditState(
+      metadata,
+      title,
+      `\r\n## Requested change  \r\n\r\nAlign the settings action.\t\r\n${comment}\r\n`
+    )).toBe("unchanged");
+    expect(getStagedIssueEditState(
+      metadata,
+      `${title} now`,
+      `${body}\n${comment}`
+    )).toBe("material");
+    expect(getStagedIssueEditState(
+      metadata,
+      title,
+      `${body.replace("action", "button")}\n${comment}`
+    )).toBe("material");
+    expect(getStagedIssueEditState(
+      metadata,
+      title,
+      `  ${body}\n${comment}`
+    )).toBe("material");
+  });
+
+  it("treats legacy staged issues without a specification digest as unverifiable", () => {
+    const metadata = buildStagedIssueMetadata(baseFeedback, "moderate-safe");
+
+    expect(getStagedIssueEditState(metadata, "[Feedback] Legacy", "Legacy body")).toBe("unverifiable");
+    expect(parseStagedIssueMetadata(
+      buildStagedIssueMetadataComment(metadata, stagedIssueSecret),
+      stagedIssueSecret
+    )).toEqual(metadata);
+  });
+
+  it("rejects signed metadata with a malformed specification digest", () => {
+    const metadata = {
+      ...buildStagedIssueMetadata(baseFeedback, "moderate-safe"),
+      issueSpecDigest: "a".repeat(63)
+    };
+    const comment = buildStagedIssueMetadataComment(metadata, stagedIssueSecret);
+
+    expect(parseStagedIssueMetadata(comment, stagedIssueSecret)).toBeNull();
   });
 
   it("ignores unsigned staged issue metadata comments", () => {

@@ -25,10 +25,12 @@ import { QuarantineStore } from "./quarantine.js";
 import { loadRepoRuntimeConfig, type RepoRuntimeConfig } from "./repo-config.js";
 import { RepoIndexer } from "./repo-indexer.js";
 import {
+  getStagedIssueEditState,
   isFixThisCommand,
   parseStagedIssueMetadata,
   STAGED_ISSUE_LABEL,
   STAGED_ISSUE_PROMOTED_LABEL,
+  stripStagedIssueMetadataComments,
   type StagedIssueMode
 } from "./staged-issues.js";
 import { selectGenerationModelTier, selectOpenAIModel, selectPlanningModelTier, shouldEscalateClassification, shouldUseAdvisorTool } from "./model-routing.js";
@@ -47,6 +49,7 @@ const oversizedPatchPattern = /too large|exceeds limit|total new code added/i;
 type RepoContext = Awaited<ReturnType<RepoIndexer["getContext"]>>;
 type PromotionResult = { handled: boolean; reason?: string; artifactType?: "issue" | "pr"; artifactValue?: string };
 type LlmClientFactory = (options: ConstructorParameters<typeof LLMClient>[0]) => LLMClient;
+type DispositionDecision = ReturnType<typeof decideFeedbackDisposition>;
 
 export interface FeedbackPipelineWorkerDependencies {
   connection?: Redis;
@@ -102,8 +105,33 @@ function collectDirectoryPaths(nodes: FileNode[], paths = new Set<string>()): Se
   return paths;
 }
 
-function stripMosaicMetadataComments(body: string): string {
-  return body.replace(/<!--\s*mosaic:staged-issue[\s\S]*?-->/g, "").trim();
+function trimOuterBlankLines(value: string): string {
+  const lines = value.replace(/\r\n?/g, "\n").split("\n");
+  let start = 0;
+  let end = lines.length;
+  while (start < end && lines[start].trim() === "") {
+    start += 1;
+  }
+  while (end > start && lines[end - 1].trim() === "") {
+    end -= 1;
+  }
+  return lines.slice(start, end).join("\n");
+}
+
+function moreConservativeIssueMode(
+  historicalMode: StagedIssueMode,
+  freshMode: StagedIssueMode | undefined
+): StagedIssueMode {
+  if (!freshMode) {
+    return historicalMode;
+  }
+
+  const modeRank: Record<StagedIssueMode, number> = {
+    "moderate-safe": 0,
+    "moderate-review-needed": 1,
+    "complex-review-needed": 2
+  };
+  return modeRank[freshMode] > modeRank[historicalMode] ? freshMode : historicalMode;
 }
 
 async function validateGeneratedChanges(
@@ -243,6 +271,113 @@ export class FeedbackPipelineWorker {
     } catch {
       return false;
     }
+  }
+
+  private async classifyFeedbackItem(
+    feedbackItem: FeedbackItem,
+    repoContext: RepoContext,
+    repoConfig: RepoRuntimeConfig
+  ): Promise<{ classifiedFeedback: ClassifiedFeedback; decision: DispositionDecision }> {
+    const directoryPaths = collectDirectoryPaths(repoContext.fileTree);
+    const classificationFileTree = this.repoIndexer
+      .fileTreeToPaths(repoContext)
+      .filter((filePath) => !directoryPaths.has(filePath));
+    const classificationPasses: Array<{
+      model: string;
+      reasoningEffort?: OpenAIReasoningEffort;
+      complexity: ClassifiedFeedback["complexity"];
+      confidence: number;
+      routingSignals: ClassifiedFeedback["routingSignals"];
+      relevantFiles: string[];
+    }> = [];
+    let groundingFilePaths: string[] = [];
+    let classifiedFeedback: ClassifiedFeedback;
+
+    if (repoConfig.llmProvider === "openai") {
+      const routedClassification = await classifyFeedbackWithOpenAIRouting({
+        feedbackItem,
+        fileTree: classificationFileTree,
+        modelPreset: repoConfig.llmModelPreset,
+        createClient: (selection) => this.createLlmClient(
+          "openai",
+          repoConfig.llmKeyMode,
+          repoConfig.llmApiKey,
+          selection.model,
+          selection.reasoningEffort
+        ),
+        loadGroundingFiles: async (classification) => {
+          const files = await this.repoIndexer.findRelevantFiles(repoContext, classification);
+          groundingFilePaths = files.map((file) => file.path);
+          return files;
+        },
+        onPass: (pass) => classificationPasses.push({
+          model: pass.route.model,
+          reasoningEffort: pass.route.reasoningEffort,
+          complexity: pass.classifiedFeedback.complexity,
+          confidence: pass.classifiedFeedback.confidence,
+          routingSignals: pass.classifiedFeedback.routingSignals,
+          relevantFiles: pass.classifiedFeedback.relevantFiles
+        })
+      });
+      classifiedFeedback = routedClassification.classifiedFeedback;
+    } else {
+      const haikuClient = this.createLlmClient(
+        "anthropic",
+        repoConfig.llmKeyMode,
+        repoConfig.llmApiKey,
+        ANTHROPIC_MODEL_IDS.haiku
+      );
+      const sonnetClient = this.createLlmClient(
+        "anthropic",
+        repoConfig.llmKeyMode,
+        repoConfig.llmApiKey,
+        ANTHROPIC_MODEL_IDS.sonnet
+      );
+      const initialClassification = await new FeedbackClassifier(haikuClient)
+        .classify(feedbackItem, classificationFileTree);
+      classificationPasses.push({
+        model: ANTHROPIC_MODEL_IDS.haiku,
+        complexity: initialClassification.complexity,
+        confidence: initialClassification.confidence,
+        routingSignals: initialClassification.routingSignals,
+        relevantFiles: initialClassification.relevantFiles
+      });
+      classifiedFeedback = initialClassification;
+      if (shouldEscalateClassification(initialClassification)) {
+        const groundingFiles = await this.repoIndexer.findRelevantFiles(repoContext, initialClassification);
+        groundingFilePaths = groundingFiles.map((file) => file.path);
+        const routedClassification = await new FeedbackClassifier(sonnetClient)
+          .classify(feedbackItem, classificationFileTree, groundingFiles);
+        classificationPasses.push({
+          model: ANTHROPIC_MODEL_IDS.sonnet,
+          complexity: routedClassification.complexity,
+          confidence: routedClassification.confidence,
+          routingSignals: routedClassification.routingSignals,
+          relevantFiles: routedClassification.relevantFiles
+        });
+        classifiedFeedback = reconcileClassifications(initialClassification, routedClassification);
+      }
+    }
+
+    const decision = this.dispositionDecider(classifiedFeedback, repoConfig);
+    logger.info({
+      feedbackId: classifiedFeedback.id,
+      repoFullName: classifiedFeedback.repoFullName,
+      category: classifiedFeedback.category,
+      complexity: classifiedFeedback.complexity,
+      confidence: classifiedFeedback.confidence,
+      routingSignals: classifiedFeedback.routingSignals,
+      classificationDisagreement: classifiedFeedback.classificationDisagreement,
+      relevantFiles: classifiedFeedback.relevantFiles,
+      classificationFileCount: classificationFileTree.length,
+      groundingFilePaths,
+      classificationPasses,
+      disposition: decision.disposition,
+      dispositionReason: decision.reason,
+      issueMode: decision.issueMode
+    }, "Classified feedback and selected disposition");
+
+    return { classifiedFeedback, decision };
   }
 
   private async handleImplementationFailure(
@@ -711,10 +846,13 @@ export class FeedbackPipelineWorker {
       };
     }
 
-    const stagedFeedback: ClassifiedFeedback = {
+    const visibleIssueBody = trimOuterBlankLines(
+      stripStagedIssueMetadataComments(issue.body ?? "")
+    );
+    const historicalStagedFeedback: ClassifiedFeedback = {
       id: feedbackItem.id,
       source: stagedMetadata.source,
-      rawContent: `${stagedMetadata.rawContent}\n\nLinked GitHub issue #${issueNumber}:\n${stripMosaicMetadataComments(issue.body ?? "")}`,
+      rawContent: `${stagedMetadata.rawContent}\n\nLinked GitHub issue #${issueNumber}:\n${visibleIssueBody}`,
       ...(stagedMetadata.contentTruncation
         ? { contentTruncation: stagedMetadata.contentTruncation }
         : {}),
@@ -736,10 +874,86 @@ export class FeedbackPipelineWorker {
       confidence: stagedMetadata.confidence,
       ...(stagedMetadata.routingSignals ? { routingSignals: stagedMetadata.routingSignals } : {})
     };
+    let stagedFeedback = historicalStagedFeedback;
+    let issueMode = stagedMetadata.issueMode;
+    const editState = getStagedIssueEditState(
+      stagedMetadata,
+      issue.title,
+      issue.body ?? ""
+    );
+
+    if (editState !== "unchanged") {
+      const editedFeedbackItem: FeedbackItem = {
+        id: feedbackItem.id,
+        source: "github_issue",
+        rawContent: `${issue.title}\n\n${visibleIssueBody}`.trim(),
+        senderIdentifier: stagedMetadata.senderIdentifier,
+        repoFullName: feedbackItem.repoFullName,
+        receivedAt: new Date(stagedMetadata.receivedAt),
+        metadata: {
+          ...feedbackItem.metadata,
+          originalFeedbackId: stagedMetadata.feedbackId,
+          stagedIssueNumber: issueNumber,
+          stagedIssueEditState: editState,
+          promotedBy: sender
+        }
+      };
+      let freshRouting: Awaited<ReturnType<FeedbackPipelineWorker["classifyFeedbackItem"]>>;
+      try {
+        freshRouting = await this.classifyFeedbackItem(editedFeedbackItem, repoContext, repoConfig);
+      } catch (error) {
+        if (error instanceof LLMError) {
+          if (isRetryableLlmOverload(error)) {
+            throw error;
+          }
+          const failure = await this.handleImplementationFailure(
+            historicalStagedFeedback,
+            repoContext,
+            `Reclassification of the edited issue specification failed: ${error.message}`,
+            issueNumber
+          );
+          return {
+            handled: true,
+            reason: failure.reason,
+            artifactType: failure.artifactType,
+            artifactValue: failure.artifactValue
+          };
+        }
+        throw error;
+      }
+
+      const { classifiedFeedback: freshClassification, decision: freshDecision } = freshRouting;
+      if (
+        freshDecision.disposition === "quarantine" ||
+        freshClassification.confidence < 0.6 ||
+        freshClassification.relevantFiles.length === 0
+      ) {
+        const failure = await this.handleImplementationFailure(
+          freshClassification,
+          repoContext,
+          `The edited issue specification was not grounded strongly enough for promotion: ${freshDecision.reason}`,
+          issueNumber
+        );
+        return {
+          handled: true,
+          reason: failure.reason,
+          artifactType: failure.artifactType,
+          artifactValue: failure.artifactValue
+        };
+      }
+
+      stagedFeedback = {
+        ...freshClassification,
+        ...(stagedMetadata.contentTruncation
+          ? { contentTruncation: stagedMetadata.contentTruncation }
+          : {})
+      };
+      issueMode = moreConservativeIssueMode(stagedMetadata.issueMode, freshDecision.issueMode);
+    }
 
     const result = await this.automatePullRequest(stagedFeedback, repoContext, repoConfig, {
       stagedIssueNumber: issueNumber,
-      issueMode: stagedMetadata.issueMode
+      issueMode
     });
 
     return {
@@ -784,91 +998,11 @@ export class FeedbackPipelineWorker {
       };
     }
 
-    const directoryPaths = collectDirectoryPaths(repoContext.fileTree);
-    const classificationFileTree = this.repoIndexer
-      .fileTreeToPaths(repoContext)
-      .filter((filePath) => !directoryPaths.has(filePath));
-    const classificationPasses: Array<{
-      model: string;
-      reasoningEffort?: OpenAIReasoningEffort;
-      complexity: ClassifiedFeedback["complexity"];
-      confidence: number;
-      routingSignals: ClassifiedFeedback["routingSignals"];
-      relevantFiles: string[];
-    }> = [];
-    let groundingFilePaths: string[] = [];
-    let classifiedFeedback: ClassifiedFeedback;
-    if (repoConfig.llmProvider === "openai") {
-      const routedClassification = await classifyFeedbackWithOpenAIRouting({
-        feedbackItem,
-        fileTree: classificationFileTree,
-        modelPreset: repoConfig.llmModelPreset,
-        createClient: (selection) => this.createLlmClient(
-          "openai",
-          repoConfig.llmKeyMode,
-          repoConfig.llmApiKey,
-          selection.model,
-          selection.reasoningEffort
-        ),
-        loadGroundingFiles: async (classification) => {
-          const files = await this.repoIndexer.findRelevantFiles(repoContext, classification);
-          groundingFilePaths = files.map((file) => file.path);
-          return files;
-        },
-        onPass: (pass) => classificationPasses.push({
-          model: pass.route.model,
-          reasoningEffort: pass.route.reasoningEffort,
-          complexity: pass.classifiedFeedback.complexity,
-          confidence: pass.classifiedFeedback.confidence,
-          routingSignals: pass.classifiedFeedback.routingSignals,
-          relevantFiles: pass.classifiedFeedback.relevantFiles
-        })
-      });
-      classifiedFeedback = routedClassification.classifiedFeedback;
-    } else {
-      const haikuClient = this.createLlmClient("anthropic", repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.haiku);
-      const sonnetClient = this.createLlmClient("anthropic", repoConfig.llmKeyMode, repoConfig.llmApiKey, ANTHROPIC_MODEL_IDS.sonnet);
-      const initialClassification = await new FeedbackClassifier(haikuClient).classify(feedbackItem, classificationFileTree);
-      classificationPasses.push({
-        model: ANTHROPIC_MODEL_IDS.haiku,
-        complexity: initialClassification.complexity,
-        confidence: initialClassification.confidence,
-        routingSignals: initialClassification.routingSignals,
-        relevantFiles: initialClassification.relevantFiles
-      });
-      classifiedFeedback = initialClassification;
-      if (shouldEscalateClassification(initialClassification)) {
-        const groundingFiles = await this.repoIndexer.findRelevantFiles(repoContext, initialClassification);
-        groundingFilePaths = groundingFiles.map((file) => file.path);
-        const routedClassification = await new FeedbackClassifier(sonnetClient)
-          .classify(feedbackItem, classificationFileTree, groundingFiles);
-        classificationPasses.push({
-          model: ANTHROPIC_MODEL_IDS.sonnet,
-          complexity: routedClassification.complexity,
-          confidence: routedClassification.confidence,
-          routingSignals: routedClassification.routingSignals,
-          relevantFiles: routedClassification.relevantFiles
-        });
-        classifiedFeedback = reconcileClassifications(initialClassification, routedClassification);
-      }
-    }
-    const decision = this.dispositionDecider(classifiedFeedback, repoConfig);
-    logger.info({
-      feedbackId: classifiedFeedback.id,
-      repoFullName: classifiedFeedback.repoFullName,
-      category: classifiedFeedback.category,
-      complexity: classifiedFeedback.complexity,
-      confidence: classifiedFeedback.confidence,
-      routingSignals: classifiedFeedback.routingSignals,
-      classificationDisagreement: classifiedFeedback.classificationDisagreement,
-      relevantFiles: classifiedFeedback.relevantFiles,
-      classificationFileCount: classificationFileTree.length,
-      groundingFilePaths,
-      classificationPasses,
-      disposition: decision.disposition,
-      dispositionReason: decision.reason,
-      issueMode: decision.issueMode
-    }, "Classified feedback and selected disposition");
+    const { classifiedFeedback, decision } = await this.classifyFeedbackItem(
+      feedbackItem,
+      repoContext,
+      repoConfig
+    );
 
     if (decision.disposition === "quarantine") {
       await this.quarantineStore.quarantine(classifiedFeedback, decision.reason);

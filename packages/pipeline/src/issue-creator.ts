@@ -30,24 +30,11 @@ This issue is classified as **${options.issueMode}**.
 ${getPromotionDescription(options.issueMode)}
 `
       : "";
-    const stagedMetadata = options.issueMode
-      ? buildStagedIssueMetadataComment(
-          buildStagedIssueMetadata(classifiedFeedback, options.issueMode),
-        )
-      : "";
     const truncationNotice = classifiedFeedback.contentTruncation
       ? `> **Incomplete intake content:** Mosaic retained ${classifiedFeedback.contentTruncation.retainedLength.toLocaleString("en-US")} of ${classifiedFeedback.contentTruncation.originalLength.toLocaleString("en-US")} characters. Please review the original source before implementation.\n>\n`
       : "";
-
-    if (options.issueMode) {
-      labels.push(STAGED_ISSUE_LABEL, getIssueModeLabel(options.issueMode));
-    }
-
-    const issue = await octokit.rest.issues.create({
-      owner,
-      repo,
-      title: `[Feedback] ${classifiedFeedback.summary}`.slice(0, 120),
-      body: `## User Feedback
+    const title = `[Feedback] ${classifiedFeedback.summary}`.slice(0, 120);
+    const visibleBody = `## User Feedback
 
 **Source:** ${classifiedFeedback.source}
 **Category:** ${classifiedFeedback.category}
@@ -61,8 +48,26 @@ ${options.reason}
 
 ${promotionSection}
 ---
-*Triaged by [Mosaic](https://github.com/liamkernan/mosaic).*
-${stagedMetadata}`.trim(),
+*Triaged by [Mosaic](https://github.com/liamkernan/mosaic).*`.trim();
+    const stagedMetadata = options.issueMode
+      ? buildStagedIssueMetadataComment(
+          buildStagedIssueMetadata(classifiedFeedback, options.issueMode, {
+            title,
+            body: visibleBody
+          }),
+        )
+      : "";
+    const body = stagedMetadata ? `${visibleBody}\n${stagedMetadata}` : visibleBody;
+
+    if (options.issueMode) {
+      labels.push(STAGED_ISSUE_LABEL, getIssueModeLabel(options.issueMode));
+    }
+
+    const issue = await octokit.rest.issues.create({
+      owner,
+      repo,
+      title,
+      body,
       labels,
     });
 

@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import {
   ConfigError,
@@ -25,6 +25,7 @@ const safeModeratePattern =
   /\b(typo|copy|text|label|headline|button text|cta|link|spacing|padding|margin|alignment|css|color|placeholder|helper text|empty state)\b/i;
 
 export type StagedIssueMode = "moderate-safe" | "moderate-review-needed" | "complex-review-needed";
+export type StagedIssueEditState = "unchanged" | "material" | "unverifiable";
 
 export interface StagedIssueMetadata {
   version: 1;
@@ -41,8 +42,57 @@ export interface StagedIssueMetadata {
   rawContent: string;
   contentTruncation?: FeedbackContentTruncation;
   classificationDisagreement?: ClassificationDisagreement;
+  issueSpecDigest?: string;
   issueMode: StagedIssueMode;
   routingSignals?: ClassificationRoutingSignals;
+}
+
+interface StagedIssueSpec {
+  title: string;
+  body: string;
+}
+
+export function stripStagedIssueMetadataComments(body: string): string {
+  return body.replace(/<!--\s*mosaic:staged-issue[\s\S]*?-->/g, "");
+}
+
+function canonicalizeIssueSpecPart(value: string): string {
+  const lines = value
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/g, ""));
+  let start = 0;
+  let end = lines.length;
+  while (start < end && lines[start] === "") {
+    start += 1;
+  }
+  while (end > start && lines[end - 1] === "") {
+    end -= 1;
+  }
+
+  return lines.slice(start, end).join("\n");
+}
+
+export function buildIssueSpecDigest(title: string, body: string): string {
+  const canonicalTitle = canonicalizeIssueSpecPart(title);
+  const canonicalBody = canonicalizeIssueSpecPart(stripStagedIssueMetadataComments(body));
+  return createHash("sha256")
+    .update(`${canonicalTitle}\n\u0000${canonicalBody}`)
+    .digest("hex");
+}
+
+export function getStagedIssueEditState(
+  metadata: StagedIssueMetadata,
+  title: string,
+  body: string
+): StagedIssueEditState {
+  if (!metadata.issueSpecDigest) {
+    return "unverifiable";
+  }
+
+  return constantTimeEquals(metadata.issueSpecDigest, buildIssueSpecDigest(title, body))
+    ? "unchanged"
+    : "material";
 }
 
 export function getModerateIssueMode(classifiedFeedback: ClassifiedFeedback): StagedIssueMode {
@@ -69,7 +119,11 @@ export function getModerateIssueMode(classifiedFeedback: ClassifiedFeedback): St
   return looksSafe ? "moderate-safe" : "moderate-review-needed";
 }
 
-export function buildStagedIssueMetadata(classifiedFeedback: ClassifiedFeedback, issueMode: StagedIssueMode): StagedIssueMetadata {
+export function buildStagedIssueMetadata(
+  classifiedFeedback: ClassifiedFeedback,
+  issueMode: StagedIssueMode,
+  issueSpec?: StagedIssueSpec
+): StagedIssueMetadata {
   const receivedAt = classifiedFeedback.receivedAt instanceof Date
     ? classifiedFeedback.receivedAt.toISOString()
     : new Date(classifiedFeedback.receivedAt).toISOString();
@@ -92,6 +146,9 @@ export function buildStagedIssueMetadata(classifiedFeedback: ClassifiedFeedback,
       : {}),
     ...(classifiedFeedback.classificationDisagreement
       ? { classificationDisagreement: classifiedFeedback.classificationDisagreement }
+      : {}),
+    ...(issueSpec
+      ? { issueSpecDigest: buildIssueSpecDigest(issueSpec.title, issueSpec.body) }
       : {}),
     issueMode,
     ...(classifiedFeedback.routingSignals ? { routingSignals: classifiedFeedback.routingSignals } : {})
@@ -143,6 +200,8 @@ function isStagedIssueMetadata(value: unknown): value is StagedIssueMetadata {
     classificationDisagreement.fields.every((field) => disagreementFields.has(field)) &&
     new Set(classificationDisagreement.fields).size === classificationDisagreement.fields.length
   );
+  const hasValidIssueSpecDigest = metadata.issueSpecDigest === undefined ||
+    /^[a-f0-9]{64}$/.test(metadata.issueSpecDigest);
   return metadata.version === 1 &&
     typeof metadata.feedbackId === "string" &&
     typeof metadata.repoFullName === "string" &&
@@ -158,6 +217,7 @@ function isStagedIssueMetadata(value: unknown): value is StagedIssueMetadata {
     typeof metadata.rawContent === "string" &&
     hasValidContentTruncation &&
     hasValidClassificationDisagreement &&
+    hasValidIssueSpecDigest &&
     ["moderate-safe", "moderate-review-needed", "complex-review-needed"].includes(metadata.issueMode ?? "") &&
     (metadata.routingSignals === undefined || isClassificationRoutingSignals(metadata.routingSignals));
 }

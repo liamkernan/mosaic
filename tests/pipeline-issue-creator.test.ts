@@ -14,6 +14,10 @@ vi.mock("@mosaic/github-app", () => ({
 }));
 
 import { IssueCreator } from "../packages/pipeline/src/issue-creator.js";
+import {
+  getStagedIssueEditState,
+  parseStagedIssueMetadata
+} from "../packages/pipeline/src/staged-issues.js";
 
 const feedback: ClassifiedFeedback = {
   id: "01ISSUE",
@@ -69,9 +73,13 @@ describe("IssueCreator", () => {
       ])
     }));
     const body = createIssueMock.mock.calls[0]?.[0]?.body as string;
+    const title = createIssueMock.mock.calls[0]?.[0]?.title as string;
+    const metadata = parseStagedIssueMetadata(body, "test-staged-secret");
     expect(body).toContain("Requires review before implementation.");
     expect(body).toContain("<!-- mosaic:staged-issue ");
     expect(body).toContain("Mosaic");
+    expect(metadata).not.toBeNull();
+    expect(getStagedIssueEditState(metadata!, title, body)).toBe("unchanged");
   });
 
   it("makes incomplete intake content explicit in the review issue", async () => {

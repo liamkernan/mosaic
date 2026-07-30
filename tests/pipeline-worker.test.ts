@@ -3,12 +3,46 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const {
+  addLabelsMock,
+  createCommentMock,
+  getCollaboratorPermissionLevelMock,
+  getIssueMock
+} = vi.hoisted(() => ({
+  addLabelsMock: vi.fn(async () => ({ data: {} })),
+  createCommentMock: vi.fn(async () => ({ data: {} })),
+  getCollaboratorPermissionLevelMock: vi.fn(async () => ({ data: { permission: "triage" } })),
+  getIssueMock: vi.fn()
+}));
+
+vi.mock("@mosaic/github-app", () => ({
+  getInstallationToken: vi.fn(),
+  resolveInstallationId: vi.fn(),
+  getOctokit: vi.fn(async () => ({
+    rest: {
+      issues: {
+        addLabels: addLabelsMock,
+        createComment: createCommentMock,
+        get: getIssueMock
+      },
+      repos: {
+        getCollaboratorPermissionLevel: getCollaboratorPermissionLevelMock
+      }
+    }
+  }))
+}));
+
 import { resetEnvForTests } from "../packages/core/src/config.js";
 import { LLMError } from "../packages/core/src/errors.js";
-import type { FeedbackItem, RepoContext } from "../packages/core/src/types.js";
+import type { ClassifiedFeedback, FeedbackItem, RepoContext } from "../packages/core/src/types.js";
 import { LLMClient } from "../packages/llm/src/client.js";
 import type { ArtifactRecord } from "../packages/pipeline/src/artifact-store.js";
 import { defaultRuntimeConfig } from "../packages/pipeline/src/repo-config.js";
+import {
+  buildIssueSpecDigest,
+  buildStagedIssueMetadata,
+  buildStagedIssueMetadataComment
+} from "../packages/pipeline/src/staged-issues.js";
 import {
   FeedbackPipelineWorker,
   shouldUseImplementationPlanning,
@@ -107,6 +141,10 @@ describe("FeedbackPipelineWorker", () => {
   const tempDirs = createTempDirTracker();
 
   afterEach(async () => {
+    addLabelsMock.mockClear();
+    createCommentMock.mockClear();
+    getCollaboratorPermissionLevelMock.mockClear();
+    getIssueMock.mockReset();
     vi.unstubAllEnvs();
     resetEnvForTests();
     await tempDirs.cleanup();
@@ -166,6 +204,386 @@ describe("FeedbackPipelineWorker", () => {
       artifactValue: "42"
     }));
     expect(result).toMatchObject({ outcome: "succeeded", reason: expect.stringContaining("Created issue #42") });
+  });
+
+  it("reclassifies a materially edited staged issue and uses the fresh multi-file review route", async () => {
+    vi.stubEnv("MOSAIC_STAGED_ISSUE_SECRET", "test-staged-secret");
+    resetEnvForTests();
+
+    const localPath = await tempDirs.create("mosaic-worker-staged-promotion-");
+    await mkdir(join(localPath, "src"));
+    const fileContents = new Map([
+      ["src/label.py", "LABEL = 'old'\n"],
+      ["src/service.py", "SERVICE_STATE = 'old'\n"],
+      ["src/registry.py", "REGISTRY_STATE = 'old'\n"]
+    ]);
+    await Promise.all([...fileContents].map(([path, content]) =>
+      writeFile(join(localPath, path), content, "utf8")
+    ));
+
+    const originalTitle = "[Feedback] Fix the settings label";
+    const originalBody = "## User Feedback\n\nOnly adjust the settings label.";
+    const issueSpecDigest = buildIssueSpecDigest(originalTitle, originalBody);
+    const stagedMetadata = {
+      ...buildStagedIssueMetadata(buildClassifiedFeedback({
+        id: "01ORIGINAL",
+        source: "web_form",
+        senderIdentifier: "reporter@example.com",
+        rawContent: "Only adjust the settings label.",
+        category: "copy_change",
+        complexity: "moderate",
+        summary: "Fix the settings label",
+        relevantFiles: ["src/label.py"],
+        confidence: 0.99,
+        routingSignals: {
+          scope: "localized",
+          literalCorrection: false,
+          runtimeBehavior: false,
+          persistentData: false,
+          securitySensitive: false,
+          requiresHumanReview: false
+        }
+      }), "moderate-safe"),
+      issueSpecDigest
+    };
+    const editedBody = `${originalBody}
+
+## Edited implementation scope
+
+Coordinate the service and registry state updates; both files must change.
+
+${buildStagedIssueMetadataComment(stagedMetadata)}`;
+    getIssueMock.mockResolvedValue({
+      data: {
+        title: originalTitle,
+        body: editedBody,
+        labels: ["mosaic:staged", "mosaic:moderate-safe"],
+        user: { login: "alice" }
+      }
+    });
+
+    const freshClassification = {
+      category: "bug_report",
+      complexity: "moderate",
+      summary: "Coordinate service and registry state",
+      relevantFiles: ["src/service.py", "src/registry.py"],
+      confidence: 0.96,
+      routingSignals: {
+        scope: "multi-component",
+        literalCorrection: false,
+        runtimeBehavior: true,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: true
+      }
+    };
+    const setup = workerDependencies(freshClassification);
+    const promotionRepoContext = buildRepoContext({
+      localPath,
+      installationId: 7,
+      fileTree: [...fileContents.keys()].map((path) => ({
+        path,
+        type: "file" as const,
+        language: "python"
+      }))
+    });
+    setup.getContext.mockResolvedValue(promotionRepoContext);
+    setup.dependencies.repoIndexer.fileTreeToPaths = vi.fn(() => [...fileContents.keys()]);
+    setup.dependencies.repoIndexer.findRelevantFiles = vi.fn(async (
+      _context: RepoContext,
+      classified: ClassifiedFeedback
+    ) =>
+      classified.relevantFiles.map((path) => ({
+        path,
+        content: fileContents.get(path) ?? "",
+        reason: "Fresh classifier evidence"
+      }))
+    );
+    setup.dependencies.repoIndexer.readFiles = vi.fn(async (
+      _context: RepoContext,
+      requestedFiles: Array<{ path: string; reason: string }>
+    ) =>
+      requestedFiles.map(({ path, reason }) => ({
+        path,
+        content: fileContents.get(path) ?? "",
+        reason
+      }))
+    );
+    setup.complete.mockImplementation(async (_systemPrompt, _userMessage, options) => {
+      if (options?.requestPhase === "classification") {
+        return JSON.stringify(freshClassification);
+      }
+
+      if (options?.requestPhase === "initial-planning") {
+        return JSON.stringify({
+          requiredFiles: [
+            { path: "src/service.py", reason: "Update the service state" },
+            { path: "src/registry.py", reason: "Update the registry state" }
+          ],
+          acceptanceCriteria: ["The service and registry expose the coordinated updated state."],
+          implementationChecklist: [
+            "Update src/service.py.",
+            "Update src/registry.py."
+          ],
+          verificationChecklist: [],
+          verificationCommands: []
+        });
+      }
+
+      if (options?.requestPhase === "generation") {
+        return `<changes>
+  <edit>
+    <filePath>src/service.py</filePath>
+    <search><![CDATA[SERVICE_STATE = 'old']]></search>
+    <replace><![CDATA[SERVICE_STATE = 'coordinated']]></replace>
+    <explanation>Coordinate the service state.</explanation>
+  </edit>
+  <edit>
+    <filePath>src/registry.py</filePath>
+    <search><![CDATA[REGISTRY_STATE = 'old']]></search>
+    <replace><![CDATA[REGISTRY_STATE = 'coordinated']]></replace>
+    <explanation>Coordinate the registry state.</explanation>
+  </edit>
+</changes>`;
+      }
+
+      throw new Error(`Unexpected LLM phase: ${options?.requestPhase ?? "unknown"}`);
+    });
+
+    const result = await new FeedbackPipelineWorker(setup.dependencies).process(buildFeedbackItem({
+      id: "01PROMOTION",
+      source: "github_comment",
+      rawContent: "@mosaic fix this",
+      senderIdentifier: "alice",
+      metadata: { issueNumber: 73 }
+    }));
+
+    const phases = setup.complete.mock.calls.map((call) => call[2]?.requestPhase);
+    expect(phases.slice(0, 2)).toEqual(["classification", "classification"]);
+    expect(phases.indexOf("classification")).toBeLessThan(phases.indexOf("initial-planning"));
+    expect(setup.dependencies.prCreator.createPR).toHaveBeenCalledWith(
+      expect.objectContaining({
+        feedbackItem: expect.objectContaining({
+          summary: freshClassification.summary,
+          relevantFiles: ["src/service.py", "src/registry.py"],
+          rawContent: expect.stringContaining("both files must change")
+        }),
+        changes: expect.arrayContaining([
+          expect.objectContaining({ filePath: "src/service.py" }),
+          expect.objectContaining({ filePath: "src/registry.py" })
+        ])
+      }),
+      promotionRepoContext,
+      expect.anything(),
+      expect.objectContaining({
+        draft: true,
+        linkedIssueNumber: 73
+      })
+    );
+    expect(addLabelsMock).toHaveBeenCalled();
+    expect(createCommentMock).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 73,
+      body: expect.stringContaining("draft PR")
+    }));
+    expect(result.reason).toContain("Created pull request");
+  });
+
+  it("trusts signed routing for formatting-only staged issue edits", async () => {
+    vi.stubEnv("MOSAIC_STAGED_ISSUE_SECRET", "test-staged-secret");
+    resetEnvForTests();
+
+    const title = "[Feedback] Review incomplete settings feedback";
+    const visibleBody = "## User Feedback\n\nThe original source was incomplete.";
+    const metadata = buildStagedIssueMetadata(buildClassifiedFeedback({
+      id: "01ORIGINAL",
+      rawContent: "x".repeat(5_000),
+      contentTruncation: {
+        originalLength: 5_041,
+        retainedLength: 5_000
+      },
+      category: "ui_tweak",
+      complexity: "moderate",
+      summary: "Review incomplete settings feedback",
+      relevantFiles: ["src/settings.tsx"],
+      confidence: 0.95
+    }), "moderate-review-needed", {
+      title,
+      body: visibleBody
+    });
+    const formattingOnlyBody = `\r\n${visibleBody.replace(/\n/g, "  \r\n")}\t\r\n${buildStagedIssueMetadataComment(metadata)}\r\n`;
+    getIssueMock.mockResolvedValue({
+      data: {
+        title,
+        body: formattingOnlyBody,
+        labels: ["mosaic:staged", "mosaic:moderate-review-needed"],
+        user: { login: "alice" }
+      }
+    });
+    const setup = workerDependencies({});
+
+    const result = await new FeedbackPipelineWorker(setup.dependencies).process(buildFeedbackItem({
+      id: "01FORMATTING",
+      source: "github_comment",
+      rawContent: "@mosaic fix this",
+      senderIdentifier: "alice",
+      metadata: { issueNumber: 74 }
+    }));
+
+    expect(setup.complete).not.toHaveBeenCalled();
+    expect(setup.dependencies.prCreator.createPR).not.toHaveBeenCalled();
+    expect(createCommentMock).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 74,
+      body: expect.stringContaining("incomplete request")
+    }));
+    expect(result.reason).toContain("Kept staged issue #74");
+  });
+
+  it("keeps signed intake truncation sticky across material issue reclassification", async () => {
+    vi.stubEnv("MOSAIC_STAGED_ISSUE_SECRET", "test-staged-secret");
+    resetEnvForTests();
+
+    const title = "[Feedback] Review incomplete dashboard feedback";
+    const originalBody = "## User Feedback\n\nThe original source was incomplete.";
+    const metadata = buildStagedIssueMetadata(buildClassifiedFeedback({
+      id: "01TRUNCATED",
+      rawContent: "x".repeat(5_000),
+      contentTruncation: {
+        originalLength: 5_041,
+        retainedLength: 5_000
+      },
+      category: "ui_tweak",
+      complexity: "moderate",
+      summary: "Review incomplete dashboard feedback",
+      relevantFiles: ["src/dashboard.ts"],
+      confidence: 0.95
+    }), "moderate-review-needed", {
+      title,
+      body: originalBody
+    });
+    getIssueMock.mockResolvedValue({
+      data: {
+        title,
+        body: `${originalBody}\n\nAlso change the dashboard runtime behavior.\n${buildStagedIssueMetadataComment(metadata)}`,
+        labels: ["mosaic:staged", "mosaic:moderate-review-needed"],
+        user: { login: "alice" }
+      }
+    });
+    const freshClassification = {
+      category: "bug_report",
+      complexity: "simple",
+      summary: "Change dashboard runtime behavior",
+      relevantFiles: ["src/dashboard.ts"],
+      confidence: 0.97,
+      routingSignals: {
+        scope: "localized",
+        literalCorrection: false,
+        runtimeBehavior: true,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      }
+    };
+    const setup = workerDependencies(freshClassification);
+
+    const result = await new FeedbackPipelineWorker(setup.dependencies).process(buildFeedbackItem({
+      id: "01TRUNCATED-PROMOTION",
+      source: "github_comment",
+      rawContent: "@mosaic fix this",
+      senderIdentifier: "alice",
+      metadata: { issueNumber: 77 }
+    }));
+
+    const phases = setup.complete.mock.calls.map((call) => call[2]?.requestPhase);
+    expect(phases.length).toBeGreaterThan(0);
+    expect(phases.every((phase) => phase === "classification")).toBe(true);
+    expect(setup.dependencies.prCreator.createPR).not.toHaveBeenCalled();
+    expect(createCommentMock).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 77,
+      body: expect.stringContaining("incomplete request")
+    }));
+    expect(result.reason).toContain("Kept staged issue #77");
+  });
+
+  it("reclassifies legacy staged issues and fails closed on malformed fresh output", async () => {
+    vi.stubEnv("MOSAIC_STAGED_ISSUE_SECRET", "test-staged-secret");
+    resetEnvForTests();
+
+    const legacyMetadata = buildStagedIssueMetadata(buildClassifiedFeedback({
+      id: "01LEGACY",
+      rawContent: "Fix the settings label.",
+      category: "copy_change",
+      complexity: "moderate",
+      summary: "Fix the settings label",
+      relevantFiles: ["src/settings.tsx"],
+      confidence: 0.99
+    }), "moderate-safe");
+    getIssueMock.mockResolvedValue({
+      data: {
+        title: "[Feedback] Fix the settings label",
+        body: `Legacy staged issue body.\n${buildStagedIssueMetadataComment(legacyMetadata)}`,
+        labels: ["mosaic:staged", "mosaic:moderate-safe"],
+        user: { login: "alice" }
+      }
+    });
+    const setup = workerDependencies({});
+    setup.complete.mockResolvedValue("{malformed-classification");
+
+    const result = await new FeedbackPipelineWorker(setup.dependencies).process(buildFeedbackItem({
+      id: "01LEGACY-PROMOTION",
+      source: "github_comment",
+      rawContent: "@mosaic fix this",
+      senderIdentifier: "alice",
+      metadata: { issueNumber: 75 }
+    }));
+
+    const phases = setup.complete.mock.calls.map((call) => call[2]?.requestPhase);
+    expect(phases.length).toBeGreaterThanOrEqual(2);
+    expect(phases.every((phase) => phase === "classification")).toBe(true);
+    expect(setup.dependencies.prCreator.createPR).not.toHaveBeenCalled();
+    expect(createCommentMock).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 75,
+      body: expect.stringContaining("not grounded strongly enough")
+    }));
+    expect(result.reason).toContain("Kept staged issue #75");
+  });
+
+  it("authorizes staged promotion before spending reclassification budget", async () => {
+    vi.stubEnv("MOSAIC_STAGED_ISSUE_SECRET", "test-staged-secret");
+    resetEnvForTests();
+
+    const metadata = buildStagedIssueMetadata(buildClassifiedFeedback({
+      id: "01ORIGINAL",
+      complexity: "moderate",
+      relevantFiles: ["src/settings.tsx"]
+    }), "moderate-safe");
+    getIssueMock.mockResolvedValue({
+      data: {
+        title: "[Feedback] Edited settings work",
+        body: `Materially edited legacy issue.\n${buildStagedIssueMetadataComment(metadata)}`,
+        labels: ["mosaic:staged", "mosaic:moderate-safe"],
+        user: { login: "alice" }
+      }
+    });
+    getCollaboratorPermissionLevelMock.mockResolvedValueOnce({
+      data: { permission: "read" }
+    });
+    const setup = workerDependencies({});
+
+    const result = await new FeedbackPipelineWorker(setup.dependencies).process(buildFeedbackItem({
+      id: "01UNAUTHORIZED",
+      source: "github_comment",
+      rawContent: "@mosaic fix this",
+      senderIdentifier: "mallory",
+      metadata: { issueNumber: 76 }
+    }));
+
+    expect(setup.complete).not.toHaveBeenCalled();
+    expect(setup.dependencies.prCreator.createPR).not.toHaveBeenCalled();
+    expect(createCommentMock).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 76,
+      body: expect.stringContaining("issue author or a repo collaborator")
+    }));
+    expect(result.reason).toContain("unauthorized promotion");
   });
 
   it("plans a direct simple behavioral PR before generation", async () => {
