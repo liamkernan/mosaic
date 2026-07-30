@@ -8,6 +8,12 @@ const existingChange = {
   modifiedContent: "export const value = 2;\n",
   explanation: "Update behavior."
 };
+const companionChange = {
+  filePath: "src/registry.ts",
+  originalContent: "export const handlers = [];\n",
+  modifiedContent: "export const handlers = [serviceHandler];\n",
+  explanation: "Register the updated service behavior."
+};
 
 describe("repair progress", () => {
   it("accepts a repair that reduces the error set without growing scope", () => {
@@ -24,6 +30,8 @@ describe("repair progress", () => {
       trend: "reduced",
       addedFiles: [],
       unplannedAddedFiles: [],
+      removedFiles: [],
+      plannedRemovedFiles: [],
       introducedCategories: []
     });
   });
@@ -51,6 +59,8 @@ describe("repair progress", () => {
       trend: "reduced",
       addedFiles: ["styles.css"],
       unplannedAddedFiles: [],
+      removedFiles: [],
+      plannedRemovedFiles: [],
       introducedCategories: []
     });
   });
@@ -97,6 +107,102 @@ describe("repair progress", () => {
       trend: "increased",
       addedFiles: ["styles.css"],
       unplannedAddedFiles: []
+    }));
+  });
+
+  it("rejects a repair that drops one effective file from a planned multi-file change", () => {
+    expect(assessRepairProgress(
+      [existingChange, companionChange],
+      [{ ...existingChange, modifiedContent: "export const value = 3;\n" }],
+      [
+        "Syntax validation failed for src/service.ts: invalid token",
+        "Verification failed: registry wiring is incomplete"
+      ],
+      [],
+      { plannedFiles: ["src/service.ts", "src/registry.ts"] }
+    )).toEqual(expect.objectContaining({
+      accepted: false,
+      trend: "increased",
+      removedFiles: ["src/registry.ts"],
+      plannedRemovedFiles: ["src/registry.ts"]
+    }));
+  });
+
+  it("treats a present but reverted file as removed effective scope", () => {
+    expect(assessRepairProgress(
+      [existingChange, companionChange],
+      [
+        { ...existingChange, modifiedContent: "export const value = 3;\n" },
+        { ...companionChange, modifiedContent: companionChange.originalContent }
+      ],
+      ["Verification failed: service and registry must remain coordinated"],
+      [],
+      { plannedFiles: ["src/service.ts", "src/registry.ts"] }
+    )).toEqual(expect.objectContaining({
+      accepted: false,
+      trend: "increased",
+      removedFiles: ["src/registry.ts"],
+      plannedRemovedFiles: ["src/registry.ts"]
+    }));
+  });
+
+  it("rejects swapping out an existing change even when the replacement is planned", () => {
+    const plannedReplacement = {
+      filePath: "src/view.ts",
+      originalContent: "export const status = 'old';\n",
+      modifiedContent: "export const status = 'new';\n",
+      explanation: "Update the planned view."
+    };
+
+    expect(assessRepairProgress(
+      [existingChange, companionChange],
+      [existingChange, plannedReplacement],
+      [
+        "Syntax validation failed for src/service.ts: invalid token",
+        "Verification failed: registry wiring is incomplete"
+      ],
+      ["Syntax validation failed for src/service.ts: invalid token"],
+      { plannedFiles: ["src/service.ts", "src/registry.ts", "src/view.ts"] }
+    )).toEqual(expect.objectContaining({
+      accepted: false,
+      trend: "increased",
+      addedFiles: ["src/view.ts"],
+      removedFiles: ["src/registry.ts"]
+    }));
+  });
+
+  it("rejects scope loss when no implementation plan is available", () => {
+    expect(assessRepairProgress(
+      [existingChange, companionChange],
+      [existingChange],
+      ["Verification failed: generated regression did not execute independently"],
+      []
+    )).toEqual(expect.objectContaining({
+      accepted: false,
+      trend: "increased",
+      removedFiles: ["src/registry.ts"],
+      plannedRemovedFiles: []
+    }));
+  });
+
+  it("accepts corrected and reordered changes when every effective file remains", () => {
+    expect(assessRepairProgress(
+      [existingChange, companionChange],
+      [
+        { ...companionChange, modifiedContent: "export const handlers = [repairedHandler];\n" },
+        { ...existingChange, modifiedContent: "export const value = 3;\n" }
+      ],
+      [
+        "Syntax validation failed for src/service.ts: invalid token",
+        "Verification failed: registry wiring is incomplete"
+      ],
+      ["Verification failed: registry wiring is incomplete"],
+      { plannedFiles: ["src/service.ts", "src/registry.ts"] }
+    )).toEqual(expect.objectContaining({
+      accepted: true,
+      trend: "reduced",
+      removedFiles: [],
+      plannedRemovedFiles: []
     }));
   });
 
