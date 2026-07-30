@@ -1024,6 +1024,7 @@ export class CodeGenerator {
         return currentChange
           ? { ...change, originalContent: currentChange.originalContent }
           : change;
-      });
+      })
+      .filter((change) => change.originalContent !== change.modifiedContent);
   }
 }

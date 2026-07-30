@@ -744,14 +744,15 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
     return [];
   }
 
+  const effectiveChanges = changes.filter((change) => change.originalContent !== change.modifiedContent);
   const text = planText(plan, sourceText);
   const errors: string[] = [];
-  errors.push(...generatedTestListFieldErrors(changes));
-  errors.push(...validatePlannedChangeScope(changes, plan, sourceText));
-  errors.push(...missingRequiredFrontendLayerErrors(changes, plan, sourceText));
-  errors.push(...fullStackSurfaceErrors(changes, plan, requestedBehaviorText(plan, sourceText)));
+  errors.push(...generatedTestListFieldErrors(effectiveChanges));
+  errors.push(...validatePlannedChangeScope(effectiveChanges, plan, sourceText));
+  errors.push(...missingRequiredFrontendLayerErrors(effectiveChanges, plan, sourceText));
+  errors.push(...fullStackSurfaceErrors(effectiveChanges, plan, requestedBehaviorText(plan, sourceText)));
 
-  const { testChanges, runtimeChanges, runtimeChangeFacts } = collectCompletionChangeGroups(changes);
+  const { testChanges, runtimeChanges, runtimeChangeFacts } = collectCompletionChangeGroups(effectiveChanges);
   const requiredRuntimePaths = plannedRuntimePaths(plan);
   if (planRequiresBehavioralTests(plan, text) && testChanges.length === 0) {
     errors.push("Implementation plan requires behavioral test coverage, but the generated change does not modify any test/spec file");
@@ -760,7 +761,7 @@ export function validatePlanCompletion(changes: GeneratedChange[], plan: Impleme
   if (requiredRuntimePaths.size > 0 && runtimeChanges.length === 0) {
     errors.push("Implementation plan requires runtime/source changes, but the generated change only modifies tests or documentation");
   }
-  const changedPaths = new Set(changes.map((change) => normalizeRepoPath(change.filePath)));
+  const changedPaths = new Set(effectiveChanges.map((change) => normalizeRepoPath(change.filePath)));
   const missingRequiredRuntimePaths = [...requiredRuntimePaths].filter((path) => !changedPaths.has(path));
   if (
     requiredRuntimePaths.size > 0 &&

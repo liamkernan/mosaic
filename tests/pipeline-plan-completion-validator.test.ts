@@ -472,6 +472,35 @@ describe("validatePlanCompletion", () => {
     expect(errors).toEqual([]);
   });
 
+  it("does not count a no-op entry as a required runtime mutation", () => {
+    const errors = validatePlanCompletion(
+      [
+        {
+          filePath: "src/service.ts",
+          originalContent: "export const fields = ['id'];\n",
+          modifiedContent: "export const fields = ['id', 'status'];\n",
+          explanation: "expose status"
+        },
+        {
+          filePath: "src/registry.ts",
+          originalContent: "register(['id']);\n",
+          modifiedContent: "register(['id']);\n",
+          explanation: "claim the registry was updated"
+        }
+      ],
+      {
+        ...basePlan,
+        requiredFiles: [
+          { path: "src/service.ts", reason: "Update the service response." },
+          { path: "src/registry.ts", reason: "Register the expanded service response." }
+        ],
+        acceptanceCriteria: ["The status is returned through the registered service."]
+      }
+    );
+
+    expect(errors.join("\n")).toContain("src/registry.ts");
+  });
+
   it("rejects generated changes outside the planned file scope", () => {
     const changes = [
       {

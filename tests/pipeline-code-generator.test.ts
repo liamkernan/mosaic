@@ -226,6 +226,31 @@ export const value = 2;
     )).rejects.toThrow("Full-file change cannot replace excerpted existing file src/large.ts");
   });
 
+  it("drops validation repairs that revert a file to its original content", async () => {
+    const generator = new CodeGenerator(createPipelineLlmClient(async () => `<changes>
+  <change>
+    <filePath>src/service.ts</filePath>
+    <modifiedContent><![CDATA[export const value = 1;]]></modifiedContent>
+    <explanation>Revert the current candidate.</explanation>
+  </change>
+</changes>`));
+
+    const repaired = await generator.repairValidationFailure(
+      buildClassifiedFeedback({ relevantFiles: ["src/service.ts"] }),
+      [{ path: "src/service.ts", content: "export const value = 1;", reason: "reported file" }],
+      ["src/service.ts"],
+      [{
+        filePath: "src/service.ts",
+        originalContent: "export const value = 1;",
+        modifiedContent: "export const value = 2;",
+        explanation: "Apply the requested behavior."
+      }],
+      ["validation failed"]
+    );
+
+    expect(repaired).toEqual([]);
+  });
+
   it("uses focused complete-layer repair instructions when planned CSS is missing", async () => {
     let capturedSystemPrompt = "";
     let capturedUserMessage = "";
