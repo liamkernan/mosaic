@@ -1,4 +1,5 @@
 import type {
+  ClassificationDisagreementField,
   ClassifiedFeedback,
   ClassificationRoutingSignals,
   ComplexityLevel,
@@ -41,6 +42,7 @@ export interface OpenAIRoutedClassification {
 
 const complexityRanking: ComplexityLevel[] = ["trivial", "simple", "moderate", "complex"];
 const maxReconciledRelevantFiles = 10;
+const automationConfidenceThreshold = 0.6;
 
 function higherComplexity(left: ComplexityLevel, right: ComplexityLevel): ComplexityLevel {
   return complexityRanking.indexOf(left) >= complexityRanking.indexOf(right) ? left : right;
@@ -69,6 +71,33 @@ function mergeRelevantFileEvidence(initial: string[], routed: string[]): string[
   return merged;
 }
 
+function materialDisagreementFields(
+  initial: ClassifiedFeedback,
+  routed: ClassifiedFeedback
+): ClassificationDisagreementField[] {
+  const fields: ClassificationDisagreementField[] = [];
+  if (initial.category !== routed.category) {
+    fields.push("category");
+  }
+
+  if (
+    initial.relevantFiles.length > 0 &&
+    routed.relevantFiles.length > 0 &&
+    !initial.relevantFiles.some((filePath) => routed.relevantFiles.includes(filePath))
+  ) {
+    fields.push("relevant_files");
+  }
+
+  if (
+    (initial.confidence < automationConfidenceThreshold) !==
+    (routed.confidence < automationConfidenceThreshold)
+  ) {
+    fields.push("confidence");
+  }
+
+  return fields;
+}
+
 function reconcileRoutingSignals(
   initial: ClassificationRoutingSignals,
   routed: ClassificationRoutingSignals
@@ -94,13 +123,18 @@ export function reconcileClassifications(
   initial: ClassifiedFeedback,
   routed: ClassifiedFeedback
 ): ClassifiedFeedback {
+  const disagreementFields = materialDisagreementFields(initial, routed);
+  const classificationDisagreement = disagreementFields.length > 0
+    ? { classificationDisagreement: { fields: disagreementFields } }
+    : {};
   if (initial.routingSignals && routed.routingSignals) {
     const routingSignals = reconcileRoutingSignals(initial.routingSignals, routed.routingSignals);
     return {
       ...routed,
       complexity: resolveRoutingSignalComplexity(routed.complexity, routingSignals),
       relevantFiles: mergeRelevantFileEvidence(initial.relevantFiles, routed.relevantFiles),
-      routingSignals
+      routingSignals,
+      ...classificationDisagreement
     };
   }
 
@@ -109,6 +143,7 @@ export function reconcileClassifications(
     ...routed,
     complexity: higherComplexity(initial.complexity, routed.complexity),
     relevantFiles: mergeRelevantFileEvidence(initial.relevantFiles, routed.relevantFiles),
+    ...classificationDisagreement,
     ...(routed.routingSignals
       ? { routingSignals: routed.routingSignals }
       : initial.routingSignals

@@ -226,7 +226,125 @@ describe("OpenAI production classification routing", () => {
         requiresHumanReview: false
       }
     });
+    expect(result.classifiedFeedback.classificationDisagreement).toBeUndefined();
     expect(decideFeedbackDisposition(result.classifiedFeedback, {
+      repoFullName: "owner/repo",
+      ...defaultRuntimeConfig
+    }).disposition).toBe("pr");
+  });
+
+  it("routes material category disagreement between classifier passes to review", () => {
+    const initial = {
+      ...feedbackItem,
+      category: "feature_request" as const,
+      complexity: "moderate" as const,
+      summary: "Add persisted profile preferences across the API and UI",
+      relevantFiles: ["src/profile-api.ts", "src/Profile.tsx"],
+      confidence: 0.72,
+      routingSignals: {
+        scope: "multi-component" as const,
+        literalCorrection: false,
+        runtimeBehavior: true,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      }
+    };
+    const routed = {
+      ...initial,
+      category: "bug_report" as const,
+      complexity: "simple" as const,
+      summary: "Fix the profile view state",
+      relevantFiles: ["src/Profile.tsx"],
+      confidence: 0.99,
+      routingSignals: {
+        ...initial.routingSignals,
+        scope: "localized" as const
+      }
+    };
+
+    const result = reconcileClassifications(initial, routed);
+
+    expect(result).toMatchObject({
+      category: "bug_report",
+      complexity: "simple",
+      classificationDisagreement: {
+        fields: ["category"]
+      }
+    });
+    expect(decideFeedbackDisposition(result, {
+      repoFullName: "owner/repo",
+      ...defaultRuntimeConfig
+    })).toMatchObject({
+      disposition: "issue",
+      reason: expect.stringContaining("category")
+    });
+  });
+
+  it("routes disjoint repository evidence and confidence-threshold disagreement to review", () => {
+    const initial = {
+      ...feedbackItem,
+      category: "bug_report" as const,
+      complexity: "simple" as const,
+      summary: "Fix account state",
+      relevantFiles: ["src/account-api.ts"],
+      confidence: 0.59,
+      routingSignals: {
+        scope: "localized" as const,
+        literalCorrection: false,
+        runtimeBehavior: true,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      }
+    };
+    const routed = {
+      ...initial,
+      summary: "Fix profile state",
+      relevantFiles: ["src/Profile.tsx"],
+      confidence: 0.6
+    };
+
+    const result = reconcileClassifications(initial, routed);
+
+    expect(result.classificationDisagreement?.fields).toEqual([
+      "relevant_files",
+      "confidence"
+    ]);
+    expect(decideFeedbackDisposition(result, {
+      repoFullName: "owner/repo",
+      ...defaultRuntimeConfig
+    }).disposition).toBe("issue");
+  });
+
+  it("does not treat wording-only summary differences as material disagreement", () => {
+    const initial = {
+      ...feedbackItem,
+      category: "bug_report" as const,
+      complexity: "simple" as const,
+      summary: "Fix the profile label state",
+      relevantFiles: ["src/Profile.tsx", "tests/Profile.test.tsx"],
+      confidence: 0.9,
+      routingSignals: {
+        scope: "localized" as const,
+        literalCorrection: false,
+        runtimeBehavior: true,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      }
+    };
+    const routed = {
+      ...initial,
+      summary: "Correct profile label state handling",
+      relevantFiles: ["src/Profile.tsx"],
+      confidence: 0.94
+    };
+
+    const result = reconcileClassifications(initial, routed);
+
+    expect(result.classificationDisagreement).toBeUndefined();
+    expect(decideFeedbackDisposition(result, {
       repoFullName: "owner/repo",
       ...defaultRuntimeConfig
     }).disposition).toBe("pr");
@@ -425,10 +543,11 @@ describe("OpenAI production classification routing", () => {
     const result = reconcileClassifications(initial, routed);
 
     expect(result).toMatchObject({ complexity: "moderate", routingSignals: { scope: "multi-component" } });
+    expect(result.classificationDisagreement?.fields).toEqual(["relevant_files"]);
     expect(decideFeedbackDisposition(result, {
       repoFullName: "owner/repo",
       ...defaultRuntimeConfig
-    })).toMatchObject({ disposition: "issue", issueMode: "moderate-safe" });
+    })).toMatchObject({ disposition: "issue", issueMode: "moderate-review-needed" });
   });
 
   it("does not permit a downward merge when either pass lacks structured signals", () => {

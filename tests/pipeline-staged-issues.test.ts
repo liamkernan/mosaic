@@ -8,7 +8,10 @@ import {
   isFixThisCommand,
   parseStagedIssueMetadata
 } from "../packages/pipeline/src/staged-issues.js";
-import { resetEnvForTests } from "../packages/core/src/index.js";
+import {
+  resetEnvForTests,
+  type ClassificationDisagreementField
+} from "../packages/core/src/index.js";
 import { buildClassifiedFeedback } from "./helpers/pipeline.js";
 
 const baseFeedback = buildClassifiedFeedback({
@@ -131,6 +134,23 @@ describe("staged issues", () => {
         retainedLength: 5_000
       }
     })).toBe("moderate-review-needed");
+  });
+
+  it("preserves classifier disagreement in signed metadata and requires review", () => {
+    const classifiedFeedback = {
+      ...baseFeedback,
+      classificationDisagreement: {
+        fields: ["category", "relevant_files"] as ClassificationDisagreementField[]
+      }
+    };
+    const metadata = buildStagedIssueMetadata(
+      classifiedFeedback,
+      "moderate-review-needed"
+    );
+    const comment = buildStagedIssueMetadataComment(metadata, stagedIssueSecret);
+
+    expect(parseStagedIssueMetadata(comment, stagedIssueSecret)).toEqual(metadata);
+    expect(getModerateIssueMode(classifiedFeedback)).toBe("moderate-review-needed");
   });
 
   it("uses structured risk instead of file count for new moderate classifications", () => {

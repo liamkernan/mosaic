@@ -405,6 +405,67 @@ describe("FeedbackPipelineWorker", () => {
     expect(result.reason).toContain("Created issue #42");
   });
 
+  it("blocks materially disputed classifications even if a disposition override requests a PR", async () => {
+    const initialClassification = {
+      category: "feature_request",
+      complexity: "moderate",
+      summary: "Add coordinated dashboard state",
+      relevantFiles: ["src/dashboard.ts"],
+      confidence: 0.8,
+      routingSignals: {
+        scope: "multi-component",
+        literalCorrection: false,
+        runtimeBehavior: true,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      }
+    };
+    const routedClassification = {
+      ...initialClassification,
+      category: "bug_report",
+      complexity: "simple",
+      summary: "Fix the dashboard label",
+      confidence: 0.99,
+      routingSignals: {
+        ...initialClassification.routingSignals,
+        scope: "localized"
+      }
+    };
+    const setup = workerDependencies(initialClassification);
+    let classificationPass = 0;
+    setup.complete.mockImplementation(async (_systemPrompt, _userMessage, options) => {
+      if (options?.requestPhase === "classification") {
+        classificationPass += 1;
+        return JSON.stringify(
+          classificationPass === 1 ? initialClassification : routedClassification
+        );
+      }
+      throw new Error(`Unexpected LLM phase: ${options?.requestPhase ?? "unknown"}`);
+    });
+    const worker = new FeedbackPipelineWorker({
+      ...setup.dependencies,
+      decideFeedbackDisposition: () => ({
+        disposition: "pr",
+        reason: "forced direct automation"
+      })
+    });
+
+    const result = await worker.process(feedback);
+
+    expect(setup.createIssue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        classificationDisagreement: {
+          fields: ["category"]
+        }
+      }),
+      repoContext,
+      expect.objectContaining({ reason: expect.stringContaining("materially disagreed") })
+    );
+    expect(setup.dependencies.prCreator.createPR).not.toHaveBeenCalled();
+    expect(result.reason).toContain("Created issue #42");
+  });
+
   it("persists quarantine decisions without creating an issue", async () => {
     const setup = workerDependencies({
       category: "other",

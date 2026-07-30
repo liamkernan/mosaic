@@ -5,6 +5,8 @@ import {
   ConfigError,
   getEnv,
   type ClassificationRoutingSignals,
+  type ClassificationDisagreement,
+  type ClassificationDisagreementField,
   type ClassifiedFeedback,
   type FeedbackContentTruncation
 } from "@mosaic/core";
@@ -38,12 +40,13 @@ export interface StagedIssueMetadata {
   confidence: number;
   rawContent: string;
   contentTruncation?: FeedbackContentTruncation;
+  classificationDisagreement?: ClassificationDisagreement;
   issueMode: StagedIssueMode;
   routingSignals?: ClassificationRoutingSignals;
 }
 
 export function getModerateIssueMode(classifiedFeedback: ClassifiedFeedback): StagedIssueMode {
-  if (classifiedFeedback.contentTruncation) {
+  if (classifiedFeedback.contentTruncation || classifiedFeedback.classificationDisagreement) {
     return "moderate-review-needed";
   }
 
@@ -87,6 +90,9 @@ export function buildStagedIssueMetadata(classifiedFeedback: ClassifiedFeedback,
     ...(classifiedFeedback.contentTruncation
       ? { contentTruncation: classifiedFeedback.contentTruncation }
       : {}),
+    ...(classifiedFeedback.classificationDisagreement
+      ? { classificationDisagreement: classifiedFeedback.classificationDisagreement }
+      : {}),
     issueMode,
     ...(classifiedFeedback.routingSignals ? { routingSignals: classifiedFeedback.routingSignals } : {})
   };
@@ -125,6 +131,18 @@ function isStagedIssueMetadata(value: unknown): value is StagedIssueMetadata {
     contentTruncation.originalLength > contentTruncation.retainedLength &&
     contentTruncation.retainedLength > 0
   );
+  const classificationDisagreement = metadata.classificationDisagreement;
+  const disagreementFields = new Set<ClassificationDisagreementField>([
+    "category",
+    "relevant_files",
+    "confidence"
+  ]);
+  const hasValidClassificationDisagreement = classificationDisagreement === undefined || (
+    Array.isArray(classificationDisagreement.fields) &&
+    classificationDisagreement.fields.length > 0 &&
+    classificationDisagreement.fields.every((field) => disagreementFields.has(field)) &&
+    new Set(classificationDisagreement.fields).size === classificationDisagreement.fields.length
+  );
   return metadata.version === 1 &&
     typeof metadata.feedbackId === "string" &&
     typeof metadata.repoFullName === "string" &&
@@ -139,6 +157,7 @@ function isStagedIssueMetadata(value: unknown): value is StagedIssueMetadata {
     typeof metadata.confidence === "number" &&
     typeof metadata.rawContent === "string" &&
     hasValidContentTruncation &&
+    hasValidClassificationDisagreement &&
     ["moderate-safe", "moderate-review-needed", "complex-review-needed"].includes(metadata.issueMode ?? "") &&
     (metadata.routingSignals === undefined || isClassificationRoutingSignals(metadata.routingSignals));
 }

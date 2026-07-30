@@ -292,6 +292,15 @@ export class FeedbackPipelineWorker {
       );
     }
 
+    if (classifiedFeedback.classificationDisagreement) {
+      return this.handleImplementationFailure(
+        classifiedFeedback,
+        repoContext,
+        `Classifier passes materially disagreed about ${classifiedFeedback.classificationDisagreement.fields.join(", ")}, so automation cannot safely implement the request.`,
+        options.stagedIssueNumber
+      );
+    }
+
     const fileTree = this.repoIndexer.fileTreeToPaths(repoContext);
     const [classifierFiles, referenceFiles] = await Promise.all([
       this.repoIndexer.findRelevantFiles(repoContext, classifiedFeedback),
@@ -709,6 +718,9 @@ export class FeedbackPipelineWorker {
       ...(stagedMetadata.contentTruncation
         ? { contentTruncation: stagedMetadata.contentTruncation }
         : {}),
+      ...(stagedMetadata.classificationDisagreement
+        ? { classificationDisagreement: stagedMetadata.classificationDisagreement }
+        : {}),
       senderIdentifier: stagedMetadata.senderIdentifier,
       repoFullName: feedbackItem.repoFullName,
       receivedAt: new Date(stagedMetadata.receivedAt),
@@ -848,6 +860,7 @@ export class FeedbackPipelineWorker {
       complexity: classifiedFeedback.complexity,
       confidence: classifiedFeedback.confidence,
       routingSignals: classifiedFeedback.routingSignals,
+      classificationDisagreement: classifiedFeedback.classificationDisagreement,
       relevantFiles: classifiedFeedback.relevantFiles,
       classificationFileCount: classificationFileTree.length,
       groundingFilePaths,

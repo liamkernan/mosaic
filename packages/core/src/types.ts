@@ -22,6 +22,12 @@ export interface FeedbackContentTruncation {
   retainedLength: number;
 }
 
+export type ClassificationDisagreementField = "category" | "relevant_files" | "confidence";
+
+export interface ClassificationDisagreement {
+  fields: ClassificationDisagreementField[];
+}
+
 export interface FeedbackItem {
   id: string;
   source: FeedbackSource;
@@ -40,6 +46,7 @@ export interface ClassifiedFeedback extends FeedbackItem {
   relevantFiles: string[];
   confidence: number;
   routingSignals?: ClassificationRoutingSignals;
+  classificationDisagreement?: ClassificationDisagreement;
 }
 
 // === REPO TYPES ===

@@ -44,6 +44,20 @@ export function decideFeedbackDisposition(
     };
   }
 
+  if (classifiedFeedback.classificationDisagreement) {
+    const labels = classifiedFeedback.classificationDisagreement.fields.map((field) => {
+      if (field === "relevant_files") {
+        return "repository file evidence";
+      }
+      return field === "confidence" ? "automation confidence" : "category";
+    });
+    return {
+      disposition: "issue",
+      reason: `Classifier passes materially disagreed about ${labels.join(" and ")}, so the request requires human review.`,
+      issueMode: getIssueMode(classifiedFeedback)
+    };
+  }
+
   if (
     classifiedFeedback.routingSignals &&
     routingSignalsRequireReview(classifiedFeedback.routingSignals)
