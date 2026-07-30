@@ -1006,7 +1006,15 @@ export class CodeGenerator {
       repairFilesByPath.set(change.filePath, {
         path: change.filePath,
         content: change.modifiedContent,
-        reason: relevantFile?.reason ?? "current generated change"
+        reason: relevantFile?.reason ?? "current generated change",
+        ...(relevantFile?.contentTruncated
+          ? {
+              contentTruncated: true,
+              ...(relevantFile.authoritativeContent === undefined
+                ? {}
+                : { authoritativeContent: change.modifiedContent })
+            }
+          : {})
       });
     }
 

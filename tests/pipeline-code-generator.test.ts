@@ -165,6 +165,67 @@ export const value = 2;
     expect(checklist).not.toContain("#required-8");
   });
 
+  it("keeps excerpted-file replacement guards active during validation repair", async () => {
+    const originalContent = [
+      'export const target = "old";',
+      ...Array.from({ length: 220 }, (_, index) => `export const filler${index} = "${"x".repeat(500)}";`),
+      'export const tailSentinel = "preserve-me";',
+      ""
+    ].join("\n");
+    const currentContent = originalContent.replace(
+      'export const target = "old";',
+      'export const target = "intermediate";'
+    );
+    const feedback = buildClassifiedFeedback({ relevantFiles: ["src/large.ts"] });
+    const relevantFiles = [{
+      path: "src/large.ts",
+      content: 'export const target = "old";',
+      authoritativeContent: originalContent,
+      contentTruncated: true,
+      reason: "large reported file"
+    }];
+    const currentChanges = [{
+      filePath: "src/large.ts",
+      originalContent,
+      modifiedContent: currentContent,
+      explanation: "Apply the initial localized edit."
+    }];
+    const localizedGenerator = new CodeGenerator(createPipelineLlmClient(async () => `<changes>
+  <edit>
+    <filePath>src/large.ts</filePath>
+    <search><![CDATA[export const target = "intermediate";]]></search>
+    <replace><![CDATA[export const target = "repaired";]]></replace>
+    <explanation>Repair the localized target.</explanation>
+  </edit>
+</changes>`));
+    const localizedRepair = await localizedGenerator.repairValidationFailure(
+      feedback,
+      relevantFiles,
+      ["src/large.ts"],
+      currentChanges,
+      ["validation failed"]
+    );
+
+    expect(localizedRepair[0]?.modifiedContent).toContain('export const target = "repaired";');
+    expect(localizedRepair[0]?.modifiedContent).toContain('export const tailSentinel = "preserve-me";');
+
+    const fullReplacementGenerator = new CodeGenerator(createPipelineLlmClient(async () => `<changes>
+  <change>
+    <filePath>src/large.ts</filePath>
+    <modifiedContent><![CDATA[export const target = "repaired";]]></modifiedContent>
+    <explanation>Replace the file with the repaired version.</explanation>
+  </change>
+</changes>`));
+
+    await expect(fullReplacementGenerator.repairValidationFailure(
+      feedback,
+      relevantFiles,
+      ["src/large.ts"],
+      currentChanges,
+      ["validation failed"]
+    )).rejects.toThrow("Full-file change cannot replace excerpted existing file src/large.ts");
+  });
+
   it("uses focused complete-layer repair instructions when planned CSS is missing", async () => {
     let capturedSystemPrompt = "";
     let capturedUserMessage = "";
