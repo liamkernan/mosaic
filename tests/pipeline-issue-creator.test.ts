@@ -73,4 +73,23 @@ describe("IssueCreator", () => {
     expect(body).toContain("<!-- mosaic:staged-issue ");
     expect(body).toContain("Mosaic");
   });
+
+  it("makes incomplete intake content explicit in the review issue", async () => {
+    await new IssueCreator().createIssue(
+      {
+        ...feedback,
+        contentTruncation: {
+          originalLength: 5_041,
+          retainedLength: 5_000
+        }
+      },
+      repoContext,
+      { reason: "The intake content was incomplete." }
+    );
+
+    const body = createIssueMock.mock.calls[0]?.[0]?.body as string;
+    expect(body).toContain("Incomplete intake content");
+    expect(body).toContain("5,000 of 5,041 characters");
+    expect(body).toContain("review the original source");
+  });
 });

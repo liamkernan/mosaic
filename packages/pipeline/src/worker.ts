@@ -282,6 +282,16 @@ export class FeedbackPipelineWorker {
       issueMode?: StagedIssueMode;
     } = {}
   ): Promise<{ artifactType: "issue" | "pr"; artifactValue: string; reason: string }> {
+    if (classifiedFeedback.contentTruncation) {
+      const { originalLength, retainedLength } = classifiedFeedback.contentTruncation;
+      return this.handleImplementationFailure(
+        classifiedFeedback,
+        repoContext,
+        `Intake retained only ${retainedLength.toLocaleString("en-US")} of ${originalLength.toLocaleString("en-US")} feedback characters, so automation cannot safely implement the incomplete request.`,
+        options.stagedIssueNumber
+      );
+    }
+
     const fileTree = this.repoIndexer.fileTreeToPaths(repoContext);
     const [classifierFiles, referenceFiles] = await Promise.all([
       this.repoIndexer.findRelevantFiles(repoContext, classifiedFeedback),
@@ -696,6 +706,9 @@ export class FeedbackPipelineWorker {
       id: feedbackItem.id,
       source: stagedMetadata.source,
       rawContent: `${stagedMetadata.rawContent}\n\nLinked GitHub issue #${issueNumber}:\n${stripMosaicMetadataComments(issue.body ?? "")}`,
+      ...(stagedMetadata.contentTruncation
+        ? { contentTruncation: stagedMetadata.contentTruncation }
+        : {}),
       senderIdentifier: stagedMetadata.senderIdentifier,
       repoFullName: feedbackItem.repoFullName,
       receivedAt: new Date(stagedMetadata.receivedAt),

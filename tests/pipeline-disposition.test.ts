@@ -108,6 +108,29 @@ describe("feedback disposition", () => {
     expect(result.disposition).toBe("issue");
   });
 
+  it("never auto-implements feedback whose intake content was truncated", () => {
+    const result = decideFeedbackDisposition(
+      {
+        ...baseFeedback,
+        rawContent: "x".repeat(5_000),
+        contentTruncation: {
+          originalLength: 5_041,
+          retainedLength: 5_000
+        },
+        confidence: 0.99
+      },
+      {
+        repoFullName: "owner/repo",
+        ...defaultRuntimeConfig
+      }
+    );
+
+    expect(result).toMatchObject({
+      disposition: "issue",
+      reason: expect.stringContaining("5,000 of 5,041")
+    });
+  });
+
   it("requires an existing implementation file before direct automation", () => {
     const result = decideFeedbackDisposition(
       { ...baseFeedback, relevantFiles: [] },

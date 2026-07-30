@@ -17,10 +17,16 @@ export interface ClassificationRoutingSignals {
   requiresHumanReview: boolean;
 }
 
+export interface FeedbackContentTruncation {
+  originalLength: number;
+  retainedLength: number;
+}
+
 export interface FeedbackItem {
   id: string;
   source: FeedbackSource;
   rawContent: string;
+  contentTruncation?: FeedbackContentTruncation;
   senderIdentifier: string;
   repoFullName: string;
   receivedAt: Date;

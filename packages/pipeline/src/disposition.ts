@@ -35,6 +35,15 @@ export function decideFeedbackDisposition(
   classifiedFeedback: ClassifiedFeedback,
   repoConfig: RepoRuntimeConfig
 ): DispositionDecision {
+  if (classifiedFeedback.contentTruncation) {
+    const { originalLength, retainedLength } = classifiedFeedback.contentTruncation;
+    return {
+      disposition: "issue",
+      reason: `Intake retained only ${retainedLength.toLocaleString("en-US")} of ${originalLength.toLocaleString("en-US")} feedback characters, so the complete request must be reviewed before automation.`,
+      issueMode: getIssueMode(classifiedFeedback)
+    };
+  }
+
   if (
     classifiedFeedback.routingSignals &&
     routingSignalsRequireReview(classifiedFeedback.routingSignals)

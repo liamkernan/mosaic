@@ -1,7 +1,13 @@
 import { Buffer } from "node:buffer";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { ConfigError, getEnv, type ClassificationRoutingSignals, type ClassifiedFeedback } from "@mosaic/core";
+import {
+  ConfigError,
+  getEnv,
+  type ClassificationRoutingSignals,
+  type ClassifiedFeedback,
+  type FeedbackContentTruncation
+} from "@mosaic/core";
 
 import { isClassificationRoutingSignals, routingSignalsRequireReview } from "./routing-signals.js";
 
@@ -31,11 +37,16 @@ export interface StagedIssueMetadata {
   relevantFiles: string[];
   confidence: number;
   rawContent: string;
+  contentTruncation?: FeedbackContentTruncation;
   issueMode: StagedIssueMode;
   routingSignals?: ClassificationRoutingSignals;
 }
 
 export function getModerateIssueMode(classifiedFeedback: ClassifiedFeedback): StagedIssueMode {
+  if (classifiedFeedback.contentTruncation) {
+    return "moderate-review-needed";
+  }
+
   if (classifiedFeedback.routingSignals) {
     return routingSignalsRequireReview(classifiedFeedback.routingSignals)
       ? "moderate-review-needed"
@@ -73,6 +84,9 @@ export function buildStagedIssueMetadata(classifiedFeedback: ClassifiedFeedback,
     relevantFiles: classifiedFeedback.relevantFiles,
     confidence: classifiedFeedback.confidence,
     rawContent: classifiedFeedback.rawContent,
+    ...(classifiedFeedback.contentTruncation
+      ? { contentTruncation: classifiedFeedback.contentTruncation }
+      : {}),
     issueMode,
     ...(classifiedFeedback.routingSignals ? { routingSignals: classifiedFeedback.routingSignals } : {})
   };
@@ -104,6 +118,13 @@ function isStagedIssueMetadata(value: unknown): value is StagedIssueMetadata {
   }
 
   const metadata = value as Partial<StagedIssueMetadata>;
+  const contentTruncation = metadata.contentTruncation;
+  const hasValidContentTruncation = contentTruncation === undefined || (
+    Number.isInteger(contentTruncation.originalLength) &&
+    Number.isInteger(contentTruncation.retainedLength) &&
+    contentTruncation.originalLength > contentTruncation.retainedLength &&
+    contentTruncation.retainedLength > 0
+  );
   return metadata.version === 1 &&
     typeof metadata.feedbackId === "string" &&
     typeof metadata.repoFullName === "string" &&
@@ -117,6 +138,7 @@ function isStagedIssueMetadata(value: unknown): value is StagedIssueMetadata {
     metadata.relevantFiles.every((filePath) => typeof filePath === "string") &&
     typeof metadata.confidence === "number" &&
     typeof metadata.rawContent === "string" &&
+    hasValidContentTruncation &&
     ["moderate-safe", "moderate-review-needed", "complex-review-needed"].includes(metadata.issueMode ?? "") &&
     (metadata.routingSignals === undefined || isClassificationRoutingSignals(metadata.routingSignals));
 }

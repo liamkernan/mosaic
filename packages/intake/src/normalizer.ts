@@ -72,7 +72,8 @@ export function normalize(adapterOutput: unknown, source: FeedbackSource): Feedb
     throw new ValidationError(`Invalid repoFullName: ${repoFullName}`);
   }
 
-  const rawContent = truncate(feedbackContent(payload, source), 5_000);
+  const normalizedContent = feedbackContent(payload, source);
+  const rawContent = truncate(normalizedContent, 5_000);
   if (!rawContent) {
     throw new ValidationError("Feedback content is empty after normalization");
   }
@@ -81,6 +82,14 @@ export function normalize(adapterOutput: unknown, source: FeedbackSource): Feedb
     id: ulid(),
     source,
     rawContent,
+    ...(normalizedContent.length > rawContent.length
+      ? {
+          contentTruncation: {
+            originalLength: normalizedContent.length,
+            retainedLength: rawContent.length
+          }
+        }
+      : {}),
     senderIdentifier:
       payload.senderIdentifier ??
       payload.senderEmail ??

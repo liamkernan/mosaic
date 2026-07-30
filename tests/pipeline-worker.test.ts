@@ -366,6 +366,45 @@ describe("FeedbackPipelineWorker", () => {
     expect(setup.recordArtifact).not.toHaveBeenCalled();
   });
 
+  it("blocks incomplete intake content even if a disposition override requests a PR", async () => {
+    const setup = workerDependencies({
+      category: "copy_change",
+      complexity: "simple",
+      summary: "Update the dashboard label",
+      relevantFiles: ["src/dashboard.ts"],
+      confidence: 0.99
+    });
+    const worker = new FeedbackPipelineWorker({
+      ...setup.dependencies,
+      decideFeedbackDisposition: () => ({
+        disposition: "pr",
+        reason: "forced direct automation"
+      })
+    });
+
+    const result = await worker.process({
+      ...feedback,
+      rawContent: "x".repeat(5_000),
+      contentTruncation: {
+        originalLength: 5_041,
+        retainedLength: 5_000
+      }
+    });
+
+    expect(setup.createIssue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contentTruncation: {
+          originalLength: 5_041,
+          retainedLength: 5_000
+        }
+      }),
+      repoContext,
+      expect.objectContaining({ reason: expect.stringContaining("incomplete request") })
+    );
+    expect(setup.dependencies.prCreator.createPR).not.toHaveBeenCalled();
+    expect(result.reason).toContain("Created issue #42");
+  });
+
   it("persists quarantine decisions without creating an issue", async () => {
     const setup = workerDependencies({
       category: "other",

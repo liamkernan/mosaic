@@ -34,10 +34,20 @@ describe("staged issues", () => {
   });
 
   it("encodes and decodes staged issue metadata", () => {
-    const metadata = buildStagedIssueMetadata(baseFeedback, "moderate-safe");
+    const metadata = buildStagedIssueMetadata({
+      ...baseFeedback,
+      contentTruncation: {
+        originalLength: 5_041,
+        retainedLength: 5_000
+      }
+    }, "moderate-safe");
     const comment = buildStagedIssueMetadataComment(metadata, stagedIssueSecret);
 
     expect(parseStagedIssueMetadata(comment, stagedIssueSecret)).toEqual(metadata);
+    expect(metadata.contentTruncation).toEqual({
+      originalLength: 5_041,
+      retainedLength: 5_000
+    });
   });
 
   it("encodes and decodes complex staged issue metadata", () => {
@@ -111,6 +121,16 @@ describe("staged issues", () => {
         relevantFiles: ["src/a.ts", "src/b.ts", "src/c.ts"]
       })
     ).toBe("moderate-review-needed");
+  });
+
+  it("requires review when moderate feedback contains incomplete intake content", () => {
+    expect(getModerateIssueMode({
+      ...baseFeedback,
+      contentTruncation: {
+        originalLength: 5_041,
+        retainedLength: 5_000
+      }
+    })).toBe("moderate-review-needed");
   });
 
   it("uses structured risk instead of file count for new moderate classifications", () => {

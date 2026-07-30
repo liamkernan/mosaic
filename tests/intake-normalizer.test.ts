@@ -29,7 +29,44 @@ describe("normalize", () => {
 
     expect(feedback.rawContent).toBe("x".repeat(5_000));
     expect(feedback.rawContent).toHaveLength(5_000);
+    expect(feedback.contentTruncation).toEqual({
+      originalLength: 5_100,
+      retainedLength: 5_000
+    });
     expect(feedback.repoFullName).toBe("owner/repo");
+  });
+
+  it("does not mark content at the intake limit as truncated", () => {
+    const feedback = normalize(
+      {
+        rawContent: "x".repeat(5_000),
+        repoFullName: "owner/repo"
+      },
+      "api"
+    );
+
+    expect(feedback.rawContent).toHaveLength(5_000);
+    expect(feedback.contentTruncation).toBeUndefined();
+  });
+
+  it("records truncation caused by email subject context and exposes hidden tail risk", () => {
+    const body = `${"x".repeat(4_980)}\nPersist the API token in the database.`;
+    const fullContent = `Subject: Account settings request\n\n${body}`;
+    const feedback = normalize(
+      {
+        subject: "Account settings request",
+        rawContent: body,
+        repoFullName: "owner/repo"
+      },
+      "email"
+    );
+
+    expect(feedback.rawContent).toHaveLength(5_000);
+    expect(feedback.rawContent).not.toContain("Persist the API token");
+    expect(feedback.contentTruncation).toEqual({
+      originalLength: fullContent.length,
+      retainedLength: 5_000
+    });
   });
 
   it("extracts repo from subject tag", () => {

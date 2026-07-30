@@ -35,6 +35,9 @@ ${getPromotionDescription(options.issueMode)}
           buildStagedIssueMetadata(classifiedFeedback, options.issueMode),
         )
       : "";
+    const truncationNotice = classifiedFeedback.contentTruncation
+      ? `> **Incomplete intake content:** Mosaic retained ${classifiedFeedback.contentTruncation.retainedLength.toLocaleString("en-US")} of ${classifiedFeedback.contentTruncation.originalLength.toLocaleString("en-US")} characters. Please review the original source before implementation.\n>\n`
+      : "";
 
     if (options.issueMode) {
       labels.push(STAGED_ISSUE_LABEL, getIssueModeLabel(options.issueMode));
@@ -51,7 +54,7 @@ ${getPromotionDescription(options.issueMode)}
 **Complexity:** ${classifiedFeedback.complexity}
 
 ### Feedback Content
-> ${classifiedFeedback.rawContent.slice(0, 1_000).replace(/\n/g, "\n> ")}
+${truncationNotice}> ${classifiedFeedback.rawContent.slice(0, 1_000).replace(/\n/g, "\n> ")}
 
 ### Why This Wasn't Auto-Implemented
 ${options.reason}
