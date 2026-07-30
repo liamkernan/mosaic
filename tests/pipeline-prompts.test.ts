@@ -48,6 +48,50 @@ describe("pipeline prompts", () => {
     expect(prompt).toContain("JSON.parse(response.body)");
     expect(prompt).toContain('<CANDIDATE_FILE path="tests/test_response_format.py">');
     expect(prompt).toContain("tests or unchanged callers that are context only");
+    expect(prompt).not.toContain("file content is excerpted");
+  });
+
+  it("fairly budgets classification grounding across every candidate file", () => {
+    const prompt = buildClassificationPrompt(
+      "Trace the request across the route, service, registry, and view.",
+      ["src/large.ts", "src/route.ts", "src/service.ts", "src/registry.ts", "src/view.ts"],
+      [
+        {
+          path: "src/large.ts",
+          content: `export const largeLeadingSentinel = true;\n${"a".repeat(40_000)}\nexport const hiddenLargeTail = true;`,
+          reason: "large preliminary candidate"
+        },
+        {
+          path: "src/route.ts",
+          content: "export const routeContractSentinel = true;",
+          reason: "route contract"
+        },
+        {
+          path: "src/service.ts",
+          content: "export const serviceOwnerSentinel = true;",
+          reason: "service behavior owner"
+        },
+        {
+          path: "src/registry.ts",
+          content: "export const registryWiringSentinel = true;",
+          reason: "registry wiring"
+        },
+        {
+          path: "src/view.ts",
+          content: "export const viewConsumerSentinel = true;",
+          reason: "view consumer"
+        }
+      ]
+    );
+
+    expect(prompt.match(/<CANDIDATE_FILE path=/g)).toHaveLength(5);
+    expect(prompt).toContain("largeLeadingSentinel");
+    expect(prompt).not.toContain("hiddenLargeTail");
+    expect(prompt).toContain("routeContractSentinel");
+    expect(prompt).toContain("serviceOwnerSentinel");
+    expect(prompt).toContain("registryWiringSentinel");
+    expect(prompt).toContain("viewConsumerSentinel");
+    expect(prompt).toContain("file content is excerpted");
   });
 
   it("compacts large classification file trees while keeping likely relevant paths", () => {

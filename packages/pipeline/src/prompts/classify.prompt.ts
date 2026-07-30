@@ -1,5 +1,6 @@
 import { compactPromptFileTree } from "./context-budget.js";
 import type { RelevantFile } from "@mosaic/core";
+import { allocateFairContentBudgets, truncateToCharacters } from "../fair-content-budget.js";
 
 const classificationMaxFileTreePaths = 1_200;
 const classificationMaxGroundingFiles = 5;
@@ -18,18 +19,18 @@ function formatClassificationFileTree(rawContent: string, fileTree: string[]): s
 }
 
 function formatGroundingFiles(files: RelevantFile[]): string {
-  let remainingCharacters = classificationMaxGroundingCharacters;
-  const sections: string[] = [];
-
-  for (const file of files.slice(0, classificationMaxGroundingFiles)) {
-    if (remainingCharacters <= 0) {
-      break;
-    }
-
-    const content = file.content.slice(0, remainingCharacters);
-    remainingCharacters -= content.length;
-    sections.push(`<CANDIDATE_FILE path=${JSON.stringify(file.path)}>\n${content}\n</CANDIDATE_FILE>`);
-  }
+  const selectedFiles = files.slice(0, classificationMaxGroundingFiles);
+  const budgets = allocateFairContentBudgets(
+    selectedFiles.map((file) => file.content.length),
+    classificationMaxGroundingCharacters
+  );
+  const sections = selectedFiles.map((file, index) => {
+    const content = truncateToCharacters(file.content, budgets[index]);
+    const excerptNote = file.contentTruncated || content.length < file.content.length
+      ? "[MOSAIC CONTEXT NOTE: This file content is excerpted for classification. Omitted content must not be treated as absent.]\n"
+      : "";
+    return `<CANDIDATE_FILE path=${JSON.stringify(file.path)}>\n${excerptNote}${content}\n</CANDIDATE_FILE>`;
+  });
 
   return sections.length > 0
     ? sections.join("\n")

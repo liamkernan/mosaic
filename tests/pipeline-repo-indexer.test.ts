@@ -323,6 +323,93 @@ describe("RepoIndexer repository references", () => {
     expect(requestedFiles.map((file) => file.path)).toEqual(["src/service.ts"]);
   });
 
+  it("fairly budgets classifier evidence without dropping structural companion files", async () => {
+    const localPath = await tempDirs.create("mosaic-repo-indexer-");
+    await mkdir(join(localPath, "src"));
+
+    const largeContent = [
+      "export const largeSentinel = true;",
+      "🙂".repeat(16_000),
+      "export const unseenLargeTail = true;",
+      ""
+    ].join("\n");
+    const companionFiles = [
+      ["route.ts", "export const routeContractSentinel = true;\n"],
+      ["service.ts", "export const serviceOwnerSentinel = true;\n"],
+      ["registry.ts", "export const registryWiringSentinel = true;\n"]
+    ] as const;
+    await writeFile(join(localPath, "src", "large.ts"), largeContent, "utf8");
+    await Promise.all(companionFiles.map(([path, content]) =>
+      writeFile(join(localPath, "src", path), content, "utf8")
+    ));
+
+    const relevantFiles = await new RepoIndexer().findRelevantFiles(
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        installationId: 1,
+        fileTree: [
+          { path: "src/large.ts", type: "file", sizeBytes: Buffer.byteLength(largeContent) },
+          ...companionFiles.map(([path, content]) => ({
+            path: `src/${path}`,
+            type: "file" as const,
+            sizeBytes: Buffer.byteLength(content)
+          }))
+        ]
+      },
+      buildClassifiedFeedback({
+        relevantFiles: ["src/large.ts", "src/route.ts", "src/service.ts", "src/registry.ts"]
+      })
+    );
+
+    expect(relevantFiles.map((file) => file.path)).toEqual([
+      "src/large.ts",
+      "src/route.ts",
+      "src/service.ts",
+      "src/registry.ts"
+    ]);
+    expect(relevantFiles.reduce((total, file) => total + Buffer.byteLength(file.content), 0))
+      .toBeLessThanOrEqual(50 * 1024);
+    expect(relevantFiles[0]?.content).toContain("largeSentinel");
+    expect(relevantFiles[0]?.content).not.toContain("\uFFFD");
+    expect(relevantFiles[0]?.content).not.toContain("unseenLargeTail");
+    expect(relevantFiles[0]?.contentTruncated).toBe(true);
+    expect(relevantFiles[0]?.authoritativeContent).toBe(largeContent);
+    expect(relevantFiles[1]?.content).toContain("routeContractSentinel");
+    expect(relevantFiles[2]?.content).toContain("serviceOwnerSentinel");
+    expect(relevantFiles[3]?.content).toContain("registryWiringSentinel");
+    expect(relevantFiles.slice(1).every((file) => file.contentTruncated !== true)).toBe(true);
+  });
+
+  it("keeps classifier evidence unchanged at the exact aggregate byte boundary", async () => {
+    const localPath = await tempDirs.create("mosaic-repo-indexer-");
+    await mkdir(join(localPath, "src"));
+
+    const firstContent = "a".repeat(30 * 1024);
+    const secondContent = "b".repeat(20 * 1024);
+    await writeFile(join(localPath, "src", "first.ts"), firstContent, "utf8");
+    await writeFile(join(localPath, "src", "second.ts"), secondContent, "utf8");
+
+    const relevantFiles = await new RepoIndexer().findRelevantFiles(
+      {
+        fullName: "owner/repo",
+        defaultBranch: "main",
+        localPath,
+        installationId: 1,
+        fileTree: [
+          { path: "src/first.ts", type: "file", sizeBytes: Buffer.byteLength(firstContent) },
+          { path: "src/second.ts", type: "file", sizeBytes: Buffer.byteLength(secondContent) }
+        ]
+      },
+      buildClassifiedFeedback({ relevantFiles: ["src/first.ts", "src/second.ts"] })
+    );
+
+    expect(relevantFiles.map((file) => file.content)).toEqual([firstContent, secondContent]);
+    expect(relevantFiles.every((file) => file.contentTruncated !== true)).toBe(true);
+    expect(relevantFiles.every((file) => file.authoritativeContent === undefined)).toBe(true);
+  });
+
   it("preserves first-200-line truncation for large files", async () => {
     const localPath = await tempDirs.create("mosaic-repo-indexer-");
     await mkdir(join(localPath, "src"));

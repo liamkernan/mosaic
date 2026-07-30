@@ -6,6 +6,7 @@ import { getEnv, logger, type ClassifiedFeedback, type FileNode, type RelevantFi
 import { getInstallationToken, getOctokit, resolveInstallationId } from "@mosaic/github-app";
 import { simpleGit } from "simple-git";
 
+import { allocateFairContentBudgets, truncateUtf8ToBytes } from "./fair-content-budget.js";
 import { resolveExistingRepoPath } from "./repo-paths.js";
 
 const ignoredNames = new Set(["node_modules", ".git", "dist", "build", "__pycache__", ".next", "vendor"]);
@@ -14,6 +15,7 @@ const fileSizeCache = new WeakMap<FileNode[], Map<string, number>>();
 const largeFileTruncationBytes = 100 * 1024;
 const largeFileTruncationLines = 200;
 const maxAuthoritativeFileBytes = 2 * 1024 * 1024;
+const relevantFilesMaxBytes = 50 * 1024;
 const referenceFilePattern = /\.(?:md|mdx|rst|txt|ya?ml|json|py|[cm]?[jt]sx?|html|css)$/i;
 const referenceDirectoryPattern = /(?:^|\/)(?:test|tests|spec|specs|__tests__|reported)(?:\/|$)/;
 const repoReferenceNames = new Set([
@@ -456,6 +458,27 @@ function toRelevantFile(
   };
 }
 
+function fairlyBudgetRelevantFiles(files: RelevantFile[]): RelevantFile[] {
+  const contentSizes = files.map((file) => Buffer.byteLength(file.content));
+  const budgets = allocateFairContentBudgets(contentSizes, relevantFilesMaxBytes);
+
+  return files.map((file, index) => {
+    if (budgets[index] >= contentSizes[index]) {
+      return file;
+    }
+
+    const authoritativeContent = file.contentTruncated
+      ? file.authoritativeContent
+      : file.content;
+    return {
+      ...file,
+      content: truncateUtf8ToBytes(file.content, budgets[index]),
+      contentTruncated: true,
+      ...(authoritativeContent !== undefined ? { authoritativeContent } : {})
+    };
+  });
+}
+
 export class RepoIndexer {
   async getContext(repoFullName: string): Promise<RepoContext> {
     const installationId = await resolveInstallationId(repoFullName);
@@ -504,13 +527,7 @@ export class RepoIndexer {
     }));
     const files = loadedFiles.filter((file): file is RelevantFile => Boolean(file));
 
-    let totalBytes = files.reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
-    while (totalBytes > 50 * 1024 && files.length > 1) {
-      const removed = files.pop();
-      totalBytes -= Buffer.byteLength(removed?.content ?? "");
-    }
-
-    return files;
+    return fairlyBudgetRelevantFiles(files);
   }
 
   async readFiles(context: RepoContext, requestedFiles: Array<{ path: string; reason: string }>): Promise<RelevantFile[]> {
