@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { resetEnvForTests } from "../packages/core/src/config.js";
+import { LLMError } from "../packages/core/src/errors.js";
 import type { FeedbackItem, RepoContext } from "../packages/core/src/types.js";
 import { LLMClient } from "../packages/llm/src/client.js";
 import type { ArtifactRecord } from "../packages/pipeline/src/artifact-store.js";
@@ -269,6 +270,100 @@ describe("FeedbackPipelineWorker", () => {
       expect.anything()
     );
     expect(result.reason).toContain("Created pull request");
+  });
+
+  it.each([
+    ["malformed planner JSON", "{bad-json}"],
+    ["a repeatedly incomplete plan", JSON.stringify({
+      requiredFiles: [],
+      acceptanceCriteria: [],
+      implementationChecklist: [],
+      verificationChecklist: [],
+      verificationCommands: []
+    })]
+  ])("falls back to a review issue when planning returns %s", async (_caseName, plannerResponse) => {
+    const classification = {
+      category: "bug_report",
+      complexity: "simple",
+      summary: "Reset the schedule when All days is selected",
+      relevantFiles: ["src/schedule.py"],
+      confidence: 0.95,
+      routingSignals: {
+        scope: "localized",
+        literalCorrection: false,
+        runtimeBehavior: true,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      }
+    };
+    const setup = workerDependencies(classification);
+    setup.dependencies.repoIndexer.fileTreeToPaths = vi.fn(() => ["src/schedule.py"]);
+    setup.dependencies.repoIndexer.findRelevantFiles = vi.fn(async () => [{
+      path: "src/schedule.py",
+      content: "def show_schedule(selected_day):\n    return selected_day or 'all'\n",
+      reason: "Classifier selected the schedule behavior"
+    }]);
+    setup.complete.mockImplementation(async (_systemPrompt, _userMessage, options) => {
+      if (options?.requestPhase === "initial-planning" || options?.requestPhase === "planner-correction") {
+        return plannerResponse;
+      }
+
+      return JSON.stringify(classification);
+    });
+
+    const result = await new FeedbackPipelineWorker(setup.dependencies).process(feedback);
+
+    expect(setup.createIssue).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: classification.summary }),
+      repoContext,
+      expect.objectContaining({ reason: expect.stringContaining("Implementation planning failed") })
+    );
+    expect(setup.dependencies.prCreator.createPR).not.toHaveBeenCalled();
+    expect(setup.recordArtifact).toHaveBeenCalledWith(expect.objectContaining({
+      artifactType: "issue",
+      artifactValue: "42"
+    }));
+    expect(result).toMatchObject({
+      outcome: "succeeded",
+      reason: expect.stringContaining("Created issue #42 because Implementation planning failed")
+    });
+  });
+
+  it("leaves transient planner overloads for the worker retry path", async () => {
+    const classification = {
+      category: "bug_report",
+      complexity: "simple",
+      summary: "Reset the schedule when All days is selected",
+      relevantFiles: ["src/schedule.py"],
+      confidence: 0.95,
+      routingSignals: {
+        scope: "localized",
+        literalCorrection: false,
+        runtimeBehavior: true,
+        persistentData: false,
+        securitySensitive: false,
+        requiresHumanReview: false
+      }
+    };
+    const setup = workerDependencies(classification);
+    setup.dependencies.repoIndexer.fileTreeToPaths = vi.fn(() => ["src/schedule.py"]);
+    setup.dependencies.repoIndexer.findRelevantFiles = vi.fn(async () => [{
+      path: "src/schedule.py",
+      content: "def show_schedule(selected_day):\n    return selected_day or 'all'\n",
+      reason: "Classifier selected the schedule behavior"
+    }]);
+    setup.complete.mockImplementation(async (_systemPrompt, _userMessage, options) => {
+      if (options?.requestPhase === "initial-planning") {
+        throw new LLMError("Anthropic completion failed: 529 overloaded");
+      }
+      return JSON.stringify(classification);
+    });
+
+    await expect(new FeedbackPipelineWorker(setup.dependencies).process(feedback))
+      .rejects.toThrow("529 overloaded");
+    expect(setup.createIssue).not.toHaveBeenCalled();
+    expect(setup.recordArtifact).not.toHaveBeenCalled();
   });
 
   it("persists quarantine decisions without creating an issue", async () => {

@@ -325,7 +325,22 @@ export class FeedbackPipelineWorker {
         openAISelection?.reasoningEffort,
         advisorTool
       ));
-      implementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
+      try {
+        implementationPlan = await planner.plan(classifiedFeedback, relevantFiles, fileTree);
+      } catch (error) {
+        if (error instanceof LLMError) {
+          if (isRetryableLlmOverload(error)) {
+            throw error;
+          }
+          return this.handleImplementationFailure(
+            classifiedFeedback,
+            repoContext,
+            `Implementation planning failed: ${error.message}`,
+            options.stagedIssueNumber
+          );
+        }
+        throw error;
+      }
       const loadedPaths = new Set(relevantFiles.map((file) => file.path));
       const plannedFiles = await this.repoIndexer.readFiles(
         repoContext,

@@ -80,7 +80,15 @@ function normalizePlan(
   relevantFiles: RelevantFile[],
   fileTree: string[]
 ): ImplementationPlan {
-  const parsed = implementationPlanSchema.parse(JSON.parse(extractJsonObject(response)));
+  let parsed: ImplementationPlan;
+  try {
+    parsed = implementationPlanSchema.parse(JSON.parse(extractJsonObject(response)));
+  } catch (error) {
+    if (error instanceof LLMError) {
+      throw error;
+    }
+    throw new LLMError("Implementation planning returned invalid plan JSON", { cause: error });
+  }
   const loadedPaths = new Set(relevantFiles.map((file) => file.path));
   const repoPaths = new Set(fileTree);
   const requiredFiles = parsed.requiredFiles
